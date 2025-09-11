@@ -9,8 +9,6 @@
     video{width:100%;max-width:720px;background:#000;border-radius:12px}
     button{padding:10px 14px;border-radius:8px;border:1px solid #d1d5db;background:#fff;cursor:pointer;margin-right:8px}
     #status{margin:8px 0}
-    .ok{color:#16a34a} .err{color:#dc2626}
-    #playLink{margin-top:8px;display:block}
   </style>
 </head>
 <body>
@@ -23,7 +21,6 @@
   <div id="status">Bereit.</div>
   <video id="preview" autoplay muted playsinline></video>
   <video id="playback" controls style="display:none;margin-top:8px"></video>
-  <a id="playLink" href="#" target="_blank" style="display:none"></a>
 
 <script>
 let stream, rec, chunks=[], blob, lastUploadId=null;
@@ -32,109 +29,90 @@ const qs = new URLSearchParams(location.search);
 const uid = qs.get('uid') || 'TEST-UID';
 const companyId = qs.get('companyId') || 'TEST-COMPANY';
 
-const el = (id) => document.getElementById(id);
-function status(t, cls=''){ const s = el('status'); s.textContent = t; s.className = cls; }
+const $ = (id) => document.getElementById(id);
+const setStatus = (t) => $('status').textContent = t;
 
-el('start').onclick = async () => {
-  try{
+$('start').onclick = async () => {
+  try {
     stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
-    el('preview').srcObject = stream;
+    $('preview').srcObject = stream;
     chunks=[]; blob=null;
     rec = new MediaRecorder(stream);
     rec.ondataavailable = e => e.data?.size && chunks.push(e.data);
     rec.onstop = () => {
       blob = new Blob(chunks, { type: rec.mimeType || 'video/webm' });
-      el('playback').src = URL.createObjectURL(blob);
-      el('playback').style.display = 'block';
-      status(`Fertig: ${(blob.size/1024/1024).toFixed(1)} MB`);
-      el('upload').disabled = false;
+      $('playback').src = URL.createObjectURL(blob);
+      $('playback').style.display = 'block';
+      setStatus(`Fertig: ${(blob.size/1024/1024).toFixed(1)} MB`);
+      $('upload').disabled = false;
     };
     rec.start(1000);
-    status('🔴 Aufnahme läuft…');
-    el('start').disabled = true;
-    el('stop').disabled = false;
-  }catch(e){ status('❌ Start fehlgeschlagen: ' + (e.message||e), 'err'); }
+    setStatus('🔴 Aufnahme läuft…');
+    $('start').disabled = true;
+    $('stop').disabled = false;
+  } catch (e) {
+    setStatus('❌ Start fehlgeschlagen: ' + (e.message||e));
+  }
 };
 
-el('stop').onclick = () => {
-  try{ if(rec && rec.state!=='inactive') rec.stop(); }catch{}
-  try{ if(stream) stream.getTracks().forEach(t=>t.stop()); }catch{}
-  el('stop').disabled = true;
+$('stop').onclick = () => {
+  try { if (rec && rec.state!=='inactive') rec.stop(); } catch {}
+  try { if (stream) stream.getTracks().forEach(t=>t.stop()); } catch {}
+  $('stop').disabled = true;
 };
 
-el('upload').onclick = async () => {
-  try{
-    if(!blob){ status('Keine Aufnahme vorhanden.'); return; }
-    status('Upload vorbereiten…');
+$('upload').onclick = async () => {
+  try {
+    if (!blob) { setStatus('Keine Aufnahme vorhanden.'); return; }
+    setStatus('Upload vorbereiten…');
 
-    const res = await fetch('/api/mux-upload', {
-      method:'POST', headers:{'Content-Type':'application/json'},
+    // 1) Upload-URL vom eigenen API-Endpoint holen
+    const prep = await fetch('/api/mux-upload', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
       body: JSON.stringify({ uid, companyId })
     });
 
-    // robust lesen – auch wenn mal kein JSON zurück kommt:
-    let payload;
-    try { payload = await res.json(); } catch(_) {
-      const txt = await res.text();
-      throw new Error(`Server hat kein JSON geliefert: ${txt?.slice(0,120) || 'n/a'}`);
+    const prepJson = await prep.json().catch(()=> ({}));
+    if (!prep.ok) {
+      throw new Error('Server-Fehler: ' + (prepJson?.error || prep.statusText));
     }
+    const { uploadUrl, uploadId } = prepJson || {};
+    if (!uploadUrl) throw new Error('Server-Fehler: keine uploadUrl erhalten');
+    lastUploadId = uploadId || null;
 
-    const { uploadUrl, uploadId, error } = payload || {};
-    if(error || !uploadUrl){ throw new Error(error || 'Keine uploadUrl erhalten'); }
-
-    status('Lade hoch…');
+    // 2) WICHTIG: Direkt-Upload OHNE zusätzliche Query-Parameter
+    setStatus('Lade hoch…');
     const up = await fetch(uploadUrl, { method:'PUT', body: blob });
-    if(!up.ok) throw new Error('Upload fehlgeschlagen');
-
-    lastUploadId = uploadId;
-    status('✅ Upload abgeschlossen, wird transcodiert…', 'ok');
-
-    // Polling starten: PlaybackId abholen
-    pollMuxReady(uploadId);
-  }catch(e){ status('❌ ' + (e.message||e), 'err'); }
-};
-
-// Fragt unsere API: Ist das Asset schon ready? PlaybackId?
-async function pollMuxReady(uploadId){
-  let tries = 0;
-  const maxTries = 60;     // ~5 Minuten bei 5s Intervall
-  const wait = (ms) => new Promise(r=>setTimeout(r, ms));
-
-  while (tries < maxTries) {
-    tries++;
-    try {
-      const r = await fetch(`/api/mux-asset?uploadId=${encodeURIComponent(uploadId)}`);
-      const j = await r.json();
-      if (j.assetReady && j.playbackId) {
-        const playbackUrl = `https://stream.mux.com/${j.playbackId}.m3u8`;
-        status('✅ Transcoding fertig — Playback bereit.', 'ok');
-
-        // Link zeigen
-        const a = el('playLink');
-        a.href = playbackUrl;
-        a.textContent = '➡ Video abspielen (HLS)';
-        a.style.display = 'block';
-
-        // Parent (Wix) informieren
-        window.parent?.postMessage({
-          type:'RECORD_UPLOADED',
-          provider:'mux',
-          uploadId,
-          assetId: j.assetId,
-          playbackId: j.playbackId,
-          playbackUrl
-        }, '*');
-        return;
-      } else {
-        status(`Transcoding… (${tries})`);
-      }
-    } catch(e) {
-      status('Polling-Fehler: ' + (e.message||e), 'err');
+    if (!up.ok) {
+      // oft liefert Mux hier leider keine schöne Fehlermeldung
+      throw new Error('Direct-Upload fehlgeschlagen (HTTP ' + up.status + ')');
     }
-    await wait(5000);
+
+    setStatus('✅ Upload abgeschlossen, wird transcodiert…');
+
+    // 3) (Optional) Zustand abfragen
+    if (lastUploadId) {
+      setStatus('✅ Upload abgeschlossen, Status wird geprüft…');
+      const chk = await fetch('/api/mux-asset?uploadId=' + encodeURIComponent(lastUploadId));
+      const chkJson = await chk.json().catch(()=> ({}));
+      if (chk.ok) {
+        const { assetId, status } = chkJson;
+        setStatus('✅ Upload abgeschlossen — Status: ' + status + (assetId ? ` (Asset ${assetId})` : ''));
+      } else {
+        setStatus('✅ Upload abgeschlossen — Statusabfrage nicht möglich');
+      }
+    }
+
+    // 4) Event an Parent (Wix) senden
+    window.parent?.postMessage(
+      { type:'REC_DONE', provider:'mux', uploadId:lastUploadId, uid, companyId },
+      '*'
+    );
+  } catch (e) {
+    setStatus('❌ ' + (e.message||e));
   }
-  status('⚠️ Playback noch nicht bereit – später erneut prüfen.');
-}
+};
 </script>
 </body>
 </html>
