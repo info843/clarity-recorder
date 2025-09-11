@@ -1,19 +1,17 @@
 <!doctype html>
 <html lang="de">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Clarity Interview Recorder</title>
   <style>
     body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;padding:16px}
     video{width:100%;max-width:720px;background:#000;border-radius:12px}
     button{padding:10px 14px;border-radius:8px;border:1px solid #d1d5db;background:#fff;cursor:pointer;margin-right:8px}
     #status{margin:8px 0}
-    .ok{color:#16a34a} .err{color:#dc2626}
-    #muxWrap{max-width:720px;margin-top:12px}
+    mux-player{width:100%;max-width:720px;display:block;margin-top:12px}
   </style>
-  <!-- Mux Player (schöner als das native <video>) -->
-  <script defer src="https://cdn.jsdelivr.net/npm/@mux/mux-player"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mux/mux-player"></script>
 </head>
 <body>
   <h1>Interview Recorder</h1>
@@ -22,129 +20,115 @@
     <button id="stop" disabled>⏹ Stop</button>
     <button id="upload" disabled>⬆ Upload</button>
   </div>
-
   <div id="status">Bereit.</div>
 
   <video id="preview" autoplay muted playsinline></video>
-
-  <!-- Playback-Bereich -->
-  <div id="muxWrap" style="display:none">
-    <mux-player id="muxPlayer" stream-type="on-demand" style="width:100%; border-radius:12px"></mux-player>
-  </div>
+  <video id="playback" controls style="display:none;margin-top:8px"></video>
+  <div id="player"></div>
 
 <script>
-let stream, rec, chunks=[], blob;
+let stream, rec, chunks=[], blob, lastUploadId=null;
 
 const qs = new URLSearchParams(location.search);
 const uid = qs.get('uid') || 'TEST-UID';
 const companyId = qs.get('companyId') || 'TEST-COMPANY';
 
-// UI helpers
-const $ = sel => document.querySelector(sel);
-const setStatus = (t, cls='') => { const el=$('#status'); el.textContent=t; el.className=cls; };
+const $ = id => document.getElementById(id);
+const setStatus = t => $('status').textContent = t;
 
-$('#start').onclick = async () => {
+async function safeJson(res){
+  const ct = res.headers.get('content-type') || '';
+  if (ct.includes('application/json')) return res.json();
+  const text = await res.text();
+  throw new Error(`Non-JSON response (${res.status}): ${text.slice(0,200)}`);
+}
+
+$('start').onclick = async () => {
   try{
     stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
-    $('#preview').srcObject = stream;
+    $('preview').srcObject = stream;
     chunks=[]; blob=null;
     rec = new MediaRecorder(stream);
     rec.ondataavailable = e => e.data?.size && chunks.push(e.data);
     rec.onstop = () => {
       blob = new Blob(chunks, { type: rec.mimeType || 'video/webm' });
-      setStatus(`Aufnahme beendet: ${(blob.size/1024/1024).toFixed(1)} MB`, 'ok');
-      $('#upload').disabled = false;
+      $('playback').src = URL.createObjectURL(blob);
+      $('playback').style.display = 'block';
+      setStatus(`Fertig: ${(blob.size/1024/1024).toFixed(1)} MB`);
+      $('upload').disabled = false;
     };
     rec.start(1000);
     setStatus('🔴 Aufnahme läuft…');
-    $('#start').disabled = true;
-    $('#stop').disabled = false;
-  }catch(e){ setStatus('❌ Start fehlgeschlagen: ' + (e.message||e), 'err'); }
+    $('start').disabled = true;
+    $('stop').disabled = false;
+  }catch(e){ setStatus('❌ Start fehlgeschlagen: ' + (e.message||e)); }
 };
 
-$('#stop').onclick = () => {
+$('stop').onclick = () => {
   try{ if(rec && rec.state!=='inactive') rec.stop(); }catch{}
   try{ if(stream) stream.getTracks().forEach(t=>t.stop()); }catch{}
-  $('#stop').disabled = true;
+  $('stop').disabled = true;
 };
 
-$('#upload').onclick = async () => {
+$('upload').onclick = async () => {
   try{
-    if(!blob){ setStatus('Keine Aufnahme vorhanden.', 'err'); return; }
+    if(!blob){ setStatus('Keine Aufnahme vorhanden.'); return; }
     setStatus('Upload vorbereiten…');
 
-    // 1) Server fragen (Direct Upload URL holen)
-    const res = await fetch('/api/mux-upload', {
+    const upRes = await fetch('/api/mux-upload', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ uid, companyId })
     });
-    const data = await res.json();
-    if(!res.ok || data.error) throw new Error(data.error || 'Upload bootstrap failed');
+    if(!upRes.ok){
+      const t = await upRes.text();
+      throw new Error(`Server-Fehler (${upRes.status}): ${t}`);
+    }
+    const { uploadUrl, uploadId } = await safeJson(upRes);
+    if(!uploadUrl) throw new Error('Keine uploadUrl erhalten');
+    lastUploadId = uploadId;
 
-    const { uploadUrl, uploadId } = data;
-    if(!uploadUrl) throw new Error('Keine uploadUrl erhalten.');
-
-    // 2) Datei PUTen (Direct Upload)
     setStatus('Lade hoch…');
-    const up = await fetch(uploadUrl, { method:'PUT', body: blob });
-    if(!up.ok) throw new Error('Upload fehlgeschlagen');
-
-    setStatus('✅ Upload abgeschlossen — Status wird abgefragt…', 'ok');
-
-    // 3) Status einmal holen
-    const st1 = await getAssetStatus(uploadId);
-    showStatus(st1);
-
-    // 4) Optional: Polling bis "ready"
-    if(st1.status !== 'ready'){
-      await pollUntilReady(uploadId, (s)=>showStatus(s));
+    const put = await fetch(uploadUrl, { method:'PUT', body: blob });
+    if(!put.ok){
+      const txt = await put.text();
+      throw new Error(`Upload fehlgeschlagen (${put.status}): ${txt.slice(0,200)}`);
     }
 
-  }catch(e){ setStatus('❌ ' + (e.message||e), 'err'); }
+    setStatus('✅ Upload abgeschlossen — Status wird abgefragt…');
+    await pollMuxStatus(uploadId);
+  }catch(e){ setStatus('❌ ' + (e.message||e)); }
 };
 
-// --- Helpers ---
-
-async function getAssetStatus(uploadId){
-  const r = await fetch(`/api/mux-asset?uploadId=${encodeURIComponent(uploadId)}`);
-  const j = await r.json();
-  if(!r.ok) throw new Error(j?.error || 'Status-Check fehlgeschlagen');
-  return j; // { assetId, status, playbackId }
-}
-
-function showStatus(s){
-  setStatus(`Status: ${s.status}${s.playbackId ? ' — Playback verfügbar' : ''}`);
-  if(s.playbackId){
-    // schönen Mux Player anzeigen
-    $('#muxWrap').style.display = 'block';
-    const player = $('#muxPlayer');
-    player.setAttribute('playback-id', s.playbackId);
-    // optional Autoplay:
-    // player.setAttribute('autoplay', '');
-    // player.setAttribute('muted', '');
-  }
-}
-
-/**
- * Polling bis Mux fertig transkodiert hat.
- * stoppt nach ~3 Minuten (36 Versuche, alle 5s)
- */
-async function pollUntilReady(uploadId, onTick){
-  const maxTries = 36, delayMs = 5000;
-  for(let i=0;i<maxTries;i++){
-    await new Promise(r => setTimeout(r, delayMs));
-    try{
-      const s = await getAssetStatus(uploadId);
-      onTick?.(s);
-      if(s.status === 'ready') {
-        setStatus('✅ Transkodierung abgeschlossen — bereit zur Wiedergabe.', 'ok');
-        return s;
-      }
-    }catch(e){
-      // still quiet retry
+async function pollMuxStatus(uploadId){
+  // bis 90s / 30 Versuche alle 3s
+  for(let i=0;i<30;i++){
+    const res = await fetch(`/api/mux-asset?uploadId=${encodeURIComponent(uploadId)}`);
+    if(!res.ok){
+      const t = await res.text();
+      throw new Error(`Asset-Check fehlgeschlagen (${res.status}): ${t}`);
     }
+    const j = await safeJson(res);
+    setStatus(`Upload abgeschlossen — Status: ${j.status}`);
+
+    if (j.playbackId) {
+      showMuxPlayer(j.playbackId);
+      window.parent?.postMessage({type:'RECORD_UPLOADED', provider:'mux', uploadId, assetId:j.assetId, playbackId:j.playbackId}, '*');
+      return;
+    }
+    // noch nicht ready → kurz warten
+    await new Promise(r=>setTimeout(r, 3000));
   }
-  setStatus('⚠️ Transkodierung noch nicht fertig. Bitte später erneut prüfen.', 'err');
+  setStatus('ℹ️ Asset noch nicht „ready“. Später erneut prüfen.');
+}
+
+function showMuxPlayer(playbackId){
+  const mount = $('player');
+  mount.innerHTML = '';
+  const mp = document.createElement('mux-player');
+  mp.setAttribute('playback-id', playbackId);
+  mp.setAttribute('stream-type','on-demand');
+  mp.setAttribute('thumbnail-time','0');
+  mount.appendChild(mp);
 }
 </script>
 </body>
