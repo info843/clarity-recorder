@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Clarity Interview Recorder</title>
   <style>
-    body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;padding:16px}
-    video{width:100%;max-width:720px;background:#000;border-radius:12px}
-    button{padding:10px 14px;border-radius:8px;border:1px solid #d1d5db;background:#fff;cursor:pointer;margin-right:8px}
-    #status{margin:8px 0}
+    body { font-family: system-ui, Segoe UI, Roboto, Arial, sans-serif; padding:16px }
+    video { width:100%; max-width:720px; background:#000; border-radius:12px }
+    button { padding:10px 14px; border-radius:8px; border:1px solid #d1d5db; background:#fff; cursor:pointer; margin-right:8px }
+    #status { margin:8px 0; white-space:pre-wrap }
   </style>
 </head>
 <body>
@@ -23,60 +23,92 @@
   <video id="playback" controls style="display:none;margin-top:8px"></video>
 
 <script>
-let stream, rec, chunks=[], blob;
+let stream, rec, chunks = [], blob;
 
 const qs = new URLSearchParams(location.search);
-const uid = qs.get('uid') || 'TEST-UID';
+// Hier kommen später echte Werte aus Wix/iframe rein:
+const uid       = qs.get('uid')       || 'TEST-UID';
 const companyId = qs.get('companyId') || 'TEST-COMPANY';
+// Für Audio-only einfach video:false setzen:
+const mediaConstraints = { video: true, audio: true };
 
 function status(t){ document.getElementById('status').textContent = t; }
+function enable(id, on){ document.getElementById(id).disabled = !on; }
 
 document.getElementById('start').onclick = async () => {
-  try{
-    stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
+  try {
+    stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
     document.getElementById('preview').srcObject = stream;
-    chunks=[]; blob=null;
+    chunks = []; blob = null;
     rec = new MediaRecorder(stream);
     rec.ondataavailable = e => e.data?.size && chunks.push(e.data);
     rec.onstop = () => {
       blob = new Blob(chunks, { type: rec.mimeType || 'video/webm' });
-      document.getElementById('playback').src = URL.createObjectURL(blob);
-      document.getElementById('playback').style.display = 'block';
+      const pb = document.getElementById('playback');
+      pb.src = URL.createObjectURL(blob);
+      pb.style.display = 'block';
       status(`Fertig: ${(blob.size/1024/1024).toFixed(1)} MB`);
-      document.getElementById('upload').disabled = false;
+      enable('upload', true);
     };
     rec.start(1000);
     status('🔴 Aufnahme läuft…');
-    document.getElementById('start').disabled = true;
-    document.getElementById('stop').disabled = false;
-  }catch(e){ status('❌ Start fehlgeschlagen: ' + (e.message||e)); }
+    enable('start', false);
+    enable('stop', true);
+  } catch (e) {
+    status('❌ Start fehlgeschlagen: ' + (e.message || e));
+  }
 };
 
 document.getElementById('stop').onclick = () => {
-  try{ if(rec && rec.state!=='inactive') rec.stop(); }catch{}
-  try{ if(stream) stream.getTracks().forEach(t=>t.stop()); }catch{}
-  document.getElementById('stop').disabled = true;
+  try { if (rec && rec.state !== 'inactive') rec.stop(); } catch {}
+  try { if (stream) stream.getTracks().forEach(t => t.stop()); } catch {}
+  enable('stop', false);
 };
 
 document.getElementById('upload').onclick = async () => {
-  try{
-    if(!blob){ status('Keine Aufnahme vorhanden.'); return; }
+  try {
+    if (!blob) { status('Keine Aufnahme vorhanden.'); return; }
     status('Upload vorbereiten…');
 
-    const res = await fetch('/api/mux-upload', {
-      method:'POST', headers:{'Content-Type':'application/json'},
+    // 1) Upload-URL vom Server holen
+    const prepRes = await fetch('/api/mux-upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ uid, companyId })
     });
-    const { uploadUrl, uploadId, error } = await res.json();
-    if(error || !uploadUrl){ status('❌ ' + (error || 'Keine uploadUrl')); return; }
 
+    const prepText = await prepRes.text();
+    let prep;
+    try { prep = JSON.parse(prepText); }
+    catch { throw new Error('Server antwortete nicht mit JSON: ' + prepText.slice(0, 200)); }
+
+    if (!prepRes.ok || prep?.error) {
+      throw new Error('Server-Fehler: ' + (prep?.error || prepText));
+    }
+    if (!prep.uploadUrl) throw new Error('Keine uploadUrl erhalten.');
+
+    // 2) Direkt zu Mux hochladen
     status('Lade hoch…');
-    const up = await fetch(uploadUrl, { method:'PUT', body: blob });
-    if(!up.ok) throw new Error('Upload fehlgeschlagen');
+    const up = await fetch(prep.uploadUrl, {
+      method: 'PUT',
+      // kein Content-Type setzen – Mux akzeptiert raw Bytes
+      body: blob
+    });
 
-    status('✅ Upload abgeschlossen, wird transcodiert…');
-    window.parent?.postMessage({ type:'REC_DONE', provider:'mux', uploadId, uid, companyId }, '*');
-  }catch(e){ status('❌ ' + (e.message||e)); }
+    if (!up.ok) {
+      const errText = await up.text().catch(()=> '');
+      throw new Error('Upload fehlgeschlagen (' + up.status + '): ' + errText.slice(0, 200));
+    }
+
+    status('✅ Upload abgeschlossen, Mux transcodiert nun…');
+    // Optional: ans Parent-Fenster (Wix) melden
+    window.parent?.postMessage(
+      { type: 'RECORD_UPLOADED', provider: 'mux', uploadId: prep.uploadId, uid, companyId },
+      '*'
+    );
+  } catch (e) {
+    status('❌ ' + (e.message || e));
+  }
 };
 </script>
 </body>
