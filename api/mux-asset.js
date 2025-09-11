@@ -6,11 +6,13 @@ export default async function handler(req, res) {
     const { uploadId } = req.query || {};
     if (!uploadId) return res.status(400).json({ error: 'uploadId required' });
 
-    const auth = 'Basic ' + Buffer
-      .from(process.env.MUX_TOKEN_ID + ':' + process.env.MUX_TOKEN_SECRET)
-      .toString('base64');
+    const auth =
+      'Basic ' +
+      Buffer.from(
+        (process.env.MUX_TOKEN_ID || '') + ':' + (process.env.MUX_TOKEN_SECRET || '')
+      ).toString('base64');
 
-    // 1) Upload nachschlagen
+    // 1) Upload nachschlagen -> asset_id / status holen
     const upRes = await fetch(`https://api.mux.com/video/v1/uploads/${uploadId}`, {
       headers: { Authorization: auth }
     });
@@ -20,12 +22,12 @@ export default async function handler(req, res) {
     const assetId = upJson?.data?.asset_id || null;
     const uploadStatus = upJson?.data?.status || 'unknown';
 
-    // Wenn Asset noch nicht verknüpft -> noch warten
+    // Asset noch nicht verknüpft -> wir können (noch) nichts abspielen
     if (!assetId) {
       return res.status(200).json({ status: uploadStatus, assetReady: false });
     }
 
-    // 2) Asset nachschlagen (Playback IDs)
+    // 2) Asset nachschlagen -> status + playback_ids
     const asRes = await fetch(`https://api.mux.com/video/v1/assets/${assetId}`, {
       headers: { Authorization: auth }
     });
