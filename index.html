@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Clarity Interview Recorder</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;padding:16px}
+    video{width:100%;max-width:720px;background:#000;border-radius:12px}
+    button{padding:10px 14px;border-radius:8px;border:1px solid #d1d5db;background:#fff;cursor:pointer;margin-right:8px}
+    #status{margin:8px 0}
+  </style>
+</head>
+<body>
+  <h1>Interview Recorder</h1>
+  <div>
+    <button id="start">🎙 Aufnahme starten</button>
+    <button id="stop" disabled>⏹ Stop</button>
+    <button id="upload" disabled>⬆ Upload</button>
+  </div>
+  <div id="status">Bereit.</div>
+  <video id="preview" autoplay muted playsinline></video>
+  <video id="playback" controls style="display:none;margin-top:8px"></video>
+
+<script>
+let stream, rec, chunks=[], blob;
+
+const qs = new URLSearchParams(location.search);
+const uid = qs.get('uid') || 'TEST-UID';
+const companyId = qs.get('companyId') || 'TEST-COMPANY';
+
+function status(t){ document.getElementById('status').textContent = t; }
+
+document.getElementById('start').onclick = async () => {
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
+    document.getElementById('preview').srcObject = stream;
+    chunks=[]; blob=null;
+    rec = new MediaRecorder(stream);
+    rec.ondataavailable = e => e.data?.size && chunks.push(e.data);
+    rec.onstop = () => {
+      blob = new Blob(chunks, { type: rec.mimeType || 'video/webm' });
+      document.getElementById('playback').src = URL.createObjectURL(blob);
+      document.getElementById('playback').style.display = 'block';
+      status(`Fertig: ${(blob.size/1024/1024).toFixed(1)} MB`);
+      document.getElementById('upload').disabled = false;
+    };
+    rec.start(1000);
+    status('🔴 Aufnahme läuft…');
+    document.getElementById('start').disabled = true;
+    document.getElementById('stop').disabled = false;
+  }catch(e){ status('❌ Start fehlgeschlagen: ' + (e.message||e)); }
+};
+
+document.getElementById('stop').onclick = () => {
+  try{ if(rec && rec.state!=='inactive') rec.stop(); }catch{}
+  try{ if(stream) stream.getTracks().forEach(t=>t.stop()); }catch{}
+  document.getElementById('stop').disabled = true;
+};
+
+document.getElementById('upload').onclick = async () => {
+  try{
+    if(!blob){ status('Keine Aufnahme vorhanden.'); return; }
+    status('Upload vorbereiten…');
+
+    const res = await fetch('/api/mux-upload', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ uid, companyId })
+    });
+    const { uploadUrl, uploadId, error } = await res.json();
+    if(error || !uploadUrl){ status('❌ ' + (error || 'Keine uploadUrl')); return; }
+
+    status('Lade hoch…');
+    const up = await fetch(uploadUrl, { method:'PUT', body: blob });
+    if(!up.ok) throw new Error('Upload fehlgeschlagen');
+
+    status('✅ Upload abgeschlossen, wird transcodiert…');
+    window.parent?.postMessage({ type:'REC_DONE', provider:'mux', uploadId, uid, companyId }, '*');
+  }catch(e){ status('❌ ' + (e.message||e)); }
+};
+</script>
+</body>
+</html>
