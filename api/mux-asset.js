@@ -1,49 +1,64 @@
-// api/mux-asset.js
-// GET /api/mux-asset?uploadId=...
-
+// /api/mux-asset.js
 export default async function handler(req, res) {
+  // Preflight
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    return res.status(204).end();
+  }
+
+  if (req.method !== 'GET') {
+    return res
+      .status(405)
+      .json({ error: 'Method not allowed. Use GET.', method: req.method || '' });
+  }
+
   try {
-    if (req.method !== 'GET') return res.status(405).end();
+    const uploadId = req.query?.uploadId;
+    if (!uploadId) return res.status(400).json({ error: 'uploadId required' });
 
     if (!process.env.MUX_TOKEN_ID || !process.env.MUX_TOKEN_SECRET) {
       return res.status(500).json({ error: 'MUX credentials missing' });
     }
 
-    const { uploadId } = req.query || {};
-    if (!uploadId) return res.status(400).json({ error: 'uploadId required' });
-
     const auth =
       'Basic ' +
-      Buffer.from(process.env.MUX_TOKEN_ID + ':' + process.env.MUX_TOKEN_SECRET)
-        .toString('base64');
+      Buffer.from(
+        process.env.MUX_TOKEN_ID + ':' + process.env.MUX_TOKEN_SECRET
+      ).toString('base64');
 
-    // 1) Upload nachschlagen
-    const upRes = await fetch(`https://api.mux.com/video/v1/uploads/${uploadId}`, {
-      headers: { Authorization: auth }
-    });
-    const upJson = await upRes.json();
+    // Upload nachschlagen
+    const upRes = await fetch(
+      `https://api.mux.com/video/v1/uploads/${uploadId}`,
+      { headers: { Authorization: auth } }
+    );
+    const upJson = await upRes.json().catch(() => ({}));
     if (!upRes.ok) return res.status(upRes.status).json(upJson);
 
     const assetId = upJson?.data?.asset_id || null;
     const uploadStatus = upJson?.data?.status || 'unknown';
 
-    // 2) Wenn noch kein Asset, liefern wir den Upload-Status zurück
-    if (!assetId) {
-      return res.status(200).json({ assetId: null, status: uploadStatus, playbackId: null });
+    let playbackId = null;
+    if (assetId) {
+      const aRes = await fetch(
+        `https://api.mux.com/video/v1/assets/${assetId}`,
+        { headers: { Authorization: auth } }
+      );
+      const aJson = await aRes.json().catch(() => ({}));
+      if (!aRes.ok) return res.status(aRes.status).json(aJson);
+
+      playbackId = aJson?.data?.playback_ids?.[0]?.id || null;
     }
 
-    // 3) Asset nachschlagen
-    const asRes = await fetch(`https://api.mux.com/video/v1/assets/${assetId}`, {
-      headers: { Authorization: auth }
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    return res.status(200).json({
+      assetId,
+      status: assetId ? 'asset_ready' : uploadStatus,
+      playbackId
     });
-    const asJson = await asRes.json();
-    if (!asRes.ok) return res.status(asRes.status).json(asJson);
-
-    const status = asJson?.data?.status || 'unknown';
-    const playbackId = (asJson?.data?.playback_ids || [])[0]?.id || null;
-
-    return res.status(200).json({ assetId, status, playbackId });
   } catch (e) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
     return res.status(500).json({ error: String(e) });
   }
 }
