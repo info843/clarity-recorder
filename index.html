@@ -3,16 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Interview Recorder</title>
+  <title>Clarity Interview Recorder</title>
   <style>
     body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;padding:16px}
     .row{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
-    video, mux-player{width:100%;max-width:100%;background:#000;border-radius:12px}
+    video{width:100%;max-width:100%;background:#000;border-radius:12px}
     button{padding:10px 14px;border-radius:8px;border:1px solid #d1d5db;background:#fff;cursor:pointer;margin-right:8px}
-    #status{margin:12px 0}
+    #status{margin:8px 0}
+    .ok{color:#15803d}.err{color:#b91c1c}
   </style>
-  <!-- Mux Player (Web Component) -->
-  <script defer src="https://cdn.jsdelivr.net/npm/@mux/mux-player"></script>
 </head>
 <body>
   <h1>Interview Recorder</h1>
@@ -26,54 +25,42 @@
   <div id="status">Bereit.</div>
 
   <div class="row">
-    <!-- Linke Seite: Live Preview / Aufnahme -->
     <video id="preview" autoplay muted playsinline></video>
-
-    <!-- Rechte Seite: Playback (Mux Player, erst sichtbar wenn ready) -->
-    <mux-player id="mux" style="display:none" stream-type="on-demand"
-      primary-color="#2563eb" secondary-color="#111827" muted="false"
-      playsinline></mux-player>
+    <video id="playback" controls style="display:none"></video>
   </div>
 
 <script>
-let stream, rec, chunks=[], blob;
-let lastUploadId = null;
-let pollTimer = null;
+let stream, rec, chunks=[], blob, lastUploadId=null;
 
 const qs = new URLSearchParams(location.search);
 const uid = qs.get('uid') || 'TEST-UID';
 const companyId = qs.get('companyId') || 'TEST-COMPANY';
-const mode = (qs.get('mode') || 'video').toLowerCase(); // 'video' | 'audio'
 
-function status(t){ document.getElementById('status').textContent = t; }
-
-async function startCapture() {
-  const constraints = (mode === 'audio')
-    ? { audio: true, video: false }
-    : { audio: true, video: true };
-
-  stream = await navigator.mediaDevices.getUserMedia(constraints);
-  const prev = document.getElementById('preview');
-  prev.srcObject = stream;
-  prev.style.display = (mode === 'audio') ? 'none' : 'block';
-
-  chunks=[]; blob=null;
-  rec = new MediaRecorder(stream);
-  rec.ondataavailable = e => e.data?.size && chunks.push(e.data);
-  rec.onstop = () => {
-    blob = new Blob(chunks, { type: rec.mimeType || (mode==='audio' ? 'audio/webm' : 'video/webm') });
-    status(`Fertig: ${(blob.size/1024/1024).toFixed(1)} MB`);
-    document.getElementById('upload').disabled = false;
-  };
-  rec.start(1000);
-  status('🔴 Aufnahme läuft…');
-  document.getElementById('start').disabled = true;
-  document.getElementById('stop').disabled = false;
+function status(t, cls='') {
+  const el = document.getElementById('status');
+  el.className = cls;
+  el.textContent = t;
 }
 
 document.getElementById('start').onclick = async () => {
-  try { await startCapture(); }
-  catch(e){ status('❌ Start fehlgeschlagen: ' + (e.message||e)); }
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
+    document.getElementById('preview').srcObject = stream;
+    chunks=[]; blob=null;
+    rec = new MediaRecorder(stream);
+    rec.ondataavailable = e => e.data?.size && chunks.push(e.data);
+    rec.onstop = () => {
+      blob = new Blob(chunks, { type: rec.mimeType || 'video/webm' });
+      document.getElementById('playback').src = URL.createObjectURL(blob);
+      document.getElementById('playback').style.display = 'block';
+      status(`Fertig: ${(blob.size/1024/1024).toFixed(1)} MB`);
+      document.getElementById('upload').disabled = false;
+    };
+    rec.start(1000);
+    status('🔴 Aufnahme läuft…');
+    document.getElementById('start').disabled = true;
+    document.getElementById('stop').disabled = false;
+  }catch(e){ status('❌ Start fehlgeschlagen: ' + (e.message||e), 'err'); }
 };
 
 document.getElementById('stop').onclick = () => {
@@ -82,70 +69,72 @@ document.getElementById('stop').onclick = () => {
   document.getElementById('stop').disabled = true;
 };
 
+async function readJsonSafe(res){
+  const ct = res.headers.get('content-type') || '';
+  if (ct.includes('application/json')) return await res.json();
+  const t = await res.text();
+  throw new Error(`Server lieferte kein JSON (${res.status}): ${t.slice(0,200)}…`);
+}
+
+async function pollAsset(uploadId, maxMs=90_000){
+  const start = Date.now();
+  while (Date.now() - start < maxMs){
+    await new Promise(r=>setTimeout(r, 2500));
+    const r = await fetch(`/api/mux-asset?uploadId=${encodeURIComponent(uploadId)}`);
+    const j = await readJsonSafe(r);
+    if (j?.assetStatus === 'ready' && j?.playbackId){
+      return j;
+    }
+  }
+  return null;
+}
+
 document.getElementById('upload').onclick = async () => {
   try{
-    if(!blob){ status('Keine Aufnahme vorhanden.'); return; }
+    if(!blob){ status('Keine Aufnahme vorhanden.', 'err'); return; }
     status('Upload vorbereiten…');
 
-    // 1) Upload-URL vom Server holen
-    const res = await fetch('/api/mux-upload', {
-      method:'POST', headers:{'Content-Type':'application/json'},
+    // 1) Upload URL holen
+    const r1 = await fetch('/api/mux-upload', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ uid, companyId })
     });
+    const j1 = await readJsonSafe(r1);
+    if (j1.error || !j1.uploadUrl) throw new Error(j1.error || 'Keine uploadUrl');
+    lastUploadId = j1.uploadId || null;
 
-    // Fehler robust auslesen
-    const text = await res.text();
-    let data = {};
-    try { data = text ? JSON.parse(text) : {}; } catch { data = { error: 'Invalid JSON from server', raw: text }; }
-    if (!res.ok || data.error || !data.uploadUrl) {
-      status('❌ Server-Fehler: ' + (data.error || res.status));
-      return;
+    // 2) Direkt zu Mux hochladen
+    status('Lade zu Mux hoch…');
+    const up = await fetch(j1.uploadUrl, { method:'PUT', body: blob });
+    if(!up.ok) throw new Error('Upload fehlgeschlagen');
+
+    // 3) Asset-Status abholen (einmal, dann ggf. Polling)
+    status('Upload abgeschlossen — Status wird abgefragt…');
+    const r2 = await fetch(`/api/mux-asset?uploadId=${encodeURIComponent(lastUploadId)}`);
+    const j2 = await readJsonSafe(r2);
+
+    // Sofort anzeigen
+    status(`Upload abgeschlossen — Status: ${j2?.assetStatus || j2?.uploadStatus || 'unbekannt'}`, 'ok');
+
+    // 4) Falls noch nicht ready → Polling
+    let readyInfo = j2;
+    if (!(j2?.assetStatus === 'ready' && j2?.playbackId)) {
+      const polled = await pollAsset(lastUploadId);
+      if (polled) readyInfo = polled;
     }
 
-    // 2) Direkt-Upload zu Mux
-    status('Lade hoch…');
-    const up = await fetch(data.uploadUrl, { method:'PUT', body: blob });
-    if(!up.ok) throw new Error('Upload fehlgeschlagen: ' + up.status);
-
-    status('✅ Upload abgeschlossen — Status wird abgefragt…');
-    lastUploadId = data.uploadId;
-
-    // 3) Status sofort abfragen und anzeigen
-    await showMuxStatusOnce();
-
-    // 4) Wenn noch nicht 'ready', alle 5s pollen
-    if (pollTimer) clearInterval(pollTimer);
-    pollTimer = setInterval(showMuxStatusOnce, 5000);
-
-  } catch(e){
-    status('❌ ' + (e.message||e));
+    // 5) Player setzen, sobald playbackId da ist
+    if (readyInfo?.playbackId) {
+      const pb = document.getElementById('playback');
+      pb.src = `https://stream.mux.com/${readyInfo.playbackId}.m3u8`;
+      pb.style.display = 'block';
+      status('✅ Asset bereit — Playback gestartet', 'ok');
+    }
+  }catch(e){
+    status('❌ ' + (e.message||e), 'err');
   }
 };
-
-async function showMuxStatusOnce(){
-  if (!lastUploadId) return;
-
-  const r = await fetch(`/api/mux-asset?uploadId=${encodeURIComponent(lastUploadId)}`);
-  const j = await r.json();
-
-  // j: { uploadId, uploadStatus, assetId, assetStatus, playbackId }
-  const info = [
-    `Upload: ${j.uploadStatus || 'n/a'}`,
-    `Asset: ${j.assetStatus || 'n/a'}`,
-    j.assetId ? `AssetId: ${j.assetId}` : null,
-    j.playbackId ? `PlaybackId: ${j.playbackId}` : null
-  ].filter(Boolean).join(' — ');
-
-  status(`✅ Upload abgeschlossen — ${info}`);
-
-  // Wenn ready + playbackId → Mux Player zeigen
-  if (j.assetStatus === 'ready' && j.playbackId) {
-    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-    const mux = document.getElementById('mux');
-    mux.playbackId = j.playbackId;
-    mux.style.display = 'block';
-  }
-}
 </script>
 </body>
 </html>
