@@ -1,26 +1,25 @@
-// api/mux-upload.js
+// /api/mux-upload.js
 
-// Domains, die deine API (diese Route) aufrufen dürfen:
+// Wer darf diese API aufrufen?
 const ALLOWED_APP_ORIGINS = [
-  'https://interview.clarity-nvl.com',     // deine Subdomain (geplant)
-  'https://clarity-recorder.vercel.app',   // aktuelle Testdomain
+  'https://clarity-recorder.vercel.app',
+  'https://interview.clarity-nvl.com',
   'https://www.clarity-nvl.com',
   'https://clarity-nvl.com'
 ];
 
-// kleine Hilfsfunktion, um die Origin sauber zu ermitteln
 function getRequestOrigin(req) {
-  const hdrOrigin = req.headers?.origin || '';
-  if (hdrOrigin) return hdrOrigin;
-  const ref = req.headers?.referer || '';
-  try { return ref ? new URL(ref).origin : ''; } catch { return ''; }
+  const o = req.headers?.origin || '';
+  if (o) return o;
+  const r = req.headers?.referer || '';
+  try { return r ? new URL(r).origin : ''; } catch { return ''; }
 }
 
 export default async function handler(req, res) {
   const origin = getRequestOrigin(req);
   const isAllowed = ALLOWED_APP_ORIGINS.includes(origin);
 
-  // CORS-Header (damit deine Seite diese API aufrufen darf)
+  // CORS
   if (isAllowed) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
@@ -28,10 +27,14 @@ export default async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   }
 
-  // Preflight beantworten
+  // Preflight
   if (req.method === 'OPTIONS') return res.status(204).end();
 
-  if (req.method !== 'POST') return res.status(405).end();
+  if (req.method !== 'POST') {
+    return res
+      .status(405)
+      .json({ error: 'Method not allowed. Use POST.', method: req.method || '' });
+  }
 
   try {
     if (!process.env.MUX_TOKEN_ID || !process.env.MUX_TOKEN_SECRET) {
@@ -43,38 +46,30 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'uid/companyId required' });
     }
 
-    // Für Mux: Von welcher Origin dürfen Browser den Direkt-Upload machen?
-    const muxCorsOrigin = isAllowed ? origin : 'https://interview.clarity-nvl.com';
+    const corsOrigin = isAllowed ? origin : 'https://interview.clarity-nvl.com';
+    const auth =
+      'Basic ' +
+      Buffer.from(
+        process.env.MUX_TOKEN_ID + ':' + process.env.MUX_TOKEN_SECRET
+      ).toString('base64');
 
     const r = await fetch('https://api.mux.com/video/v1/uploads', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization':
-          'Basic ' +
-          Buffer.from(
-            process.env.MUX_TOKEN_ID + ':' + process.env.MUX_TOKEN_SECRET
-          ).toString('base64'),
-      },
+      headers: { 'Content-Type': 'application/json', Authorization: auth },
       body: JSON.stringify({
-        new_asset_settings: {
-          playback_policy: ['public'],
-          cors_origin: muxCorsOrigin
-        },
+        new_asset_settings: { playback_policy: ['public'], cors_origin: corsOrigin },
         passthrough: JSON.stringify({ uid, companyId })
       })
     });
 
-    const json = await r.json();
-    if (!r.ok) {
-      return res.status(r.status).json(json);
-    }
+    const json = await r.json().catch(() => ({}));
+    if (!r.ok) return res.status(r.status).json({ error: 'mux_error', detail: json });
 
-    res.status(200).json({
-      uploadUrl: json.data.url,
-      uploadId: json.data.id
+    return res.status(200).json({
+      uploadUrl: json?.data?.url,
+      uploadId: json?.data?.id
     });
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    return res.status(500).json({ error: String(e) });
   }
 }
