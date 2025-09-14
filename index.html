@@ -1,336 +1,140 @@
 <!doctype html>
 <html lang="de">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="theme-color" content="#0ea5e9"/>
-  <title>Clarity Interview Recorder</title>
-  <style>
-    :root{
-      --bg:#0b1220; --panel:#0f172a; --muted:#64748b; --ring:#38bdf8;
-      --ok:#16a34a; --warn:#f59e0b; --err:#dc2626; --txt:#e5e7eb;
-    }
-    *{box-sizing:border-box}
-    html,body{height:100%}
-    body{
-      margin:0; font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Arial,sans-serif;
-      color:var(--txt); background:radial-gradient(1200px 1200px at 10% -10%, #0b1a36, #0b1220 60%), var(--bg);
-      padding:24px;
-    }
-    .wrap{max-width:1100px;margin:0 auto}
-    header{display:flex;align-items:center;gap:14px;margin-bottom:18px}
-    .logo{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#38bdf8,#0ea5e9)}
-    h1{font-size:20px;margin:0}
-    .panel{
-      background:linear-gradient(185deg,rgba(56,189,248,.08),rgba(56,189,248,.03));
-      border:1px solid rgba(56,189,248,.15);
-      border-radius:16px; padding:16px;
-      box-shadow:0 12px 40px rgba(2,8,23,.35) inset, 0 0 0 1px rgba(56,189,248,.05);
-      backdrop-filter: blur(4px);
-    }
-    .row{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
-    video, audio{
-      width:100%;max-width:100%;background:#000;border-radius:12px;border:1px solid rgba(148,163,184,.25)
-    }
-    .btnbar{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0 14px}
-    button{
-      padding:10px 14px;border-radius:10px;border:1px solid rgba(148,163,184,.35);
-      background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02));
-      color:var(--txt); cursor:pointer; transition:all .18s ease;
-    }
-    button:hover{border-color:var(--ring); box-shadow:0 0 0 3px rgba(56,189,248,.15)}
-    button[disabled]{opacity:.55; cursor:not-allowed}
-    #status{margin:8px 0 2px; font-size:14px; color:var(--muted)}
-    .ok{color:var(--ok)} .warn{color:var(--warn)} .err{color:var(--err)}
-    .hidden{display:none !important;}
-    footer{margin-top:20px;color:#94a3b8;font-size:12px}
-    .badge{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:rgba(56,189,248,.1);border:1px solid rgba(56,189,248,.25);font-size:12px}
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Clarity Interview Recorder</title>
+<style>
+body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;padding:16px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+video{width:100%;max-width:100%;background:#000;border-radius:12px}
+button{padding:10px 14px;border-radius:8px;border:1px solid #d1d5db;background:#fff;cursor:pointer;margin-right:8px}
+#status{margin:8px 0}
+.ok{color:#15803d}.err{color:#b91c1c}
+</style>
 </head>
 <body>
-  <div class="wrap">
-    <header>
-      <div class="logo"></div>
-      <h1>Clarity Interview Recorder</h1>
-      <span id="badgeEnv" class="badge" title="UID/Mode wird vom Parent übergeben">iFrame-Control</span>
-    </header>
+<h1>Interview Recorder</h1>
 
-    <div class="panel">
-      <div class="btnbar" id="manualBar">
-        <button id="start">🎙 Aufnahme starten</button>
-        <button id="stop"  disabled>⏹ Stop</button>
-        <button id="upload" disabled>⬆ Upload</button>
-      </div>
-      <div id="status">Bereit.</div>
+<div>
+<button id="start">🎙 Aufnahme starten</button>
+<button id="stop" disabled>⏹ Stop</button>
+<button id="upload" disabled>⬆ Upload</button>
+</div>
 
-      <div class="row" style="margin-top:10px">
-        <video id="preview" autoplay muted playsinline></video>
-        <div>
-          <video id="playbackV" controls class="hidden"></video>
-          <audio id="playbackA" controls class="hidden"></audio>
-        </div>
-      </div>
-    </div>
+<div id="status">Bereit.</div>
 
-    <footer>
-      <span id="metaInfo"></span>
-    </footer>
-  </div>
+<div class="row">
+<video id="preview" autoplay muted playsinline></video>
+<video id="playback" controls style="display:none"></video>
+</div>
 
 <script>
-/* ===================== Globals ===================== */
-let stream, rec, chunks=[], blob=null, startedAt=0, lastUploadId=null, currentMode='video'; // 'audio'|'video'
-let parentOrigin='*'; // wird gesetzt, wenn Parent uns etwas schickt
-const ALLOWED_PARENTS = [
-  'https://www.clarity-nvl.com',
-  'https://clarity-nvl.com',
-  'https://editor.wix.com',            // optional für Tests
-  'http://localhost:3000',             // dev
-  'http://127.0.0.1:3000'
-];
+let stream, rec, chunks=[], blob, lastUploadId=null;
 
 const qs = new URLSearchParams(location.search);
-let UID = qs.get('uid') || '';
-let COMPANY = qs.get('companyId') || '';
-let LANG = qs.get('lang') || 'de';
-let AUTO_UPLOAD_DEFAULT = (qs.get('autoUpload') === '1');
+const uid = qs.get('uid') || 'TEST-UID';
+const companyId = qs.get('companyId') || 'TEST-COMPANY';
 
-/* ===================== UI helpers ===================== */
-const $ = (id)=>document.getElementById(id);
-const $status = $('#status');
-function status(t, cls=''){ $status.className = cls; $status.textContent = String(t||''); }
-function metaInfo(){ $('#metaInfo').textContent = `UID=${UID||'-'} • Mode=${currentMode} • Lang=${LANG}`; }
-function setManualVisible(v){
-  $('#manualBar').classList.toggle('hidden', !v);
-  $('#badgeEnv').textContent = v ? 'Standalone' : 'iFrame-Control';
+function status(t, cls='') {
+const el = document.getElementById('status');
+el.className = cls;
+el.textContent = t;
 }
 
-/* ===================== Media handling ===================== */
-function mimeTry(list){
-  for (const m of list){ if (MediaRecorder.isTypeSupported(m)) return m; }
-  return '';
-}
+document.getElementById('start').onclick = async () => {
+try{
+stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
+document.getElementById('preview').srcObject = stream;
+chunks=[]; blob=null;
+rec = new MediaRecorder(stream);
+rec.ondataavailable = e => e.data?.size && chunks.push(e.data);
+rec.onstop = () => {
+blob = new Blob(chunks, { type: rec.mimeType || 'video/webm' });
+document.getElementById('playback').src = URL.createObjectURL(blob);
+document.getElementById('playback').style.display = 'block';
+status(`Fertig: ${(blob.size/1024/1024).toFixed(1)} MB`);
+document.getElementById('upload').disabled = false;
+};
+rec.start(1000);
+status('🔴 Aufnahme läuft…');
+document.getElementById('start').disabled = true;
+document.getElementById('stop').disabled = false;
+}catch(e){ status('❌ Start fehlgeschlagen: ' + (e.message||e), 'err'); }
+};
 
-async function getConstraints(mode){
-  if (mode === 'audio'){
-    return { audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:true }, video:false };
-  }
-  return {
-    audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:true },
-    video: { width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:30} }
-  };
-}
+document.getElementById('stop').onclick = () => {
+try{ if(rec && rec.state!=='inactive') rec.stop(); }catch{}
+try{ if(stream) stream.getTracks().forEach(t=>t.stop()); }catch{}
+document.getElementById('stop').disabled = true;
+};
 
-async function startRecording(mode='video'){
-  currentMode = (mode==='audio') ? 'audio' : 'video';
-  // UI
-  $('#playbackV').classList.add('hidden');
-  $('#playbackA').classList.add('hidden');
-  $('#upload').disabled = true;
-  $('#stop').disabled = false;
-  $('#start').disabled = true;
-
-  try{
-    const cons = await getConstraints(currentMode);
-    stream = await navigator.mediaDevices.getUserMedia(cons);
-    $('#preview').srcObject = stream;
-
-    chunks=[]; blob=null; startedAt = Date.now();
-
-    // sinnvolle MIME-Fallbacks
-    const preferred = currentMode==='audio'
-      ? mimeTry(['audio/webm;codecs=opus','audio/ogg;codecs=opus','audio/mpeg'])
-      : mimeTry(['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/mp4;codecs=h264,aac']);
-    const opts = preferred ? { mimeType: preferred } : undefined;
-
-    rec = new MediaRecorder(stream, opts);
-    rec.ondataavailable = (e)=>{ if (e.data && e.data.size) chunks.push(e.data); };
-    rec.onerror = (e)=> notifyParent('recorder:error', { message: e?.error?.message || e?.message || 'Recorder error' });
-
-    rec.onstart = ()=>{
-      status('🔴 Aufnahme läuft …', 'warn');
-      notifyParent('recorder:started', { mode: currentMode });
-    };
-
-    rec.onstop = ()=>{
-      blob = new Blob(chunks, { type: rec.mimeType || (currentMode==='audio' ? 'audio/webm' : 'video/webm') });
-      const durMs = Math.max(0, Date.now() - startedAt);
-      const sizeMb = (blob.size/1024/1024).toFixed(2);
-
-      // Preview
-      if (currentMode === 'audio'){
-        $('#playbackA').src = URL.createObjectURL(blob);
-        $('#playbackA').classList.remove('hidden');
-      }else{
-        $('#playbackV').src = URL.createObjectURL(blob);
-        $('#playbackV').classList.remove('hidden');
-      }
-
-      $('#upload').disabled = false;
-      status(`Fertig: ${sizeMb} MB • Dauer: ${(durMs/1000).toFixed(1)}s`, 'ok');
-      notifyParent('recorder:finished', {
-        mode: currentMode,
-        durationMs: durMs,
-        sizeBytes: blob.size,
-        mimeType: blob.type
-      });
-    };
-
-    // kleine Timeslice, damit Daten regelmäßig fließen
-    rec.start(1000);
-  }catch(e){
-    const msg = e?.name==='NotAllowedError'
-      ? 'Zugriff verweigert. Bitte Kamera/Mikrofon im Browser erlauben.'
-      : (e?.message || 'Start fehlgeschlagen.');
-    status('❌ ' + msg, 'err');
-    notifyParent('recorder:error', { message: msg });
-    // Buttons zurücksetzen
-    $('#stop').disabled = true;
-    $('#start').disabled = false;
-  }
-}
-
-function stopRecording(){
-  try{ if (rec && rec.state!=='inactive') rec.stop(); }catch(_){}
-  try{ if (stream) stream.getTracks().forEach(t=>t.stop()); }catch(_){}
-  $('#stop').disabled = true;
-  $('#start').disabled = false;
-}
-
-/* ===================== Upload (Mux) ===================== */
 async function readJsonSafe(res){
-  const ct = res.headers.get('content-type') || '';
-  if (ct.includes('application/json')) return await res.json();
-  const t = await res.text();
-  throw new Error(`Server lieferte kein JSON (${res.status}): ${t.slice(0,200)}…`);
+const ct = res.headers.get('content-type') || '';
+if (ct.includes('application/json')) return await res.json();
+const t = await res.text();
+throw new Error(`Server lieferte kein JSON (${res.status}): ${t.slice(0,200)}…`);
 }
 
 async function pollAsset(uploadId, maxMs=90_000){
-  const start = Date.now();
-  while (Date.now() - start < maxMs){
-    await new Promise(r=>setTimeout(r, 2500));
-    const r = await fetch(`/api/mux-asset?uploadId=${encodeURIComponent(uploadId)}`);
-    const j = await readJsonSafe(r);
-    if (j?.assetStatus === 'ready' && j?.playbackId){
-      return j;
-    }
-  }
-  return null;
+const start = Date.now();
+while (Date.now() - start < maxMs){
+await new Promise(r=>setTimeout(r, 2500));
+const r = await fetch(`/api/mux-asset?uploadId=${encodeURIComponent(uploadId)}`);
+const j = await readJsonSafe(r);
+if (j?.assetStatus === 'ready' && j?.playbackId){
+return j;
+}
+}
+return null;
 }
 
-async function doUpload(autoNotify=true){
-  if(!blob){ status('Keine Aufnahme vorhanden.', 'err'); return null; }
-  status('Upload vorbereiten…');
+document.getElementById('upload').onclick = async () => {
+try{
+if(!blob){ status('Keine Aufnahme vorhanden.', 'err'); return; }
+status('Upload vorbereiten…');
 
-  // 1) Upload-URL holen
-  const r1 = await fetch('/api/mux-upload', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ uid:UID, companyId:COMPANY, mode:currentMode })
-  });
-  const j1 = await readJsonSafe(r1);
-  if (j1.error || !j1.uploadUrl) throw new Error(j1.error || 'Keine uploadUrl');
-  lastUploadId = j1.uploadId || null;
-
-  // 2) Direkt zu Mux hochladen
-  status('Lade zu Mux hoch…');
-  const up = await fetch(j1.uploadUrl, { method:'PUT', body: blob });
-  if(!up.ok) throw new Error('Upload fehlgeschlagen');
-
-  // 3) Asset-Status abholen (sofort + Polling)
-  status('Upload abgeschlossen — Status wird abgefragt…');
-  const r2 = await fetch(`/api/mux-asset?uploadId=${encodeURIComponent(lastUploadId)}`);
-  let j2 = await readJsonSafe(r2);
-
-  if (!(j2?.assetStatus === 'ready' && j2?.playbackId)){
-    const polled = await pollAsset(lastUploadId);
-    if (polled) j2 = polled;
-  }
-
-  if (j2?.playbackId){
-    const url = `https://stream.mux.com/${j2.playbackId}.m3u8`;
-    if (currentMode === 'audio'){
-      $('#playbackA').src = url; $('#playbackA').classList.remove('hidden');
-    }else{
-      $('#playbackV').src = url; $('#playbackV').classList.remove('hidden');
-    }
-    status('✅ Asset bereit — Playback gestartet', 'ok');
-  }else{
-    status(`Upload abgeschlossen — Status: ${j2?.assetStatus || j2?.uploadStatus || 'unbekannt'}`, 'ok');
-  }
-
-  const info = {
-    uploadId: lastUploadId,
-    assetStatus: j2?.assetStatus,
-    playbackId: j2?.playbackId || null
-  };
-
-  if (autoNotify){
-    notifyParent('recorder:uploaded', { mode: currentMode, ...info });
-  }
-  return info;
-}
-
-/* ===================== Parent Messaging ===================== */
-function isAllowedOrigin(origin){
-  if (!origin) return false;
-  return ALLOWED_PARENTS.some(o => origin.startsWith(o));
-}
-function notifyParent(type, payload){
-  try{
-    window.parent.postMessage({ source:'clarity-recorder', type, payload }, parentOrigin || '*');
-  }catch(_){}
-}
-
-window.addEventListener('message', async (ev)=>{
-  const { origin, data } = ev;
-  if (!data || typeof data !== 'object') return;
-  if (!('type' in data)) return;
-
-  // Ersten verlässlichen Origin mitschreiben
-  if (isAllowedOrigin(origin)) parentOrigin = origin;
-
-  if (data.type === 'start'){
-    // Payload: { mode:'audio'|'video', uid, lang, candidate:{firstName,lastName}, autoUpload?:boolean }
-    const p = data;
-    UID = (p.uid || UID || '').trim();
-    LANG = (p.lang || LANG || 'de');
-    if (p.companyId) COMPANY = p.companyId;
-    metaInfo();
-    status('Starte …');
-    await startRecording(p.mode === 'audio' ? 'audio' : 'video');
-    if (p.autoUpload) AUTO_UPLOAD_DEFAULT = true;
-  }
-  else if (data.type === 'stop'){
-    stopRecording();
-    if (AUTO_UPLOAD_DEFAULT){
-      try{ await doUpload(true); }catch(e){ notifyParent('recorder:error', { message: e?.message || String(e) }); }
-    }
-  }
+// 1) Upload URL holen
+const r1 = await fetch('/api/mux-upload', {
+method:'POST',
+headers:{'Content-Type':'application/json'},
+body: JSON.stringify({ uid, companyId })
 });
+const j1 = await readJsonSafe(r1);
+if (j1.error || !j1.uploadUrl) throw new Error(j1.error || 'Keine uploadUrl');
+lastUploadId = j1.uploadId || null;
 
-/* ===================== Wire manual UI ===================== */
-$('#start').onclick = ()=> startRecording(currentMode);
-$('#stop').onclick  = ()=> stopRecording();
-$('#upload').onclick= async ()=>{
-  try{ await doUpload(true); }catch(e){ status('❌ ' + (e.message||e), 'err'); notifyParent('recorder:error', { message: e?.message || String(e) }); }
+// 2) Direkt zu Mux hochladen
+status('Lade zu Mux hoch…');
+const up = await fetch(j1.uploadUrl, { method:'PUT', body: blob });
+if(!up.ok) throw new Error('Upload fehlgeschlagen');
+
+// 3) Asset-Status abholen (einmal, dann ggf. Polling)
+status('Upload abgeschlossen — Status wird abgefragt…');
+const r2 = await fetch(`/api/mux-asset?uploadId=${encodeURIComponent(lastUploadId)}`);
+const j2 = await readJsonSafe(r2);
+
+// Sofort anzeigen
+status(`Upload abgeschlossen — Status: ${j2?.assetStatus || j2?.uploadStatus || 'unbekannt'}`, 'ok');
+
+// 4) Falls noch nicht ready → Polling
+let readyInfo = j2;
+if (!(j2?.assetStatus === 'ready' && j2?.playbackId)) {
+const polled = await pollAsset(lastUploadId);
+if (polled) readyInfo = polled;
+}
+
+// 5) Player setzen, sobald playbackId da ist
+if (readyInfo?.playbackId) {
+const pb = document.getElementById('playback');
+pb.src = `https://stream.mux.com/${readyInfo.playbackId}.m3u8`;
+pb.style.display = 'block';
+status('✅ Asset bereit — Playback gestartet', 'ok');
+}
+}catch(e){
+status('❌ ' + (e.message||e), 'err');
+}
 };
-
-/* ===================== Boot ===================== */
-(function boot(){
-  // Wenn in iFrame eingebettet -> manuelle Buttons ausblenden
-  const embedded = (window.self !== window.top);
-  setManualVisible(!embedded);
-  metaInfo();
-  status('Bereit. Erwarte Start-Signal …');
-
-  // Parent informieren
-  notifyParent('recorder:ready', { supports: {
-    webm: MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus'),
-    mp4:  MediaRecorder.isTypeSupported('video/mp4;codecs=h264,aac'),
-    audio: MediaRecorder.isTypeSupported('audio/webm;codecs=opus') || MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')
-  }});
-})();
 </script>
 </body>
 </html>
