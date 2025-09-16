@@ -7,11 +7,13 @@
 <style>
   :root{ --bg:#0a1622; --panel:#0f2436; --txt:#e6f0ff; --muted:#9bb3c9; --btn:#1f9cf0; --btn2:#0ea5e9; --ok:#22c55e; --warn:#f59e0b; --err:#ef4444; }
   html,body{height:100%}
-  body{margin:0;background:
+  body{
+    margin:0;background:
       radial-gradient(900px 500px at 10% -10%,#0d2030,transparent),
       radial-gradient(900px 500px at 120% 120%,#0d2030,transparent),
       var(--bg);
-    color:var(--txt);font:15px/1.4 ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial}
+    color:var(--txt);font:15px/1.4 ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial
+  }
   .wrap{max-width:980px;margin:28px auto;padding:0 18px}
   .card{background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:18px 18px 22px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
   .brand{display:flex;align-items:center;gap:12px;margin:0 0 12px}
@@ -54,9 +56,12 @@
   const btnStart=$('#btnStart'), btnStop=$('#btnStop'), btnUpload=$('#btnUpload');
   const statusEl=$('#status'), metaEl=$('#meta'); const v=$('#video'), a=$('#audio');
 
+  // FIX #1: API-Host robust ermitteln (Query ?api=… oder aktueller Origin)
   const params   = new URLSearchParams(location.search);
   const API_BASE = params.get('api') || window.location.origin;
-  let mode       = (params.get('mode') || 'audio').toLowerCase(); // <— Default aus Query
+
+  // Modus optional aus Query (Wix kann später per postMessage überschreiben)
+  let mode       = (params.get('mode') || 'audio').toLowerCase();
   let uid=params.get('uid')||'', companyId=params.get('companyId')||'', lang=params.get('lang')||'en';
   let maxSeconds= Number(params.get('maxSeconds')||0);
 
@@ -151,8 +156,10 @@
     try{
       say('Preparing upload…'); btnUpload.disabled=true;
 
+      // FIX #2: alle API-Calls gehen über denselben Host (API_BASE)
       const r1=await fetch(`${API_BASE}/api/mux-upload`,{
-        method:'POST', headers:{'Content-Type':'application/json'},
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
         body:JSON.stringify({ uid, companyId, mode })
       });
       const j1=await readJsonSafe(r1);
@@ -206,13 +213,14 @@
     const d=ev?.data||{};
     if (d.type==='ping') ev.source?.postMessage?.({ type:'recorder:ready' }, '*');
     if (d.type==='start') {
-      mode=(d.mode||mode||'audio').toLowerCase(); // Query-Default bleibt, ggf. Message überschreibt
+      mode=(d.mode||mode||'audio').toLowerCase();
       uid=d.uid||uid; lang=d.lang||lang; companyId=d.companyId||companyId; maxSeconds=Number(d.maxSeconds||maxSeconds||0);
       startRecording();
     }
     if (d.type==='stop') stopRecording();
   });
 
+  // announce ready
   setTimeout(()=> parent?.postMessage?.({ type:'recorder:ready' }, '*'), 50);
 })();
 </script>
