@@ -48,14 +48,13 @@
     <div class="meta" id="meta"></div>
   </div>
 </div>
-
 <script>
 (function(){
   const $=(s)=>document.querySelector(s);
   const btnStart=$('#btnStart'), btnStop=$('#btnStop'), btnUpload=$('#btnUpload');
   const statusEl=$('#status'), metaEl=$('#meta'); const v=$('#video'), a=$('#audio');
 
-  // API-Basis: ?api=… oder eigenes Origin (macht die /api-Calls kugelsicher)
+  // API-Basis: ?api=… oder eigenes Origin
   const params   = new URLSearchParams(location.search);
   const API_BASE = params.get('api') || window.location.origin;
 
@@ -151,7 +150,6 @@
     try{
       say('Preparing upload…'); btnUpload.disabled=true;
 
-      // 1) Direct Upload URL vom API-Host holen
       const r1=await fetch(`${API_BASE}/api/mux-upload`,{
         method:'POST', headers:{'Content-Type':'application/json'},
         body:JSON.stringify({ uid, companyId, mode })
@@ -159,19 +157,16 @@
       const j1=await readJsonSafe(r1); if(!j1?.uploadUrl) throw new Error(j1?.error || 'No uploadUrl');
       lastUploadId=j1.uploadId||null;
 
-      // 2) Blob direkt zu Mux hochladen
       say('Uploading to Mux…','warn');
       const up=await fetch(j1.uploadUrl,{ method:'PUT', body:lastBlob });
       if(!up.ok) throw new Error(`Upload failed (${up.status})`);
 
-      // 3) Asset prüfen / pollen
       say('Upload complete – checking asset…','warn');
       let j2=(await (await fetch(`${API_BASE}/api/mux-asset?uploadId=${encodeURIComponent(lastUploadId)}`)).json());
       if(!(j2?.assetStatus==='ready' && (j2?.playbackId || j2?.mp4Url))){
         const p=await pollAsset(lastUploadId); if(p) j2=p;
       }
 
-      // Vorschau (MP4 wenn schon fertig)
       if (j2?.mp4Url) {
         const url=j2.mp4Url;
         if(mode==='video'){ v.src=url; v.controls=true; } else { a.src=url; a.load(); }
@@ -196,12 +191,10 @@
     }
   }
 
-  // UI
   btnStart.addEventListener('click', ()=> startRecording());
   btnStop.addEventListener('click',  stopRecording);
   btnUpload.addEventListener('click', doMuxUpload);
 
-  // Messaging (von Wix)
   window.addEventListener('message', (ev)=>{
     const d=ev?.data||{};
     if (d.type==='ping') ev.source?.postMessage?.({ type:'recorder:ready' }, '*');
