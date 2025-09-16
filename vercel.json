@@ -1,12 +1,11 @@
 {
   "version": 2,
   "builds": [
-    { "src": "api/*.js", "use": "@vercel/node" },
-    { "src": "*.html",   "use": "@vercel/static" }
+    { "src": "api/*.js",   "use": "@vercel/node" },
+    { "src": "**/*.html",  "use": "@vercel/static" }
   ],
   "routes": [
     { "src": "^/api/mux-upload$", "dest": "/api/mux-upload.js" },
-    { "src": "^/api/mux-asset$",  "dest": "/api/mux-asset.js"  },
-    { "src": "/(.*)",             "dest": "/index.html"        }
+    { "src": "^/api/mux-asset$",  "dest": "/api/mux-asset.js" }
   ]
 }
