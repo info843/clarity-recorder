@@ -1,11 +1,11 @@
-// api/mux-asset.js
+// api/mux-asset.js  (Node / Vercel)
+// Reads upload & asset status; returns playbackId, HLS URL, and (if ready) direct MP4 URL.
 
-// Erlaubte Origins (wie bei mux-upload):
 const ALLOWED_APP_ORIGINS = [
   'https://interview.clarity-nvl.com',
-  'https://clarity-recorder.vercel.app',
   'https://www.clarity-nvl.com',
-  'https://clarity-nvl.com'
+  'https://clarity-nvl.com',
+  'https://clarity-recorder.vercel.app'
 ];
 
 function getOrigin(req) {
@@ -32,73 +32,55 @@ function muxAuthHeader() {
   return 'Basic ' + Buffer.from(id + ':' + sec).toString('base64');
 }
 
+async function readJsonSafe(res) {
+  const ct = res.headers.get('content-type') || '';
+  if (ct.includes('application/json')) return res.json();
+  const t = await res.text();
+  return { raw: t };
+}
+
 export default async function handler(req, res) {
   setCors(req, res);
   if (req.method === 'OPTIONS') return res.status(204).end();
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
-
-  if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
     const uploadId = (req.query?.uploadId || '').toString().trim();
-    if (!uploadId) {
-      return res.status(400).json({ error: 'uploadId required' });
-    }
+    if (!uploadId) return res.status(400).json({ error: 'uploadId required' });
 
     const auth = muxAuthHeader();
-    if (!auth) {
-      return res.status(500).json({ error: 'MUX credentials missing' });
-    }
+    if (!auth) return res.status(500).json({ error: 'MUX credentials missing' });
 
-    // 1) Upload lesen
-    const upRes = await fetch(`https://api.mux.com/video/v1/uploads/${uploadId}`, {
-      headers: { Authorization: auth }
-    });
-    const upJson = await upRes.json().catch(() => ({}));
-
-    if (!upRes.ok) {
-      return res.status(upRes.status).json({
-        error: 'mux-upload-fetch-failed',
-        details: upJson
-      });
-    }
+    // 1) Upload status
+    const upRes  = await fetch(`https://api.mux.com/video/v1/uploads/${uploadId}`, { headers: { Authorization: auth } });
+    const upJson = await readJsonSafe(upRes);
+    if (!upRes.ok) return res.status(upRes.status).json({ error:'mux-upload-fetch-failed', details: upJson });
 
     const uploadStatus = upJson?.data?.status || 'unknown';
     const assetId = upJson?.data?.asset_id || null;
 
-    // 2) Falls Asset da ist → Asset/Playback holen
-    let assetStatus = null;
-    let playbackId = null;
+    let assetStatus = null, playbackId = null, playbackUrl = null, mp4Url = null;
 
     if (assetId) {
-      const asRes = await fetch(`https://api.mux.com/video/v1/assets/${assetId}`, {
-        headers: { Authorization: auth }
-      });
-      const asJson = await asRes.json().catch(() => ({}));
-
-      if (!asRes.ok) {
-        return res.status(asRes.status).json({
-          error: 'mux-asset-fetch-failed',
-          details: asJson
-        });
-      }
+      // 2) Asset info (status + playback)
+      const asRes  = await fetch(`https://api.mux.com/video/v1/assets/${assetId}`, { headers: { Authorization: auth } });
+      const asJson = await readJsonSafe(asRes);
+      if (!asRes.ok) return res.status(asRes.status).json({ error:'mux-asset-fetch-failed', details: asJson });
 
       assetStatus = asJson?.data?.status || null;
-      const p = asJson?.data?.playback_ids?.[0]?.id || null;
-      playbackId = p || null;
+      playbackId  = asJson?.data?.playback_ids?.[0]?.id || null;
+      playbackUrl = playbackId ? `https://stream.mux.com/${playbackId}.m3u8` : null;
+
+      // 3) Optional: files (MP4) if enabled and ready
+      const flRes  = await fetch(`https://api.mux.com/video/v1/assets/${assetId}/files`, { headers: { Authorization: auth } });
+      const flJson = await readJsonSafe(flRes);
+      if (flRes.ok && Array.isArray(flJson?.data)) {
+        const mp4 = flJson.data.find(f => f?.type === 'video' && f?.ext === 'mp4' && f?.status === 'ready');
+        if (mp4?.url) mp4Url = mp4.url;
+      }
     }
 
-    return res.status(200).json({
-      ok: true,
-      uploadId,
-      uploadStatus,        // e.g. "asset_created" | "ready" | ...
-      assetId,             // kann null sein, bis Mux fertig ist
-      assetStatus,         // e.g. "ready" | "preparing" | null
-      playbackId,          // z.B. "abcd1234…"
-      playbackUrl: playbackId ? `https://stream.mux.com/${playbackId}.m3u8` : null
-    });
+    return res.status(200).json({ ok:true, uploadId, uploadStatus, assetId, assetStatus, playbackId, playbackUrl, mp4Url });
   } catch (e) {
     return res.status(500).json({ error: String(e) });
   }
