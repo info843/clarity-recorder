@@ -1,10 +1,25 @@
 {
   "builds": [
     { "src": "api/*.js", "use": "@vercel/node" },
+    { "src": "recorder.html", "use": "@vercel/static" },
+    { "src": "avatar.html", "use": "@vercel/static" },
     { "src": "index.html", "use": "@vercel/static" }
   ],
   "rewrites": [
     { "source": "/api/:match*", "destination": "/api/:match*" },
     { "source": "/", "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Frame-Options", "value": "ALLOWALL" },
+        { "key": "Permissions-Policy", "value": "microphone=*, camera=*, autoplay=*, clipboard-write=*" },
+        {
+          "key": "Content-Security-Policy",
+          "value": "frame-ancestors 'self' https://*.wixsite.com https://*.wix.com https://*.editorx.io https://*.wixmp.com https://clarity-nvl.com https://www.clarity-nvl.com https://interview.clarity-nvl.com;"
+        }
+      ]
+    }
   ]
 }
