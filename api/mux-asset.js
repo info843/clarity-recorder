@@ -1,74 +1,43 @@
-// api/mux-asset.js — final (ESM, CORS + Upload/Asset-Status)
-const ALLOW_ORIGINS = [
-  'https://interview.clarity-nvl.com',
-  'https://www.clarity-nvl.com',
-  'https://clarity-recorder.vercel.app'
-];
-
-function cors(req, res) {
-  const origin = req.headers.origin || '';
-  if (ALLOW_ORIGINS.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  }
-  res.setHeader('Vary', 'Origin');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.setHeader('Access-Control-Max-Age', '86400');
-  if (req.method === 'OPTIONS') { res.status(204).end(); return true; }
-  return false;
-}
-
-function send(res, status, data) {
-  res.status(status);
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.end(JSON.stringify(data));
-}
+// Looks up Upload + Asset in Mux by uploadId and returns playback info
 
 export default async function handler(req, res) {
-  if (cors(req, res)) return;
-  if (req.method !== 'GET') return send(res, 405, { ok:false, error:'method_not_allowed' });
+  if (req.method === 'OPTIONS') return res.status(204).end();
+
+  const uploadId = String(req.query.uploadId || '').trim();
+  if (!uploadId) return res.status(400).json({ ok: false, error: 'missing_uploadId' });
+
+  if (!process.env.MUX_TOKEN_ID || !process.env.MUX_TOKEN_SECRET) {
+    return res.status(500).json({ ok: false, error: 'missing_env' });
+  }
+
+  const basic = Buffer.from(`${process.env.MUX_TOKEN_ID}:${process.env.MUX_TOKEN_SECRET}`).toString('base64');
+
+  async function muxGet(path) {
+    const r = await fetch(`https://api.mux.com${path}`, { headers: { 'Authorization': `Basic ${basic}` } });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw { code: 'mux_http_error', status: r.status, body: j };
+    return j?.data;
+  }
 
   try {
-    const uploadId = (req.query?.uploadId || '').toString();
-    if (!uploadId) return send(res, 400, { ok:false, error:'missing_uploadId' });
+    const upload = await muxGet(`/video/v1/uploads/${uploadId}`);
+    const status = upload?.status || 'unknown';
+    const assetId = upload?.asset_id || null;
 
-    const id = process.env.MUX_TOKEN_ID;
-    const secret = process.env.MUX_TOKEN_SECRET;
-    if (!id || !secret) return send(res, 500, { ok:false, error:'mux_credentials_missing' });
+    let playbackId = null, mp4Url = null, assetStatus = status;
 
-    const auth = 'Basic ' + Buffer.from(`${id}:${secret}`).toString('base64');
-
-    // Upload abfragen
-    const upRes = await fetch(`https://api.mux.com/video/v1/uploads/${encodeURIComponent(uploadId)}`, {
-      headers: { 'Authorization': auth }
-    });
-    const up = await upRes.json().catch(()=> ({}));
-    if (!upRes.ok) return send(res, upRes.status || 502, { ok:false, error:'mux_upload_lookup_failed', detail: up });
-
-    const assetId = up?.data?.asset_id || null;
-    if (!assetId) {
-      return send(res, 200, { ok:true, uploadId, assetStatus: up?.data?.status || 'preparing' });
+    if (assetId) {
+      const asset = await muxGet(`/video/v1/assets/${assetId}`);
+      assetStatus = asset?.status || status;
+      playbackId = asset?.playback_ids?.[0]?.id || null;
+      if (playbackId) {
+        // public playback -> MP4 URL ableitbar
+        mp4Url = `https://stream.mux.com/${playbackId}/medium.mp4`;
+      }
     }
 
-    // Asset abfragen
-    const asRes = await fetch(`https://api.mux.com/video/v1/assets/${encodeURIComponent(assetId)}`, {
-      headers: { 'Authorization': auth }
-    });
-    const as = await asRes.json().catch(()=> ({}));
-    if (!asRes.ok) return send(res, asRes.status || 502, { ok:false, error:'mux_asset_lookup_failed', detail: as });
-
-    const playbackId = as?.data?.playback_ids?.[0]?.id || null;
-    const mp4Url     = playbackId ? `https://stream.mux.com/${playbackId}/medium.mp4` : null;
-
-    return send(res, 200, {
-      ok: true,
-      uploadId,
-      assetId,
-      assetStatus: as?.data?.status || 'ready',
-      playbackId,
-      mp4Url
-    });
+    return res.status(200).json({ ok: true, assetStatus, playbackId, mp4Url });
   } catch (e) {
-    return send(res, 500, { ok:false, error:'server_error', detail:String(e?.message||e) });
+    return res.status(400).json({ ok: false, error: 'mux_lookup_failed', detail: e });
   }
 }
