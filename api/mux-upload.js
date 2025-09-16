@@ -1,73 +1,66 @@
-// api/mux-upload.js — final (ESM, Node on Vercel, CORS + OPTIONS)
-const ALLOW_ORIGINS = [
-  'https://interview.clarity-nvl.com',
-  'https://www.clarity-nvl.com',
-  'https://clarity-recorder.vercel.app'
-];
-
-function cors(req, res) {
-  const origin = req.headers.origin || '';
-  if (ALLOW_ORIGINS.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  }
-  res.setHeader('Vary', 'Origin');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.setHeader('Access-Control-Max-Age', '86400');
-  if (req.method === 'OPTIONS') {
-    res.status(204).end();
-    return true;
-  }
-  return false;
-}
-
-function send(res, status, data) {
-  res.status(status);
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.end(JSON.stringify(data));
-}
+// Creates a Mux Direct Upload URL for the recorder
+// Requires env vars on *this* Vercel project: MUX_TOKEN_ID, MUX_TOKEN_SECRET
 
 export default async function handler(req, res) {
-  if (cors(req, res)) return;
-  if (req.method !== 'POST') return send(res, 405, { ok:false, error:'method_not_allowed' });
+  // CORS preflight
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+  if (req.method !== 'POST') {
+    return res.status(405).json({ ok: false, error: 'method_not_allowed' });
+  }
+
+  const ORIGIN = req.headers.origin || 'https://interview.clarity-nvl.com';
+  const { uid = '', companyId = '', mode = 'video' } = (req.body && typeof req.body === 'object') ? req.body : {};
+
+  if (!process.env.MUX_TOKEN_ID || !process.env.MUX_TOKEN_SECRET) {
+    return res.status(500).json({ ok: false, error: 'missing_env', hint: 'Set MUX_TOKEN_ID and MUX_TOKEN_SECRET in Vercel > Project > Settings > Environment Variables' });
+  }
+
+  const basic = Buffer.from(`${process.env.MUX_TOKEN_ID}:${process.env.MUX_TOKEN_SECRET}`).toString('base64');
 
   try {
-    const { uid = '', companyId = '', mode = 'audio' } = req.body || {};
-    const id = process.env.MUX_TOKEN_ID;
-    const secret = process.env.MUX_TOKEN_SECRET;
-    if (!id || !secret) return send(res, 500, { ok:false, error:'mux_credentials_missing' });
-
-    const auth = 'Basic ' + Buffer.from(`${id}:${secret}`).toString('base64');
-
-    // Mux Direct Upload erzeugen (CORS auf dem Upload selbst setzen)
+    // Create Direct Upload
     const r = await fetch('https://api.mux.com/video/v1/uploads', {
       method: 'POST',
       headers: {
-        'Authorization': auth,
+        'Authorization': `Basic ${basic}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        cors_origin: '*', // PUT geht direkt zu GCS; hier reicht *
+        cors_origin: ORIGIN, // must match the iframe/page origin
+        // (alternativ: "*" erlaubt alle Origins; ORIGIN ist enger & sicherer)
         new_asset_settings: {
           playback_policy: ['public'],
           mp4_support: 'standard',
-          passthrough: JSON.stringify({ uid, companyId, mode })
+          passthrough: JSON.stringify({ uid, companyId, mode }).slice(0, 255)
         },
-        passthrough: JSON.stringify({ uid, companyId, mode })
+        timeout: 3600
       })
     });
 
     const j = await r.json().catch(() => ({}));
-    if (!r.ok || !j?.data?.url) {
-      return send(res, r.status || 502, { ok:false, error:'mux_upload_create_failed', detail:j });
+    if (!r.ok) {
+      return res.status(400).json({
+        ok: false,
+        error: 'mux_upload_create_failed',
+        detail: j,
+        origin: ORIGIN
+      });
     }
 
-    return send(res, 200, {
+    const upload = j?.data;
+    return res.status(200).json({
       ok: true,
-      uploadUrl: j.data.url,
-      uploadId:  j.data.id
+      uploadUrl: upload?.url || '',
+      uploadId: upload?.id || '',
+      origin: ORIGIN
     });
   } catch (e) {
-    return send(res, 500, { ok:false, error:'server_error', detail:String(e?.message||e) });
+    return res.status(500).json({
+      ok: false,
+      error: 'mux_upload_unexpected',
+      message: String(e && e.message || e)
+    });
   }
 }
