@@ -1,11 +1,26 @@
 {
-  "version": 2,
   "builds": [
-    { "src": "api/*.js",   "use": "@vercel/node" },
-    { "src": "**/*.html",  "use": "@vercel/static" }
+    { "src": "api/*.js", "use": "@vercel/node" },
+    { "src": "recorder.html", "use": "@vercel/static" },
+    { "src": "avatar.html", "use": "@vercel/static" },
+    { "src": "index.html", "use": "@vercel/static" }
   ],
   "routes": [
-    { "src": "^/api/mux-upload$", "dest": "/api/mux-upload.js" },
-    { "src": "^/api/mux-asset$",  "dest": "/api/mux-asset.js" }
+    { "src": "/api/(.*)", "dest": "/api/$1" },
+    { "src": "/recorder.html", "dest": "/recorder.html" },
+    { "src": "/avatar.html", "dest": "/avatar.html" },
+    { "src": "/", "dest": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET,POST,OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization, X-Requested-With, Origin, Accept" },
+        { "key": "Access-Control-Max-Age", "value": "86400" },
+        { "key": "Cache-Control", "value": "no-store" }
+      ]
+    }
   ]
 }
