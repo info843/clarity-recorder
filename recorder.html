@@ -42,7 +42,7 @@
     </div>
     <div class="status" id="status">Ready.</div>
     <div class="view">
-      <video id="video" playsinline muted></video>
+      <video id="video" playsinline muted autoplay></video>
       <audio id="audio" controls style="display:none"></audio>
     </div>
     <div class="meta" id="meta"></div>
@@ -54,11 +54,12 @@
   const btnStart=$('#btnStart'), btnStop=$('#btnStop'), btnUpload=$('#btnUpload');
   const statusEl=$('#status'), metaEl=$('#meta'); const v=$('#video'), a=$('#audio');
 
-  // API-Basis: ?api=… oder eigenes Origin
   const params   = new URLSearchParams(location.search);
   const API_BASE = params.get('api') || window.location.origin;
+  let mode       = (params.get('mode') || 'audio').toLowerCase(); // <— Default aus Query
+  let uid=params.get('uid')||'', companyId=params.get('companyId')||'', lang=params.get('lang')||'en';
+  let maxSeconds= Number(params.get('maxSeconds')||0);
 
-  let mode='audio', uid='', companyId='', lang='en', maxSeconds=0;
   let stream=null, rec=null, chunks=[], startedAt=0, lastBlob=null, timer=null, lastUploadId=null;
 
   function say(m, cls){ statusEl.textContent=m; statusEl.className='status '+(cls||''); }
@@ -154,7 +155,11 @@
         method:'POST', headers:{'Content-Type':'application/json'},
         body:JSON.stringify({ uid, companyId, mode })
       });
-      const j1=await readJsonSafe(r1); if(!j1?.uploadUrl) throw new Error(j1?.error || 'No uploadUrl');
+      const j1=await readJsonSafe(r1);
+      if(!r1.ok || !j1?.uploadUrl){
+        console.error('MUX upload create failed detail:', j1);
+        throw new Error('mux_upload_create_failed');
+      }
       lastUploadId=j1.uploadId||null;
 
       say('Uploading to Mux…','warn');
@@ -191,16 +196,18 @@
     }
   }
 
+  // UI
   btnStart.addEventListener('click', ()=> startRecording());
   btnStop.addEventListener('click',  stopRecording);
   btnUpload.addEventListener('click', doMuxUpload);
 
+  // Messaging (Wix steuert Start/Stop)
   window.addEventListener('message', (ev)=>{
     const d=ev?.data||{};
     if (d.type==='ping') ev.source?.postMessage?.({ type:'recorder:ready' }, '*');
     if (d.type==='start') {
-      mode=(d.mode||'audio').toLowerCase();
-      uid=d.uid||''; lang=d.lang||'en'; companyId=d.companyId||''; maxSeconds=Number(d.maxSeconds||0);
+      mode=(d.mode||mode||'audio').toLowerCase(); // Query-Default bleibt, ggf. Message überschreibt
+      uid=d.uid||uid; lang=d.lang||lang; companyId=d.companyId||companyId; maxSeconds=Number(d.maxSeconds||maxSeconds||0);
       startRecording();
     }
     if (d.type==='stop') stopRecording();
