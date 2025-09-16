@@ -5,21 +5,11 @@
     { "src": "avatar.html", "use": "@vercel/static" },
     { "src": "index.html", "use": "@vercel/static" }
   ],
-  "routes": [
-    { "src": "/api/(.*)", "dest": "/api/$1" },
-    { "src": "/recorder.html", "dest": "/recorder.html" },
-    { "src": "/avatar.html", "dest": "/avatar.html" },
-    { "src": "/", "dest": "/index.html" }
-  ],
   "headers": [
     {
-      "source": "/api/(.*)",
+      "source": "/(.*)",
       "headers": [
-        { "key": "Access-Control-Allow-Origin", "value": "*" },
-        { "key": "Access-Control-Allow-Methods", "value": "GET,POST,OPTIONS" },
-        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization, X-Requested-With, Origin, Accept" },
-        { "key": "Access-Control-Max-Age", "value": "86400" },
-        { "key": "Cache-Control", "value": "no-store" }
+        { "key": "Permissions-Policy", "value": "microphone=(self), camera=(self)" }
       ]
     }
   ]
