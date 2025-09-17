@@ -1,7 +1,27 @@
 {
   "version": 2,
-  "functions": { "api/*.js": { "runtime": "nodejs20.x", "memory": 1024, "maxDuration": 10 } },
+  "functions": {
+    "api/*.js": {
+      "runtime": "nodejs22.x",
+      "memory": 1024,
+      "maxDuration": 10
+    }
+  },
   "routes": [
-    { "src": "/api/(.*)", "dest": "/api/$1" }
+    { "src": "/api/(.*)", "dest": "/api/$1" },
+    { "src": "/", "dest": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Frame-Options", "value": "ALLOWALL" },
+        { "key": "Permissions-Policy", "value": "microphone=*, camera=*, autoplay=*, clipboard-write=*" },
+        {
+          "key": "Content-Security-Policy",
+          "value": "frame-ancestors 'self' https://*.wixsite.com https://*.wix.com https://*.editorx.io https://*.wixmp.com https://clarity-nvl.com https://www.clarity-nvl.com https://interview.clarity-nvl.com;"
+        }
+      ]
+    }
   ]
 }
