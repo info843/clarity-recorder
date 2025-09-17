@@ -78,3 +78,259 @@ footer{margin-top:20px;color:#94a3b8;font-size:12px}
 </div>
 
 <script>
+/* ===================== Globals ===================== */
+let stream, rec, chunks=[], blob=null, startedAt=0, lastUploadId=null, currentMode='video'; // 'audio'|'video'
+let parentOrigin='*'; // wird gesetzt, wenn Parent uns etwas schickt
+const ALLOWED_PARENTS = [
+https://www.clarity-nvl.com',
+https://clarity-nvl.com',
+https://editor.wix.com',            // optional für Tests
+http://localhost:3000',             // dev
+http://127.0.0.1:3000'
+];
+
+const qs = new URLSearchParams(location.search);
+let UID = qs.get('uid') || '';
+let COMPANY = qs.get('companyId') || '';
+let LANG = qs.get('lang') || 'de';
+let AUTO_UPLOAD_DEFAULT = (qs.get('autoUpload') === '1');
+
+/* ===================== UI helpers ===================== */
+const $ = (id)=>document.getElementById(id);
+const $status = $('#status');
+function status(t, cls=''){ $status.className = cls; $status.textContent = String(t||''); }
+function metaInfo(){ $('#metaInfo').textContent = `UID=${UID||'-'} • Mode=${currentMode} • Lang=${LANG}`; }
+function setManualVisible(v){
+$('#manualBar').classList.toggle('hidden', !v);
+$('#badgeEnv').textContent = v ? 'Standalone' : 'iFrame-Control';
+}
+
+/* ===================== Media handling ===================== */
+function mimeTry(list){
+for (const m of list){ if (MediaRecorder.isTypeSupported(m)) return m; }
+return '';
+}
+
+async function getConstraints(mode){
+if (mode === 'audio'){
+return { audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:true }, video:false };
+}
+return {
+audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:true },
+video: { width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:30} }
+};
+}
+
+async function startRecording(mode='video'){
+currentMode = (mode==='audio') ? 'audio' : 'video';
+// UI
+$('#playbackV').classList.add('hidden');
+$('#playbackA').classList.add('hidden');
+$('#upload').disabled = true;
+$('#stop').disabled = false;
+$('#start').disabled = true;
+
+try{
+const cons = await getConstraints(currentMode);
+stream = await navigator.mediaDevices.getUserMedia(cons);
+$('#preview').srcObject = stream;
+
+chunks=[]; blob=null; startedAt = Date.now();
+
+// sinnvolle MIME-Fallbacks
+const preferred = currentMode==='audio'
+? mimeTry(['audio/webm;codecs=opus','audio/ogg;codecs=opus','audio/mpeg'])
+: mimeTry(['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/mp4;codecs=h264,aac']);
+const opts = preferred ? { mimeType: preferred } : undefined;
+
+rec = new MediaRecorder(stream, opts);
+rec.ondataavailable = (e)=>{ if (e.data && e.data.size) chunks.push(e.data); };
+rec.onerror = (e)=> notifyParent('recorder:error', { message: e?.error?.message || e?.message || 'Recorder error' });
+
+rec.onstart = ()=>{
+status('🔴 Aufnahme läuft …', 'warn');
+notifyParent('recorder:started', { mode: currentMode });
+};
+
+rec.onstop = ()=>{
+blob = new Blob(chunks, { type: rec.mimeType || (currentMode==='audio' ? 'audio/webm' : 'video/webm') });
+const durMs = Math.max(0, Date.now() - startedAt);
+const sizeMb = (blob.size/1024/1024).toFixed(2);
+
+// Preview
+if (currentMode === 'audio'){
+$('#playbackA').src = URL.createObjectURL(blob);
+$('#playbackA').classList.remove('hidden');
+}else{
+$('#playbackV').src = URL.createObjectURL(blob);
+$('#playbackV').classList.remove('hidden');
+}
+
+$('#upload').disabled = false;
+status(`Fertig: ${sizeMb} MB • Dauer: ${(durMs/1000).toFixed(1)}s`, 'ok');
+notifyParent('recorder:finished', {
+mode: currentMode,
+durationMs: durMs,
+sizeBytes: blob.size,
+mimeType: blob.type
+});
+};
+
+// kleine Timeslice, damit Daten regelmäßig fließen
+rec.start(1000);
+}catch(e){
+const msg = e?.name==='NotAllowedError'
+? 'Zugriff verweigert. Bitte Kamera/Mikrofon im Browser erlauben.'
+: (e?.message || 'Start fehlgeschlagen.');
+status('❌ ' + msg, 'err');
+notifyParent('recorder:error', { message: msg });
+// Buttons zurücksetzen
+$('#stop').disabled = true;
+$('#start').disabled = false;
+}
+}
+
+function stopRecording(){
+try{ if (rec && rec.state!=='inactive') rec.stop(); }catch(_){}
+try{ if (stream) stream.getTracks().forEach(t=>t.stop()); }catch(_){}
+$('#stop').disabled = true;
+$('#start').disabled = false;
+}
+
+/* ===================== Upload (Mux) ===================== */
+async function readJsonSafe(res){
+const ct = res.headers.get('content-type') || '';
+if (ct.includes('application/json')) return await res.json();
+const t = await res.text();
+throw new Error(`Server lieferte kein JSON (${res.status}): ${t.slice(0,200)}…`);
+}
+
+async function pollAsset(uploadId, maxMs=90_000){
+const start = Date.now();
+while (Date.now() - start < maxMs){
+await new Promise(r=>setTimeout(r, 2500));
+const r = await fetch(`/api/mux-asset?uploadId=${encodeURIComponent(uploadId)}`);
+const j = await readJsonSafe(r);
+if (j?.assetStatus === 'ready' && j?.playbackId){
+return j;
+}
+}
+return null;
+}
+
+async function doUpload(autoNotify=true){
+if(!blob){ status('Keine Aufnahme vorhanden.', 'err'); return null; }
+status('Upload vorbereiten…');
+
+// 1) Upload-URL holen
+const r1 = await fetch('/api/mux-upload', {
+method:'POST',
+headers:{'Content-Type':'application/json'},
+body: JSON.stringify({ uid:UID, companyId:COMPANY, mode:currentMode })
+});
+const j1 = await readJsonSafe(r1);
+if (j1.error || !j1.uploadUrl) throw new Error(j1.error || 'Keine uploadUrl');
+lastUploadId = j1.uploadId || null;
+
+// 2) Direkt zu Mux hochladen
+status('Lade zu Mux hoch…');
+const up = await fetch(j1.uploadUrl, { method:'PUT', body: blob });
+if(!up.ok) throw new Error('Upload fehlgeschlagen');
+
+// 3) Asset-Status abholen (sofort + Polling)
+status('Upload abgeschlossen — Status wird abgefragt…');
+const r2 = await fetch(`/api/mux-asset?uploadId=${encodeURIComponent(lastUploadId)}`);
+let j2 = await readJsonSafe(r2);
+
+if (!(j2?.assetStatus === 'ready' && j2?.playbackId)){
+const polled = await pollAsset(lastUploadId);
+if (polled) j2 = polled;
+}
+
+if (j2?.playbackId){
+const url = `https://stream.mux.com/${j2.playbackId}.m3u8`;
+if (currentMode === 'audio'){
+$('#playbackA').src = url; $('#playbackA').classList.remove('hidden');
+}else{
+$('#playbackV').src = url; $('#playbackV').classList.remove('hidden');
+}
+status('✅ Asset bereit — Playback gestartet', 'ok');
+}else{
+status(`Upload abgeschlossen — Status: ${j2?.assetStatus || j2?.uploadStatus || 'unbekannt'}`, 'ok');
+}
+
+const info = {
+uploadId: lastUploadId,
+assetStatus: j2?.assetStatus,
+playbackId: j2?.playbackId || null
+};
+
+if (autoNotify){
+notifyParent('recorder:uploaded', { mode: currentMode, ...info });
+}
+return info;
+}
+
+/* ===================== Parent Messaging ===================== */
+function isAllowedOrigin(origin){
+if (!origin) return false;
+return ALLOWED_PARENTS.some(o => origin.startsWith(o));
+}
+function notifyParent(type, payload){
+try{
+window.parent.postMessage({ source:'clarity-recorder', type, payload }, parentOrigin || '*');
+}catch(_){}
+}
+
+window.addEventListener('message', async (ev)=>{
+const { origin, data } = ev;
+if (!data || typeof data !== 'object') return;
+if (!('type' in data)) return;
+
+// Ersten verlässlichen Origin mitschreiben
+if (isAllowedOrigin(origin)) parentOrigin = origin;
+
+if (data.type === 'start'){
+// Payload: { mode:'audio'|'video', uid, lang, candidate:{firstName,lastName}, autoUpload?:boolean }
+const p = data;
+UID = (p.uid || UID || '').trim();
+LANG = (p.lang || LANG || 'de');
+if (p.companyId) COMPANY = p.companyId;
+metaInfo();
+status('Starte …');
+await startRecording(p.mode === 'audio' ? 'audio' : 'video');
+if (p.autoUpload) AUTO_UPLOAD_DEFAULT = true;
+}
+else if (data.type === 'stop'){
+stopRecording();
+if (AUTO_UPLOAD_DEFAULT){
+try{ await doUpload(true); }catch(e){ notifyParent('recorder:error', { message: e?.message || String(e) }); }
+}
+}
+});
+
+/* ===================== Wire manual UI ===================== */
+$('#start').onclick = ()=> startRecording(currentMode);
+$('#stop').onclick  = ()=> stopRecording();
+$('#upload').onclick= async ()=>{
+try{ await doUpload(true); }catch(e){ status('❌ ' + (e.message||e), 'err'); notifyParent('recorder:error', { message: e?.message || String(e) }); }
+};
+
+/* ===================== Boot ===================== */
+(function boot(){
+// Wenn in iFrame eingebettet -> manuelle Buttons ausblenden
+const embedded = (window.self !== window.top);
+setManualVisible(!embedded);
+metaInfo();
+status('Bereit. Erwarte Start-Signal …');
+
+// Parent informieren
+notifyParent('recorder:ready', { supports: {
+webm: MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus'),
+mp4:  MediaRecorder.isTypeSupported('video/mp4;codecs=h264,aac'),
+audio: MediaRecorder.isTypeSupported('audio/webm;codecs=opus') || MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')
+}});
+})();
+</script>
+</body>
+</html>
