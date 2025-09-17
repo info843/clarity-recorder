@@ -1,6 +1,7 @@
 {
   "name": "clarity-recorder",
-  "version": "1.1.0",
   "private": true,
-  "type": "module"
+  "dependencies": {
+    "@mux/mux-node": "^8.3.0"
+  }
 }
