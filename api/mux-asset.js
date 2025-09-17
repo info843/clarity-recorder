@@ -1,65 +1,54 @@
-// api/mux-upload.js
+// api/mux-asset.js
 export default async function handler(req, res) {
   // CORS
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     return res.status(204).end();
   }
   res.setHeader('Access-Control-Allow-Origin', '*');
 
-  if (req.method !== 'POST') {
+  if (req.method !== 'GET') {
     return res.status(405).json({ error: 'method_not_allowed' });
   }
+
+  const { uploadId = '' } = req.query || {};
+  if (!uploadId) return res.status(400).json({ error: 'missing_uploadId' });
 
   const { MUX_TOKEN_ID, MUX_TOKEN_SECRET } = process.env;
   if (!MUX_TOKEN_ID || !MUX_TOKEN_SECRET) {
     return res.status(500).json({ error: 'mux_env_missing' });
   }
-
-  // Nimm die echte Origin wenn vorhanden, sonst deine Domain
-  const origin =
-    req.headers.origin ||
-    'https://interview.clarity-nvl.com';
-
   const auth = Buffer.from(`${MUX_TOKEN_ID}:${MUX_TOKEN_SECRET}`).toString('base64');
 
-  // Minimaler, von Mux sicher akzeptierter Body
-  const body = {
-    cors_origin: origin,                        // keine Wildcard
-    new_asset_settings: {
-      playback_policy: ['public']
-      // mp4_support NICHT setzen → manche Pläne/Endpunkte weigern sich sonst
-    }
-  };
-
   try {
-    const r = await fetch('https://api.mux.com/video/v1/uploads', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(body)
+    // Upload-Status abfragen
+    const ru = await fetch(`https://api.mux.com/video/v1/uploads/${encodeURIComponent(uploadId)}`, {
+      headers: { Authorization: `Basic ${auth}` }
     });
+    const ju = await ru.json();
 
-    const j = await r.json().catch(() => ({}));
-
-    if (!r.ok || !j?.data?.url || !j?.data?.id) {
-      // Reiche die Mux-Fehlerinformationen transparent zurück
-      return res.status(400).json({
-        error: 'mux_api_error',
-        muxStatus: r.status,
-        muxBody: j
-      });
+    const assetId = ju?.data?.asset_id || null;
+    if (!assetId) {
+      return res.status(200).json({ assetStatus: 'waiting', upload: ju?.data || null });
     }
+
+    // Asset-Status abfragen
+    const ra = await fetch(`https://api.mux.com/video/v1/assets/${assetId}`, {
+      headers: { Authorization: `Basic ${auth}` }
+    });
+    const ja = await ra.json();
+
+    const status = ja?.data?.status || 'unknown';
+    const playbackId = ja?.data?.playback_ids?.[0]?.id || null;
 
     return res.status(200).json({
-      uploadId: j.data.id,
-      uploadUrl: j.data.url
+      assetStatus: status,
+      playbackId
+      // Für HLS: https://stream.mux.com/${playbackId}.m3u8
     });
   } catch (e) {
-    return res.status(500).json({ error: 'mux_upload_create_failed', message: String(e) });
+    return res.status(500).json({ error: 'mux_asset_lookup_failed', message: String(e) });
   }
 }
