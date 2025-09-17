@@ -1,15 +1,19 @@
 {
+  "version": 2,
   "builds": [
     { "src": "api/*.js", "use": "@vercel/node" },
-    { "src": "recorder.html", "use": "@vercel/static" },
-    { "src": "avatar.html", "use": "@vercel/static" },
-    { "src": "index.html", "use": "@vercel/static" }
+    { "src": "*.html",   "use": "@vercel/static" }
+  ],
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/api/$1" },
+    { "src": "/(recorder|avatar)\\.html", "dest": "/$1.html" },
+    { "src": "/$", "dest": "/index.html" }
   ],
   "headers": [
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "Permissions-Policy", "value": "microphone=(self), camera=(self)" }
+        { "key": "X-Robots-Tag", "value": "noindex" }
       ]
     }
   ]
