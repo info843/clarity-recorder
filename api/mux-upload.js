@@ -1,71 +1,88 @@
-// api/mux-upload.js
+// File: api/mux-upload.js
+// Serverless (Vercel) – erzeugt eine Direct-Upload-URL bei Mux
+
 export default async function handler(req, res) {
-  // CORS
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    return res.status(204).end();
-  }
+// --- CORS (inkl. Preflight)
+if (req.method === 'OPTIONS') {
+res.setHeader('Access-Control-Allow-Origin', '*');
+res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
+res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+res.setHeader('Access-Control-Max-Age', '86400');
+return res.status(204).end();
+}
+res.setHeader('Access-Control-Allow-Origin', '*');
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
+// Nur POST zulassen
+if (req.method !== 'POST') {
+return res.status(405).json({ error: 'method_not_allowed' });
+}
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'method_not_allowed' });
-  }
+// ENV prüfen
+const { MUX_TOKEN_ID, MUX_TOKEN_SECRET } = process.env;
+if (!MUX_TOKEN_ID || !MUX_TOKEN_SECRET) {
+return res.status(500).json({ error: 'mux_env_missing' });
+}
 
-  const { MUX_TOKEN_ID, MUX_TOKEN_SECRET } = process.env;
-  if (!MUX_TOKEN_ID || !MUX_TOKEN_SECRET) {
-    return res.status(500).json({ error: 'mux_env_missing' });
-  }
+// Basic-Auth für Mux
+const auth = Buffer.from(`${MUX_TOKEN_ID}:${MUX_TOKEN_SECRET}`).toString('base64');
 
-  // A: Request-Body (optional Infos zum Logging)
-  let meta = {};
-  try { meta = req.body || {}; } catch (_) {}
+// =========================================================
+// SCHRITT A — Origin für Mux fest verdrahten (häufigster 400-Fehler)
+//  - Mux verlangt eine exakte Origin (Schema + Host, kein Slash)
+//  - Wenn du später von Wix aus triggerst, ggf. auf 'https://www.clarity-nvl.com' ändern
+const FIXED_ORIGIN = 'https://interview.clarity-nvl.com';
 
-  // B: Aufruf an Mux – Direct Upload anlegen
-  try {
-    const auth = Buffer.from(`${MUX_TOKEN_ID}:${MUX_TOKEN_SECRET}`).toString('base64');
+// Request-Body für Mux (minimal & gültig)
+const uploadBody = {
+cors_origin: FIXED_ORIGIN,
+new_asset_settings: { playback_policy: ['public'] }
+};
+// =========================================================
 
-    const createBody = {
-      new_asset_settings: {
-        playback_policy: ['public'],
-        mp4_support: 'standard',
-        passthrough: JSON.stringify({
-          uid: meta.uid || null,
-          companyId: meta.companyId || null,
-          mode: meta.mode || null,
-        }),
-      },
-      cors_origin: '*',
-      // optional: upload domain whitelisten, z.B. "https://interview.clarity-nvl.com"
-      // cors_origin: "https://interview.clarity-nvl.com",
-    };
+try {
+// Anfrage an Mux
+const muxResp = await fetch('https://api.mux.com/video/v1/uploads', {
+method: 'POST',
+headers: {
+Authorization: `Basic ${auth}`,
+Content-Type': 'application/json'
+},
+body: JSON.stringify(uploadBody)
+});
 
-    const r = await fetch('https://api.mux.com/video/v1/uploads', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(createBody),
-    });
+// Antwort (als Text holen, danach versuchen zu parsen)
+const text = await muxResp.text();
+let json;
+try { json = text ? JSON.parse(text) : {}; }
+catch { json = { raw: text }; }
 
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok || !j?.data?.id || !j?.data?.url) {
-      return res.status(r.status || 400).json({
-        error: 'mux_create_failed',
-        status: r.status,
-        mux: j
-      });
-    }
+// =========================================================
+// SCHRITT B — Fehler sauber nach vorne durchreichen
+if (!muxResp.ok) {
+// Hier siehst du im Client exakt, was Mux bemängelt (cors_origin etc.)
+return res.status(muxResp.status).json({
+error: 'mux_api_error',
+muxStatus: muxResp.status,
+muxBody: json
+});
+}
+// =========================================================
 
-    // C: Upload-Daten zurück an den Client
-    return res.status(200).json({
-      uploadId: j.data.id,
-      uploadUrl: j.data.url,
-    });
-  } catch (err) {
-    return res.status(500).json({ error: 'mux_upload_endpoint_error', message: String(err?.message || err) });
-  }
+// =========================================================
+// SCHRITT C — Erfolgsantwort für den Recorder
+//  - Mux liefert { data: { id, url, ... } }
+const data = json?.data || {};
+return res.status(200).json({
+uploadId: data.id || null,
+uploadUrl: data.url || null,
+mux: json
+});
+// =========================================================
+} catch (err) {
+// Netz-/Runtime-Fehler
+return res.status(500).json({
+error: 'mux_request_failed',
+message: err?.message || String(err)
+});
+}
 }
