@@ -1,6 +1,3 @@
-// api/mux-asset.js  (Node / Vercel)
-// Reads upload & asset status; returns playbackId, HLS URL, and (if ready) direct MP4 URL.
-
 const ALLOWED_APP_ORIGINS = [
   'https://interview.clarity-nvl.com',
   'https://www.clarity-nvl.com',
@@ -14,7 +11,6 @@ function getOrigin(req) {
   const r = req.headers?.referer || '';
   try { return r ? new URL(r).origin : ''; } catch { return ''; }
 }
-
 function setCors(req, res) {
   const origin = getOrigin(req);
   if (ALLOWED_APP_ORIGINS.includes(origin)) {
@@ -24,14 +20,12 @@ function setCors(req, res) {
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   }
 }
-
 function muxAuthHeader() {
   const id = process.env.MUX_TOKEN_ID;
   const sec = process.env.MUX_TOKEN_SECRET;
   if (!id || !sec) return null;
   return 'Basic ' + Buffer.from(id + ':' + sec).toString('base64');
 }
-
 async function readJsonSafe(res) {
   const ct = res.headers.get('content-type') || '';
   if (ct.includes('application/json')) return res.json();
@@ -51,7 +45,6 @@ export default async function handler(req, res) {
     const auth = muxAuthHeader();
     if (!auth) return res.status(500).json({ error: 'MUX credentials missing' });
 
-    // 1) Upload status
     const upRes  = await fetch(`https://api.mux.com/video/v1/uploads/${uploadId}`, { headers: { Authorization: auth } });
     const upJson = await readJsonSafe(upRes);
     if (!upRes.ok) return res.status(upRes.status).json({ error:'mux-upload-fetch-failed', details: upJson });
@@ -62,7 +55,6 @@ export default async function handler(req, res) {
     let assetStatus = null, playbackId = null, playbackUrl = null, mp4Url = null;
 
     if (assetId) {
-      // 2) Asset info (status + playback)
       const asRes  = await fetch(`https://api.mux.com/video/v1/assets/${assetId}`, { headers: { Authorization: auth } });
       const asJson = await readJsonSafe(asRes);
       if (!asRes.ok) return res.status(asRes.status).json({ error:'mux-asset-fetch-failed', details: asJson });
@@ -71,7 +63,6 @@ export default async function handler(req, res) {
       playbackId  = asJson?.data?.playback_ids?.[0]?.id || null;
       playbackUrl = playbackId ? `https://stream.mux.com/${playbackId}.m3u8` : null;
 
-      // 3) Optional: files (MP4) if enabled and ready
       const flRes  = await fetch(`https://api.mux.com/video/v1/assets/${assetId}/files`, { headers: { Authorization: auth } });
       const flJson = await readJsonSafe(flRes);
       if (flRes.ok && Array.isArray(flJson?.data)) {
