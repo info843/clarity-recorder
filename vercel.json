@@ -1,23 +1,23 @@
 {
   "version": 2,
-  "builds": [
-    { "src": "api/*.js", "use": "@vercel/node" },
-    { "src": "*.html", "use": "@vercel/static" }
-  ],
-  "routes": [
-    { "src": "/api/(.*)", "dest": "/api/$1" },
-    { "src": "/(avatar|recorder)\\.html", "dest": "/$1.html" },
-    { "src": "/", "dest": "/index.html" }
-  ],
+  "functions": {
+    "api/*.js": {
+      "runtime": "nodejs22.x",
+      "memory": 1536,
+      "maxDuration": 15
+    }
+  },
   "headers": [
     {
-      "source": "/(.*)",
+      "source": "/api/(.*)",
       "headers": [
         { "key": "Access-Control-Allow-Origin", "value": "*" },
         { "key": "Access-Control-Allow-Methods", "value": "GET,POST,OPTIONS" },
-        { "key": "Access-Control-Allow-Headers", "value": "Content-Type,Authorization" },
-        { "key": "Permissions-Policy", "value": "microphone=*, camera=*" }
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type,Authorization" }
       ]
     }
+  ],
+  "rewrites": [
+    { "source": "/", "destination": "/index.html" }
   ]
 }
