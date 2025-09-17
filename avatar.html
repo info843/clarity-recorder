@@ -3,133 +3,144 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Clarity Interview Avatar</title>
+<title>Clarity Avatar – Glass Sphere</title>
 <style>
   :root{
-    --c1:#60a5fa; /* blue */
+    --c1:#60a5fa; /* blue  */
     --c2:#34d399; /* green */
-    --c3:#a78bfa; /* violet */
-    --white:#ffffff;
+    --c3:#f472b6; /* pink  */
+    --c4:#a78bfa; /* violet*/
+    --dur:2.6s;   /* breathing speed (state) */
+    --boost:1;    /* level intensity (set via JS) */
   }
   html,body{height:100%}
-  /* ✨ komplett transparent – „frei schwebend“ */
+  /* komplett transparent – freischwebend */
   body{
-    margin:0;
-    background:transparent;
-    color:var(--white);
-    font:15px/1.4 ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial;
+    margin:0; background:transparent; overflow:hidden;
     display:grid; place-items:center;
-    overflow:hidden;
+    font:14px/1.4 ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial;
+    color:#eaf2ff;
   }
 
-  /* Bühne ohne Hintergrund */
   .stage{
-    position:relative;
-    width:340px; height:340px;
-    pointer-events:none;  /* sauber im iFrame */
-    transform-style:preserve-3d;
+    position:relative; width:360px; height:360px; transform-style:preserve-3d;
+    pointer-events:none;
   }
 
-  /* 3D Kugel – mehrere Layer für Tiefe + Glow */
-  .sphere{
-    --size: 180px;
+  /* weiche, farbige Aura (kein Hintergrund) */
+  .aura{
     position:absolute; inset:0; margin:auto;
-    width:var(--size); height:var(--size);
-    border-radius:50%;
+    width:320px; height:320px; border-radius:50%;
     background:
-      radial-gradient(120% 120% at 35% 30%, rgba(255,255,255,.9), rgba(255,255,255,.45) 25%, rgba(255,255,255,0) 40%),
-      radial-gradient(90% 90% at 60% 65%, rgba(255,255,255,.15), rgba(255,255,255,0) 60%),
-      radial-gradient(60% 60% at 50% 50%, #192537, #0b1522);
-    box-shadow:
-      0 10px 30px rgba(0,0,0,.35),
-      0 0 60px 20px rgba(96,165,250,.25),
-      0 0 120px 40px rgba(167,139,250,.15);
-    animation: float 5s ease-in-out infinite;
+      radial-gradient(45% 45% at 30% 35%, rgba(255,255,255,.35), rgba(255,255,255,0) 60%),
+      radial-gradient(60% 60% at 70% 65%, rgba(255,255,255,.12), rgba(255,255,255,0) 70%),
+      conic-gradient(from 210deg, var(--c1), var(--c2), var(--c3), var(--c4), var(--c1));
+    filter:blur(26px) saturate(1.05);
+    opacity:.55;
+    animation:breathe var(--dur) ease-in-out infinite;
+    transform:scale(calc(1 * var(--boost)));
   }
 
-  /* farbige Aura, pulsiert */
-  .aura, .aura2{
+  /* die Glas-Kugel */
+  .sphere{
     position:absolute; inset:0; margin:auto;
-    width:250px; height:250px; border-radius:50%;
-    filter:blur(18px);
-    background:conic-gradient(from 210deg, var(--c1), var(--c2), var(--c3), var(--c1));
-    opacity:.65;
-    animation: breathe 3.2s ease-in-out infinite;
-  }
-  .aura2{
-    width:310px; height:310px; opacity:.35; filter:blur(28px);
-    animation-duration:4.6s;
+    width:200px; height:200px; border-radius:50%;
+    /* etwas „Glas“: innen hell, unten dunkler, dezente Kante */
+    background:
+      radial-gradient(110% 110% at 35% 28%, rgba(255,255,255,.9), rgba(255,255,255,.35) 22%, rgba(255,255,255,0) 40%),
+      radial-gradient(70% 70% at 60% 65%, rgba(255,255,255,.12), rgba(0,0,0,0) 60%),
+      radial-gradient(65% 65% at 50% 50%, #132034, #0a1523 65%, #07111b 100%);
+    box-shadow:
+      inset 0 18px 34px rgba(255,255,255,.35),
+      inset 0 -36px 70px rgba(0,0,0,.65),
+      0 10px 28px rgba(0,0,0,.45),
+      0 0 calc(90px * var(--boost)) calc(26px * var(--boost)) rgba(167,139,250,.16);
+    animation:float 5s ease-in-out infinite;
+    transform:scale(calc(1 + 0.08*(var(--boost) - 1)));
   }
 
-  /* zarte Wellenringe */
-  .ring{position:absolute; inset:0; margin:auto; border-radius:50%; border:2px solid transparent}
-  .r1{width:220px;height:220px; box-shadow:0 0 0 2px rgba(96,165,250,.7) inset}
-  .r2{width:280px;height:280px; box-shadow:0 0 0 2px rgba(52,211,153,.6) inset}
-  .r3{width:340px;height:340px; box-shadow:0 0 0 2px rgba(167,139,250,.55) inset}
-  .r1,.r2,.r3{animation: pulse 2.6s ease-in-out infinite}
+  /* irisierende „Siri“-Farbwolke im Inneren */
+  .swirl{
+    position:absolute; inset:-18%; border-radius:50%;
+    background:conic-gradient(from 0deg,
+      rgba(96,165,250,.85),
+      rgba(52,211,153,.9),
+      rgba(244,114,182,.9),
+      rgba(167,139,250,.9),
+      rgba(96,165,250,.85));
+    filter:blur(16px) saturate(1.15);
+    mix-blend-mode:screen;
+    opacity:.95;
+    animation:swirl 14s linear infinite;
+    /* nur im Inneren sichtbar lassen */
+    -webkit-mask:radial-gradient(circle at 50% 50%, #000 60%, transparent 72%);
+            mask:radial-gradient(circle at 50% 50%, #000 60%, transparent 72%);
+    transform:scale(calc(1.02 * var(--boost)));
+  }
 
-  /* Status-Badge (optional) */
+  /* glänzender Reflex auf dem Glas */
+  .shine{
+    position:absolute; inset:0; margin:auto; width:200px; height:200px; border-radius:50%;
+    background:
+      radial-gradient(120% 60% at 20% 18%, rgba(255,255,255,.55), rgba(255,255,255,.12) 35%, rgba(255,255,255,0) 60%),
+      radial-gradient(80% 50% at 75% 80%, rgba(255,255,255,.12), rgba(255,255,255,0) 60%);
+    mix-blend-mode:screen; pointer-events:none;
+    transform:translateZ(1px);
+  }
+
+  /* dezentes Badge (optional) */
   .badge{
-    position:absolute; left:50%; bottom:-10px; translate:-50% 100%;
-    font-size:12px; font-weight:700; letter-spacing:.2px;
-    padding:6px 10px; border-radius:999px;
-    color:#e9f2ff; background:rgba(13,22,34,.55); backdrop-filter:blur(6px);
-    border:1px solid rgba(255,255,255,.14);
+    position:absolute; left:50%; bottom:-8px; translate:-50% 100%;
+    font-weight:700; padding:6px 10px; border-radius:999px;
+    background:rgba(10,18,28,.5); border:1px solid rgba(255,255,255,.14);
+    backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
   }
 
+  /* Animations */
   @keyframes float{0%,100%{transform:translateY(-6px)}50%{transform:translateY(6px)}}
-  @keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
-  @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+  @keyframes breathe{0%,100%{transform:scale(calc(1 * var(--boost)))}50%{transform:scale(calc(1.08 * var(--boost)))}}
+  @keyframes swirl{to{transform:rotate(360deg) scale(calc(1.02 * var(--boost)));}}
 
-  /* dynamische States */
-  .listening .aura{animation-duration:2.2s}
-  .listening .r1,.listening .r2,.listening .r3{animation-duration:2.1s}
-  .speaking  .aura{animation-duration:1.6s}
-  .speaking  .r1,.speaking  .r2,.speaking  .r3{animation-duration:1.6s}
-  .thinking  .aura{animation-duration:3.2s}
-  .thinking  .r1,.thinking  .r2,.thinking  .r3{animation-duration:3.0s}
+  /* State-Speeds */
+  .listening { --dur:2.1s; }
+  .speaking  { --dur:1.6s; }
+  .thinking  { --dur:3.2s; }
 </style>
 </head>
 <body>
   <div class="stage" id="stage">
-    <div class="aura2"></div>
-    <div class="aura"></div>
-    <div class="sphere" id="ball"></div>
-    <div class="ring r3"></div>
-    <div class="ring r2"></div>
-    <div class="ring r1"></div>
+    <div class="aura"  id="aura"></div>
+    <div class="sphere" id="sphere">
+      <div class="swirl" id="swirl"></div>
+      <div class="shine"></div>
+    </div>
     <div class="badge" id="badge">idle</div>
   </div>
 
 <script>
 (function(){
   const stage = document.getElementById('stage');
-  const ball  = document.getElementById('ball');
   const badge = document.getElementById('badge');
 
-  // Parallax für „3D-Gefühl“
+  // leichter Parallax für Tiefe
   const cx = window.innerWidth/2, cy = window.innerHeight/2;
   window.addEventListener('mousemove', (e)=>{
     const dx = (e.clientX - cx) / cx, dy = (e.clientY - cy) / cy;
     stage.style.transform = `rotateX(${dy*6}deg) rotateY(${dx*-8}deg)`;
   });
 
-  // API wie gehabt:
   function setState(s){
     badge.textContent = s || 'idle';
     stage.classList.remove('listening','speaking','thinking');
     if(s) stage.classList.add(s);
   }
   function setLevel(v){
-    const c = Math.max(0, Math.min(1, Number(v)||0));
-    const scale = 1 + c*0.25;
-    ball.style.transform = `scale(${scale})`;
-    ball.style.boxShadow =
-      `0 10px 30px rgba(0,0,0,.35),
-       0 0 ${60+100*c}px ${20+40*c}px rgba(96,165,250,.25),
-       0 0 ${120+120*c}px ${40+50*c}px rgba(167,139,250,.18)`;
+    const c = Math.max(0, Math.min(1, Number(v) || 0));
+    // boost treibt Glow/Skalierung in CSS
+    stage.style.setProperty('--boost', (1 + 0.6*c).toFixed(3));
   }
 
+  // Messaging API wie gehabt
   window.addEventListener('message', ev=>{
     const d = ev.data || {};
     if(d.type==='avatar:set')   setState(d.state||'idle');
