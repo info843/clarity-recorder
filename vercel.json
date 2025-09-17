@@ -2,18 +2,21 @@
   "version": 2,
   "builds": [
     { "src": "api/*.js", "use": "@vercel/node" },
-    { "src": "*.html",   "use": "@vercel/static" }
+    { "src": "*.html", "use": "@vercel/static" }
   ],
   "routes": [
     { "src": "/api/(.*)", "dest": "/api/$1" },
-    { "src": "/(recorder|avatar)\\.html", "dest": "/$1.html" },
-    { "src": "/$", "dest": "/index.html" }
+    { "src": "/(avatar|recorder)\\.html", "dest": "/$1.html" },
+    { "src": "/", "dest": "/index.html" }
   ],
   "headers": [
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "X-Robots-Tag", "value": "noindex" }
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET,POST,OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type,Authorization" },
+        { "key": "Permissions-Policy", "value": "microphone=*, camera=*" }
       ]
     }
   ]
