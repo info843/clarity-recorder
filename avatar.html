@@ -1,213 +1,232 @@
-<!-- avatar.html – Glass Sphere + Atom Orbits (transparent) -->
+<!-- avatar.html – Atom-Kern (transparent, 3D-Orbits, message API kompatibel) -->
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Clarity Glass Avatar</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Clarity Atom Avatar</title>
 <style>
-  :root{
-    /* Größe & Look */
-    --size: 320;                 /* px – kann per ?size=... überschrieben werden */
-    --hue: 210;                  /* Grundfarbton des Scheins (wird per state geändert) */
-    --level: 0;                  /* 0..1 – Lautstärke/Intensität */
-    --speedBase: 14s;            /* Orbit-Grundtempo */
-    --bg: transparent;
-  }
+  :root{ --size: 340; --hue: 210; --level: 0; --bg: transparent; }
 
   html,body{height:100%}
   body{
-    margin:0;
-    background:var(--bg);
-    display:grid;place-items:center;
-    font:14px/1.4 system-ui,Segoe UI,Roboto,Arial;
-    color:#cbd5e1;
+    margin:0; background:var(--bg);
+    display:grid; place-items:center; overflow:hidden;
+    font:12px/1.4 system-ui,Segoe UI,Roboto,Arial;
   }
 
-  /* Container der Kugel */
-  .sphere{
-    width:min(calc(var(--size) * 1px),92vw);
+  .atom{
+    width:min(calc(var(--size) * 1px), 92vw);
     aspect-ratio:1/1;
-    position:relative;
-    isolation:isolate;           /* Glow bleibt „darunter“ */
+    position:relative; isolation:isolate;
   }
-
-  /* Außenhalo (pulsierend) */
-  .sphere::before{
-    content:"";
-    position:absolute; inset:-12%;
-    border-radius:50%;
-    background:
-      radial-gradient(closest-side, hsla(var(--hue),90%,70%,.65), transparent 60%),
-      radial-gradient(closest-side, hsla(calc(var(--hue) + 120),80%,60%,.45), transparent 62%),
-      radial-gradient(closest-side, hsla(calc(var(--hue) + 240),75%,65%,.40), transparent 64%);
-    filter:blur(22px);
-    opacity:calc(.40 + var(--level)*.45);
-    transform:scale(calc(1 + var(--level)*.25));
-    transition:opacity .35s ease, transform .35s ease;
-    animation:pulse 3.2s ease-in-out infinite;
-  }
-  @keyframes pulse { 0%,100%{transform:scale(calc(1 + var(--level)*.22))} 50%{transform:scale(calc(1.05 + var(--level)*.28))} }
-
-  /* Das eigentliche SVG auf die volle Fläche */
-  svg{position:absolute; inset:0; width:100%; height:100%; display:block}
-
-  /* Orbits – weiche, leuchtende Linien */
-  .orbit{
-    fill:none; stroke-linecap:round; stroke-width:1.8;
-    filter:drop-shadow(0 0 4px rgba(255,255,255,.35)) blur(.2px);
-    opacity:calc(.70 + var(--level)*.25);
-    mix-blend-mode:screen;
-    transform-origin:50% 50%;
-    animation:spin var(--speedBase) linear infinite;
-    animation-duration:calc(var(--speedBase) - var(--level)*6s);
-  }
-  .o2{ animation-direction:reverse; animation-duration:calc(var(--speedBase)*.9 - var(--level)*5s) }
-  .o3{ animation-duration:calc(var(--speedBase)*1.15 - var(--level)*4s) }
-
-  @keyframes spin { to{ transform:rotate(360deg) } }
-
-  /* Glas-Kugel – multipler Layer für Tiefen- & Glanzeffekte */
-  .glass { filter: drop-shadow(0 10px 18px rgba(0,0,0,.35)); }
-  .shine{
-    mix-blend-mode:screen; opacity:.9;
-    filter:blur(.2px);
-  }
-  .iris{
-    opacity:.85; mix-blend-mode:screen;
-    filter:blur(.3px);
-  }
-  .spec{
-    mix-blend-mode:screen; opacity:.85; filter:blur(.2px);
-  }
-
-  /* optional: kleiner State-Badge (ausblendbar) */
-  .badge{
-    position:absolute; left:0; right:0; bottom:-26px;
-    margin:auto; width:max-content; padding:4px 8px;
-    font-size:12px; border-radius:999px;
-    border:1px solid rgba(255,255,255,.15); background:rgba(0,0,0,.15);
-    backdrop-filter:saturate(120%) blur(2px)
+  canvas{position:absolute; inset:0; width:100%; height:100%; display:block}
+  /* kleiner Status-Badge – falls unerwünscht, <div id="badge"> entfernen */
+  #badge{
+    position:absolute; left:50%; transform:translateX(-50%);
+    bottom:-26px; padding:3px 8px; border-radius:999px;
+    border:1px solid rgba(255,255,255,.18);
+    background:rgba(0,0,0,.18); color:#e5eefc; backdrop-filter:blur(2px);
+    font-weight:600; letter-spacing:.2px
   }
 </style>
 </head>
 <body>
-  <div class="sphere" id="sphere">
-    <!-- SVG: 0,0..100,100 -->
-    <svg viewBox="0 0 100 100" aria-hidden="true">
-      <defs>
-        <!-- Glas-Grundverlauf -->
-        <radialGradient id="g_glass" cx="34%" cy="28%" r="70%">
-          <stop offset="0%"  stop-color="#ffffff" stop-opacity=".95"/>
-          <stop offset="28%" stop-color="#dbeafe" stop-opacity=".85"/>
-          <stop offset="60%" stop-color="#9ecff4" stop-opacity=".55"/>
-          <stop offset="100%" stop-color="#7aa0c7" stop-opacity=".35"/>
-        </radialGradient>
-
-        <!-- irisierende Farben (Siri-like) -->
-        <radialGradient id="g_iris" cx="50%" cy="50%" r="60%">
-          <stop offset="0%"  stop-color="hsla(0,0%,100%,.95)"/>
-          <stop offset="30%" stop-color="hsla(var(--hue), 85%, 65%, .55)"/>
-          <stop offset="60%" stop-color="hsla(calc(var(--hue)+120), 80%, 55%, .45)"/>
-          <stop offset="90%" stop-color="hsla(calc(var(--hue)+240), 80%, 65%, .35)"/>
-          <stop offset="100%" stop-color="transparent"/>
-        </radialGradient>
-
-        <!-- Orbit-Farbverläufe -->
-        <linearGradient id="lg1" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%"  stop-color="hsla(var(--hue), 90%, 75%, .85)"/>
-          <stop offset="100%" stop-color="hsla(calc(var(--hue)+140), 90%, 60%, .85)"/>
-        </linearGradient>
-        <linearGradient id="lg2" x1="0%" y1="100%" x2="100%" y2="0%">
-          <stop offset="0%"  stop-color="hsla(calc(var(--hue)+220), 90%, 70%, .9)"/>
-          <stop offset="100%" stop-color="hsla(calc(var(--hue)+20),  90%, 70%, .9)"/>
-        </linearGradient>
-        <linearGradient id="lg3" x1="100%" y1="50%" x2="0%" y2="50%">
-          <stop offset="0%"  stop-color="hsla(calc(var(--hue)+120), 85%, 60%, .9)"/>
-          <stop offset="100%" stop-color="hsla(calc(var(--hue)+300), 85%, 65%, .9)"/>
-        </linearGradient>
-
-        <!-- weicher Rand für Glas -->
-        <radialGradient id="g_edge" cx="50%" cy="50%" r="52%">
-          <stop offset="80%" stop-color="rgba(255,255,255,.12)"/>
-          <stop offset="100%" stop-color="rgba(255,255,255,.0)"/>
-        </radialGradient>
-      </defs>
-
-      <!-- Außenglanz für Glasrand -->
-      <circle class="glass" cx="50" cy="50" r="36" fill="url(#g_glass)"/>
-      <circle cx="50" cy="50" r="36" fill="url(#g_edge)"/>
-
-      <!-- Atom-„Kern“ -->
-      <circle cx="50" cy="50" r="4.5"
-              fill="white" opacity=".95"
-              filter="drop-shadow(0 0 8px rgba(255,255,255,.75))"/>
-
-      <!-- Irisierende Innenwolke -->
-      <circle class="iris" cx="50" cy="50" r="28" fill="url(#g_iris)"/>
-
-      <!-- Spekularlicht oben links -->
-      <ellipse class="shine" cx="38" cy="34" rx="10.5" ry="7.5"
-               fill="white" opacity=".85"
-               filter="blur(1.2px)"/>
-
-      <!-- Orbits (elliptisch + in 3 „Ebenen“ getiltet) -->
-      <g style="transform:rotate(18deg) scaleY(.74)"><ellipse class="orbit o1" cx="50" cy="50" rx="27" ry="27" stroke="url(#lg1)"/></g>
-      <g style="transform:rotate(-32deg) scaleY(.63)"><ellipse class="orbit o2" cx="50" cy="50" rx="23.5" ry="23.5" stroke="url(#lg2)"/></g>
-      <g style="transform:rotate(58deg) scaleY(.55)"><ellipse class="orbit o3" cx="50" cy="50" rx="19.5" ry="19.5" stroke="url(#lg3)"/></g>
-
-      <!-- dezenter innerer Schatten für Tiefe -->
-      <circle cx="50" cy="56" r="30" fill="rgba(0,0,0,.10)" />
-      <!-- Glasrand-Highlight unten rechts -->
-      <ellipse class="spec" cx="62" cy="68" rx="14" ry="6"
-               fill="rgba(255,255,255,.35)"/>
-    </svg>
-
-    <!-- optional: Badge (kann entfernt werden) -->
-    <div id="badge" class="badge" hidden>idle</div>
+  <div class="atom">
+    <canvas id="c"></canvas>
+    <div id="badge" hidden>idle</div>
   </div>
 
 <script>
 (() => {
-  // Größe aus ?size=… übernehmen (optional)
-  const qs = new URLSearchParams(location.search);
-  const size = Number(qs.get('size'));
-  if (!Number.isNaN(size) && size>120 && size<1200) {
+  // ====== Setup ==============================================================
+  const params = new URLSearchParams(location.search);
+  const size = Number(params.get('size'));
+  if (!Number.isNaN(size) && size>120 && size<1200)
     document.documentElement.style.setProperty('--size', size);
-  }
 
+  const root = document.documentElement;
   const badge = document.getElementById('badge');
-  const root  = document.documentElement;
+  const cvs = document.getElementById('c');
+  const ctx = cvs.getContext('2d', { alpha:true });
+
+  let W=0,H=0,CX=0,CY=0,DPR=1, R=0;
+  const perspective = 420; // Kamera-Entfernung
+
+  function resize(){
+    const rect = cvs.getBoundingClientRect();
+    DPR = Math.min(devicePixelRatio || 1, 2);
+    W = cvs.width  = Math.round(rect.width  * DPR);
+    H = cvs.height = Math.round(rect.height * DPR);
+    CX = W/2; CY = H/2; R = Math.min(W,H)*0.34;
+    ctx.setTransform(1,0,0,1,0,0);
+  }
+  addEventListener('resize', resize, {passive:true});
+  resize();
+
+  // ====== Atom-Modell ========================================================
+  // Einfache 3D-Punkte (Elektronen) auf einer Kugeloberfläche
+  const electrons = [];
+  const ORBITS = [
+    {tiltX:  28, tiltY:  10, colorA: 0,   colorB: 140},
+    {tiltX: -32, tiltY:  30, colorA: 220, colorB:  20},
+    {tiltX:  58, tiltY: -12, colorA: 120, colorB: 300},
+  ];
+  function makeElectrons(nPerOrbit=18){
+    electrons.length = 0;
+    for (let k=0;k<ORBITS.length;k++){
+      for (let i=0;i<nPerOrbit;i++){
+        const t = (i/nPerOrbit)*Math.PI*2; // phasenverschoben
+        electrons.push({
+          orbit:k,
+          theta:t + Math.random()*0.5,
+          phi: (Math.random()*Math.PI*0.55 + Math.PI*0.25), // verteilt
+          speed: 0.35 + Math.random()*0.35,                 // rad/s
+          size:  1.2 + Math.random()*1.4,                   // px
+        });
+      }
+    }
+  }
+  makeElectrons();
+
+  // ====== State/Level Steuerung =============================================
+  let baseHue = 210;     // Grundfarbton
+  let speedMul = 1.0;    // Geschwindigkeit
+  let glow    = 0.6;     // Helligkeit/Randglow
+  let level   = 0.0;     // 0..1 extern
 
   function setState(s='idle'){
-    // Farbstimmung + Halo-Tempo je nach State
-    badge.hidden = false;
-    badge.textContent = s;
+    badge.hidden=false;
+    badge.textContent=s;
     const map = {
-      idle:      { hue:210, speed:'14s' },
-      listening: { hue:160, speed:'12s' },
-      thinking:  { hue:275, speed:'18s' },
-      speaking:  { hue:200, speed:'9s'  }
+      idle:      {hue:210, count:16, speed:1.00, glow:.55},
+      listening: {hue:160, count:18, speed:1.10, glow:.70},
+      thinking:  {hue:285, count:20, speed:0.90, glow:.75},
+      speaking:  {hue:210, count:22, speed:1.25, glow:.80},
     };
     const cfg = map[s] || map.idle;
-    root.style.setProperty('--hue', cfg.hue);
-    root.style.setProperty('--speedBase', cfg.speed);
+    baseHue  = cfg.hue;
+    speedMul = cfg.speed;
+    glow     = cfg.glow;
+    makeElectrons(cfg.count);
+    root.style.setProperty('--hue', baseHue);
   }
-  function setLevel(x=0){
-    const v = Math.max(0, Math.min(1, Number(x)||0));
-    root.style.setProperty('--level', String(v));
+  function setLevel(v=0){
+    level = Math.max(0, Math.min(1, Number(v)||0));
+    root.style.setProperty('--level', level);
   }
 
-  // PostMessage API (kompatibel mit deinem alten Avatar)
-  window.addEventListener('message', (ev) => {
+  // ====== 3D Helper ==========================================================
+  const DEG = Math.PI/180;
+  function rotateX(p, a){ const s=Math.sin(a), c=Math.cos(a); const y=p.y*c - p.z*s, z=p.y*s + p.z*c; p.y=y; p.z=z; }
+  function rotateY(p, a){ const s=Math.sin(a), c=Math.cos(a); const x=p.x*c + p.z*s, z=-p.x*s + p.z*c; p.x=x; p.z=z; }
+  function project(p){
+    const d = perspective / (perspective - p.z);
+    return { x: CX + p.x*d, y: CY + p.y*d, s: d };
+  }
+
+  // ====== Rendering ==========================================================
+  let t0 = performance.now()/1000;
+  function frame(nowMs){
+    const t = nowMs/1000; const dt = Math.min(0.05, t - t0); t0 = t;
+
+    // Fade ohne Hintergrund (Alpha-Fade)
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = `rgba(0,0,0, ${0.08})`; // Trails
+    ctx.fillRect(0,0,W,H);
+    ctx.restore();
+
+    ctx.globalCompositeOperation = 'lighter';
+
+    // 1) Nucleus (heller Kern + radialer Glow)
+    const pulse = 1 + Math.sin(t*2.2) * (0.04 + level*0.06);
+    const g = ctx.createRadialGradient(CX, CY, 0, CX, CY, R*1.04*pulse);
+    g.addColorStop(0.00, `rgba(255,255,255,1)`);
+    g.addColorStop(0.12, `rgba(255,255,255,0.75)`);
+    g.addColorStop(0.28, `hsla(${baseHue}, 95%, 70%, ${0.55+level*0.2})`);
+    g.addColorStop(0.55, `hsla(${(baseHue+130)%360}, 90%, 60%, ${0.30+glow*0.25})`);
+    g.addColorStop(0.80, `hsla(${(baseHue+250)%360}, 90%, 65%, ${0.18+glow*0.2})`);
+    g.addColorStop(1.00, `rgba(0,0,0,0)`);
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(CX, CY, R*1.05, 0, Math.PI*2); ctx.fill();
+
+    // 2) Elektronen-Orbits + Partikel
+    const spinWorldX = (t*0.25 + level*0.35) * DEG * 180;
+    const spinWorldY = (t*0.18 + level*0.25) * DEG * 180;
+
+    for (let i=0;i<electrons.length;i++){
+      const e = electrons[i];
+      e.theta += e.speed * speedMul * (0.9 + level*0.6) * dt;
+
+      // Punkt in lokaler Orbitalebene
+      const r = R * 0.78;
+      let p = {
+        x: r * Math.sin(e.phi) * Math.cos(e.theta),
+        y: r * Math.cos(e.phi),
+        z: r * Math.sin(e.phi) * Math.sin(e.theta)
+      };
+
+      // Ebene kippen (Orbit-spez.)
+      const o = ORBITS[e.orbit];
+      rotateX(p, (o.tiltX*DEG));
+      rotateY(p, (o.tiltY*DEG));
+
+      // Gesamtdrehung für lebendigen 3D-Eindruck
+      rotateX(p, spinWorldX);
+      rotateY(p, spinWorldY);
+
+      // Projektionskoordinaten
+      const q = project(p);
+
+      // Orbit-Linien (dünn, animiert, schimmernd)
+      if (i % (electrons.length/ORBITS.length) === 0){
+        ctx.save();
+        ctx.translate(CX, CY);
+        ctx.rotate((o.tiltY*DEG));
+        ctx.scale(1, Math.cos(o.tiltX*DEG));
+        const lg = ctx.createLinearGradient(-r, -r, r, r);
+        lg.addColorStop(0, `hsla(${(baseHue+o.colorA)%360}, 90%, 70%, .25)`);
+        lg.addColorStop(1, `hsla(${(baseHue+o.colorB)%360}, 90%, 65%, .25)`);
+        ctx.strokeStyle = lg;
+        ctx.globalAlpha = 0.55 + level*0.35;
+        ctx.lineWidth = 1.2 * DPR;
+        ctx.beginPath();
+        ctx.ellipse(0,0, r, r*0.55, 0, t*0.2, t*0.2 + Math.PI*2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Farbverlauf pro Elektron
+      const hue = (baseHue + (o.colorA + o.colorB)/2 + (e.theta*90)%60) % 360;
+      const alpha = 0.65 + (q.s-1)*0.9; // näher = heller
+      const rad = (e.size + (q.s-1)*2.2) * DPR;
+
+      const grd = ctx.createRadialGradient(q.x, q.y, 0, q.x, q.y, rad*1.8);
+      grd.addColorStop(0,   `hsla(${hue}, 95%, 80%, ${alpha})`);
+      grd.addColorStop(0.5, `hsla(${hue}, 95%, 60%, ${alpha*0.55})`);
+      grd.addColorStop(1,   `rgba(0,0,0,0)`);
+
+      ctx.fillStyle = grd;
+      ctx.beginPath(); ctx.arc(q.x, q.y, rad*1.8, 0, Math.PI*2); ctx.fill();
+    }
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // ====== PostMessage API ====================================================
+  function applyState(s){ setState(s); }
+  window.addEventListener('message', (ev)=>{
     const d = ev?.data || {};
-    if (d.type === 'avatar:set')   setState(d.state || 'idle');
-    if (d.type === 'avatar:level') setLevel(d.value);
-    if (d.type === 'ping') ev.source?.postMessage?.({ type:'avatar:ready' }, '*');
+    if (d.type==='avatar:set')   applyState(d.state||'idle');
+    if (d.type==='avatar:level') setLevel(d.value);
+    if (d.type==='ping') ev.source?.postMessage?.({ type:'avatar:ready' }, '*');
   });
 
-  // Announce ready
-  setTimeout(() => parent?.postMessage?.({ type:'avatar:ready' }, '*'), 30);
+  // Initial
+  setState('idle'); setLevel(0);
+  setTimeout(()=> parent?.postMessage?.({ type:'avatar:ready' }, '*'), 30);
 })();
 </script>
 </body>
