@@ -1,3 +1,5 @@
+// api/mux-upload.js
+
 // Which web origins are allowed to call this API:
 const ALLOWED_APP_ORIGINS = [
   'https://clarity-recorder.vercel.app',       // your current test domain
