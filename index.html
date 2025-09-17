@@ -6,21 +6,28 @@
   <title>Clarity Interview Recorder</title>
   <style>
     body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;padding:16px}
-    video{width:100%;max-width:720px;background:#000;border-radius:12px}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+    video{width:100%;max-width:100%;background:#000;border-radius:12px}
     button{padding:10px 14px;border-radius:8px;border:1px solid #d1d5db;background:#fff;cursor:pointer;margin-right:8px}
     #status{margin:8px 0}
+    .ok{color:#15803d}.err{color:#b91c1c}
   </style>
 </head>
 <body>
   <h1>Interview Recorder</h1>
+
   <div>
     <button id="start">🎙 Aufnahme starten</button>
     <button id="stop" disabled>⏹ Stop</button>
     <button id="upload" disabled>⬆ Upload</button>
   </div>
+
   <div id="status">Bereit.</div>
-  <video id="preview" autoplay muted playsinline></video>
-  <video id="playback" controls style="display:none;margin-top:8px"></video>
+
+  <div class="row">
+    <video id="preview" autoplay muted playsinline></video>
+    <video id="playback" controls style="display:none"></video>
+  </div>
 
 <script>
 let stream, rec, chunks=[], blob, lastUploadId=null;
@@ -29,88 +36,113 @@ const qs = new URLSearchParams(location.search);
 const uid = qs.get('uid') || 'TEST-UID';
 const companyId = qs.get('companyId') || 'TEST-COMPANY';
 
-const $ = (id) => document.getElementById(id);
-const setStatus = (t) => $('status').textContent = t;
+function status(t, cls='') {
+  const el = document.getElementById('status');
+  el.className = cls;
+  el.textContent = t;
+}
 
-$('start').onclick = async () => {
-  try {
+document.getElementById('start').onclick = async () => {
+  try{
     stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
-    $('preview').srcObject = stream;
+    document.getElementById('preview').srcObject = stream;
     chunks=[]; blob=null;
     rec = new MediaRecorder(stream);
     rec.ondataavailable = e => e.data?.size && chunks.push(e.data);
     rec.onstop = () => {
       blob = new Blob(chunks, { type: rec.mimeType || 'video/webm' });
-      $('playback').src = URL.createObjectURL(blob);
-      $('playback').style.display = 'block';
-      setStatus(`Fertig: ${(blob.size/1024/1024).toFixed(1)} MB`);
-      $('upload').disabled = false;
+      document.getElementById('playback').src = URL.createObjectURL(blob);
+      document.getElementById('playback').style.display = 'block';
+      status(`Fertig: ${(blob.size/1024/1024).toFixed(1)} MB`);
+      document.getElementById('upload').disabled = false;
     };
     rec.start(1000);
-    setStatus('🔴 Aufnahme läuft…');
-    $('start').disabled = true;
-    $('stop').disabled = false;
-  } catch (e) {
-    setStatus('❌ Start fehlgeschlagen: ' + (e.message||e));
+    status('🔴 Aufnahme läuft…');
+    document.getElementById('start').disabled = true;
+    document.getElementById('stop').disabled = false;
+  }catch(e){ status('❌ Start fehlgeschlagen: ' + (e.message||e), 'err'); }
+};
+
+document.getElementById('stop').onclick = () => {
+  try{ if(rec && rec.state!=='inactive') rec.stop(); }catch{}
+  try{ if(stream) stream.getTracks().forEach(t=>t.stop()); }catch{}
+  document.getElementById('stop').disabled = true;
+};
+
+async function readJsonSafe(res){
+  const ct = res.headers.get('content-type') || '';
+  if (ct.includes('application/json')) return await res.json();
+  const t = await res.text();
+  throw new Error(`Server lieferte kein JSON (${res.status}): ${t.slice(0,200)}…`);
+}
+
+async function pollAsset(uploadId, maxMs=90_000){
+  const start = Date.now();
+  while (Date.now() - start < maxMs){
+    await new Promise(r=>setTimeout(r, 2500));
+    const r = await fetch(`/api/mux-asset?uploadId=${encodeURIComponent(uploadId)}`);
+    const j = await readJsonSafe(r);
+    if (j?.assetStatus === 'ready' && j?.playbackId){
+      return j;
+    }
   }
-};
+  return null;
+}
 
-$('stop').onclick = () => {
-  try { if (rec && rec.state!=='inactive') rec.stop(); } catch {}
-  try { if (stream) stream.getTracks().forEach(t=>t.stop()); } catch {}
-  $('stop').disabled = true;
-};
+document.getElementById('upload').onclick = async () => {
+  try{
+    if(!blob){ status('Keine Aufnahme vorhanden.', 'err'); return; }
+    status('Upload vorbereiten…');
 
-$('upload').onclick = async () => {
-  try {
-    if (!blob) { setStatus('Keine Aufnahme vorhanden.'); return; }
-    setStatus('Upload vorbereiten…');
-
-    // 1) Upload-URL vom eigenen API-Endpoint holen
-    const prep = await fetch('/api/mux-upload', {
+    // 1) Upload URL holen
+    const r1 = await fetch('/api/mux-upload', {
       method:'POST',
-      headers:{ 'Content-Type':'application/json' },
+      headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ uid, companyId })
     });
+    const j1 = await readJsonSafe(r1);
+    if (j1.error || !j1.uploadUrl) throw new Error(j1.error || 'Keine uploadUrl');
+    lastUploadId = j1.uploadId || null;
 
-    const prepJson = await prep.json().catch(()=> ({}));
-    if (!prep.ok) {
-      throw new Error('Server-Fehler: ' + (prepJson?.error || prep.statusText));
-    }
-    const { uploadUrl, uploadId } = prepJson || {};
-    if (!uploadUrl) throw new Error('Server-Fehler: keine uploadUrl erhalten');
-    lastUploadId = uploadId || null;
+    // 2) Direkt zu Mux hochladen
+    status('Lade zu Mux hoch…');
+    const up = await fetch(j1.uploadUrl, { method:'PUT', body: blob });
+    if(!up.ok) throw new Error('Upload fehlgeschlagen');
 
-    // 2) WICHTIG: Direkt-Upload OHNE zusätzliche Query-Parameter
-    setStatus('Lade hoch…');
-    const up = await fetch(uploadUrl, { method:'PUT', body: blob });
-    if (!up.ok) {
-      // oft liefert Mux hier leider keine schöne Fehlermeldung
-      throw new Error('Direct-Upload fehlgeschlagen (HTTP ' + up.status + ')');
-    }
+    // 3) Asset-Status abholen (einmal, dann ggf. Polling)
+    status('Upload abgeschlossen — Status wird abgefragt…');
+    const r2 = await fetch(`/api/mux-asset?uploadId=${encodeURIComponent(lastUploadId)}`);
+    const j2 = await readJsonSafe(r2);
 
-    setStatus('✅ Upload abgeschlossen, wird transcodiert…');
+    // Sofort anzeigen
+    status(`Upload abgeschlossen — Status: ${j2?.assetStatus || j2?.uploadStatus || 'unbekannt'}`, 'ok');
 
-    // 3) (Optional) Zustand abfragen
-    if (lastUploadId) {
-      setStatus('✅ Upload abgeschlossen, Status wird geprüft…');
-      const chk = await fetch('/api/mux-asset?uploadId=' + encodeURIComponent(lastUploadId));
-      const chkJson = await chk.json().catch(()=> ({}));
-      if (chk.ok) {
-        const { assetId, status } = chkJson;
-        setStatus('✅ Upload abgeschlossen — Status: ' + status + (assetId ? ` (Asset ${assetId})` : ''));
-      } else {
-        setStatus('✅ Upload abgeschlossen — Statusabfrage nicht möglich');
-      }
+    // 4) Falls noch nicht ready → Polling
+    let readyInfo = j2;
+    if (!(j2?.assetStatus === 'ready' && j2?.playbackId)) {
+      const polled = await pollAsset(lastUploadId);
+      if (polled) readyInfo = polled;
     }
 
-    // 4) Event an Parent (Wix) senden
-    window.parent?.postMessage(
-      { type:'REC_DONE', provider:'mux', uploadId:lastUploadId, uid, companyId },
-      '*'
-    );
-  } catch (e) {
-    setStatus('❌ ' + (e.message||e));
+    // 5) Player setzen, sobald playbackId da ist
+    if (readyInfo?.playbackId) {
+      const pb = document.getElementById('playback');
+      pb.src = `https://stream.mux.com/${readyInfo.playbackId}.m3u8`;
+      pb.style.display = 'block';
+      status('✅ Asset bereit — Playback gestartet', 'ok');
+
+      // (optional fürs Interview-Modul / Wix)
+      window.parent?.postMessage({
+        type: 'RECORD_UPLOADED',
+        provider: 'mux',
+        uid, companyId,
+        uploadId: lastUploadId,
+        assetId: readyInfo.assetId || null,
+        playbackId: readyInfo.playbackId
+      }, '*');
+    }
+  }catch(e){
+    status('❌ ' + (e.message||e), 'err');
   }
 };
 </script>
