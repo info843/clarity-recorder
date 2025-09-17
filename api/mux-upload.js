@@ -1,11 +1,11 @@
-// api/mux-upload.js
+// api/mux-upload.js  (Node / Vercel)
+// Creates a direct upload URL at Mux (top-level cors_origin!) with MP4 support enabled.
 
-// Which web origins are allowed to call this API:
 const ALLOWED_APP_ORIGINS = [
-  'https://clarity-recorder.vercel.app',       // your current test domain
-  'https://interview.clarity-nvl.com',         // your subdomain (planned)
+  'https://interview.clarity-nvl.com',
   'https://www.clarity-nvl.com',
-  'https://clarity-nvl.com'
+  'https://clarity-nvl.com',
+  'https://clarity-recorder.vercel.app'
 ];
 
 function getRequestOrigin(req) {
@@ -19,7 +19,7 @@ export default async function handler(req, res) {
   const origin = getRequestOrigin(req);
   const isAllowed = ALLOWED_APP_ORIGINS.includes(origin);
 
-  // CORS for this API route
+  // CORS
   if (isAllowed) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
@@ -27,55 +27,44 @@ export default async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   }
   if (req.method === 'OPTIONS') return res.status(204).end();
-  if (req.method !== 'POST')  return res.status(405).end();
+  if (req.method !== 'POST')  return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const { uid, companyId } = req.body || {};
+    const { uid, companyId, mode } = req.body || {};
     if (!uid || !companyId) {
       return res.status(400).json({ error: 'uid/companyId required' });
     }
 
-    // IMPORTANT: cors_origin is a TOP-LEVEL property on the upload, not inside new_asset_settings.
-    const corsOriginForMux = isAllowed ? origin : 'https://interview.clarity-nvl.com';
+    // Mux auth
+    const id = process.env.MUX_TOKEN_ID || '';
+    const sec = process.env.MUX_TOKEN_SECRET || '';
+    if (!id || !sec) return res.status(500).json({ error: 'MUX credentials missing' });
 
-    const auth =
-      'Basic ' +
-      Buffer.from(
-        (process.env.MUX_TOKEN_ID || '') + ':' + (process.env.MUX_TOKEN_SECRET || '')
-      ).toString('base64');
+    const auth = 'Basic ' + Buffer.from(id + ':' + sec).toString('base64');
 
-    const r = await fetch('https://api.mux.com/video/v1/uploads', {
+    const muxRes = await fetch('https://api.mux.com/video/v1/uploads', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': auth
-      },
+      headers: { 'Content-Type': 'application/json', 'Authorization': auth },
       body: JSON.stringify({
-        // 👇 top-level CORS
-        cors_origin: corsOriginForMux,
-
-        // asset settings
+        // IMPORTANT: cors_origin is TOP-LEVEL
+        cors_origin: isAllowed ? origin : 'https://interview.clarity-nvl.com',
+        // Asset options: enable public playback + MP4 renditions
         new_asset_settings: {
-          playback_policy: ['public']
+          playback_policy: ['public'],
+          mp4_support: 'standard' // so we can fetch a ready-made MP4 later
         },
-
-        // passthrough for your bookkeeping
-        passthrough: JSON.stringify({ uid, companyId })
+        passthrough: JSON.stringify({ uid, companyId, mode })
       })
     });
 
-    const json = await r.json();
-    if (!r.ok) {
-      // Forward Mux error for easier debugging in the browser
-      return res.status(r.status).json(json);
-    }
+    const json = await muxRes.json().catch(() => ({}));
+    if (!muxRes.ok) return res.status(muxRes.status).json(json);
 
-    // Success → give the browser the direct upload URL
-    res.status(200).json({
-      uploadUrl: json.data?.url,
-      uploadId:  json.data?.id
+    return res.status(200).json({
+      uploadUrl: json?.data?.url,
+      uploadId: json?.data?.id
     });
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    return res.status(500).json({ error: String(e) });
   }
 }
