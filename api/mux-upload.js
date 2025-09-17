@@ -1,6 +1,5 @@
-// /api/mux-upload.js
 export default async function handler(req, res) {
-  // CORS erlauben (Wix + Vercel-Domain)
+  // --- CORS ---
   const origin = req.headers.origin || '';
   const ALLOW = new Set([
     'https://interview.clarity-nvl.com',
@@ -15,7 +14,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ ok:false, error_code:'method_not_allowed' });
 
-  // Env prüfen
+  // --- ENV ---
   const ID = process.env.MUX_TOKEN_ID;
   const SECRET = process.env.MUX_TOKEN_SECRET;
   if (!ID || !SECRET) {
@@ -23,11 +22,10 @@ export default async function handler(req, res) {
   }
   const auth = 'Basic ' + Buffer.from(`${ID}:${SECRET}`).toString('base64');
 
-  // Body lesen
+  // --- BODY ---
   let body = {};
   try { body = typeof req.body === 'object' ? req.body : JSON.parse(req.body || '{}'); }
   catch { return res.status(400).json({ ok:false, error_code:'bad_json' }); }
-
   const uid = String(body.uid || '').trim();
   const companyId = String(body.companyId || '').trim();
   const mode = String(body.mode || 'video').toLowerCase();
@@ -35,7 +33,6 @@ export default async function handler(req, res) {
     return res.status(400).json({ ok:false, error_code:'bad_params', detail:{ uid, companyId, mode } });
   }
 
-  // >>> WICHTIG: exakt den anfragenden Origin an Mux weiterreichen (vermeidet 422 wegen CORS)
   const corsOriginForMux = origin && /^https?:\/\//.test(origin) ? origin : 'https://interview.clarity-nvl.com';
 
   try {
@@ -47,17 +44,13 @@ export default async function handler(req, res) {
         'Accept': 'application/json'
       },
       body: JSON.stringify({
-        cors_origin: corsOriginForMux,       // <— dynamisch
-        new_asset_settings: {
-          playback_policy: ['public']
-          // encoding_tier: 'baseline'   // optional – zur Sicherheit weggelassen
-        }
+        cors_origin: corsOriginForMux,
+        new_asset_settings: { playback_policy: ['public'] }
       })
     });
 
     const createJson = await createRes.json().catch(() => ({}));
 
-    // Mux-Status 1:1 nach außen geben, damit du ihn im Browser siehst (401/422 usw.)
     if (!createRes.ok || !createJson?.data?.url) {
       return res.status(createRes.status || 400).json({
         ok:false,
