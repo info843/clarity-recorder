@@ -1,11 +1,10 @@
 {
-  "version": 2,
   "builds": [
     { "src": "api/*.js", "use": "@vercel/node" },
     { "src": "index.html", "use": "@vercel/static" }
   ],
-  "routes": [
-    { "src": "^/api/mux-upload$", "dest": "/api/mux-upload.js" },
-    { "src": "/(.*)", "dest": "/index.html" }
+  "rewrites": [
+    { "source": "/api/:match*", "destination": "/api/:match*" },
+    { "source": "/", "destination": "/index.html" }
   ]
 }
