@@ -192,7 +192,10 @@
         mux: { uploadId: lastUploadId, playbackId: j2?.playbackId || null, mp4Url: j2?.mp4Url || null }
       });
     }catch(err){
-      console.error('Mux upload error:', err);
+      console.error('MUX upload create failed detail:', j1);
+const code = j1?.error_code || 'unknown';
+const st   = j1?.mux_status ?? '';
+say(`Upload error (${code}${st? ' / '+st : ''}) — you can still finish.`, 'err');
       say('Upload error – you can still finish.','err');
       post('recorder:finished',{
         durationMs: Date.now()-startedAt,
