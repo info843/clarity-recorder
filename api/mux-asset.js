@@ -1,58 +1,59 @@
 // api/mux-asset.js
-// Liest zu einer uploadId den Upload-Status UND – wenn schon vorhanden –
-// den zugehörigen Asset-Status inkl. playbackId aus.
 
+// Serverless: Poll upload -> asset; return playbackId + mp4Url (wenn verfügbar)
 export default async function handler(req, res) {
-  if (req.method !== 'GET') return res.status(405).end();
+  // CORS
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+    return res.status(204).end();
+  }
+  res.setHeader('Access-Control-Allow-Origin', '*');
+
+  const { MUX_TOKEN_ID, MUX_TOKEN_SECRET } = process.env;
+  if (!MUX_TOKEN_ID || !MUX_TOKEN_SECRET) {
+    return res.status(500).json({ error: 'mux_env_missing' });
+  }
+
+  const uploadId = (req.query?.uploadId || '').trim();
+  if (!uploadId) return res.status(400).json({ error: 'missing_uploadId' });
+
+  const auth = Buffer.from(`${MUX_TOKEN_ID}:${MUX_TOKEN_SECRET}`).toString('base64');
 
   try {
-    const { uploadId } = req.query || {};
-    if (!uploadId) return res.status(400).json({ error: 'uploadId required' });
-
-    const auth =
-      'Basic ' +
-      Buffer.from(
-        (process.env.MUX_TOKEN_ID || '') + ':' + (process.env.MUX_TOKEN_SECRET || '')
-      ).toString('base64');
-
-    // 1) Upload abfragen
-    const upRes = await fetch(`https://api.mux.com/video/v1/uploads/${uploadId}`, {
-      method: 'GET',
-      headers: { 'Authorization': auth }
+    // 1) Upload lesen
+    const ru = await fetch(`https://api.mux.com/video/v1/uploads/${uploadId}`, {
+      headers: { 'Authorization': `Basic ${auth}` }
     });
-    const upJson = await upRes.json();
-    if (!upRes.ok) return res.status(upRes.status).json(upJson);
+    const ju = await ru.json();
+    if (!ru.ok) return res.status(400).json({ error: 'mux_upload_fetch_failed', detail: ju });
 
-    const uploadStatus = upJson?.data?.status || 'unknown';
-    const assetId = upJson?.data?.asset_id || null;
-
-    let assetStatus = null;
-    let playbackId = null;
-
-    // 2) Falls schon ein Asset existiert → Asset-Details holen
-    if (assetId) {
-      const aRes = await fetch(`https://api.mux.com/video/v1/assets/${assetId}`, {
-        method: 'GET',
-        headers: { 'Authorization': auth }
-      });
-      const aJson = await aRes.json();
-      if (aRes.ok) {
-        assetStatus = aJson?.data?.status || 'unknown';
-        playbackId = aJson?.data?.playback_ids?.[0]?.id || null;
-      } else {
-        // Fehler beim Asset-Lookup trotzdem rückmelden – hilft beim Debugging im Frontend
-        return res.status(aRes.status).json(aJson);
-      }
+    const upload = ju?.data;
+    const assetId = upload?.asset_id || upload?.asset?.id || null;
+    // upload?.status: 'asset_created' / 'ready' / 'errored' etc.
+    if (!assetId) {
+      return res.status(200).json({ assetStatus: upload?.status || 'pending' });
     }
 
+    // 2) Asset lesen
+    const ra = await fetch(`https://api.mux.com/video/v1/assets/${assetId}`, {
+      headers: { 'Authorization': `Basic ${auth}` }
+    });
+    const ja = await ra.json();
+    if (!ra.ok) return res.status(400).json({ error: 'mux_asset_fetch_failed', detail: ja });
+
+    const asset = ja?.data;
+    const playbackId = asset?.playback_ids?.[0]?.id || null;
+    // mp4_url geht über playbackId wenn mp4_support=standard:
+    const mp4Url = playbackId ? `https://stream.mux.com/${playbackId}/medium.mp4` : null;
+
     return res.status(200).json({
-      uploadId,
-      uploadStatus,   // z.B. "asset_created" | "waiting" ...
-      assetId,        // kann null sein, wenn Mux noch kein Asset angelegt hat
-      assetStatus,    // z.B. "ready" | "preparing" | null
-      playbackId      // vorhanden, sobald Asset "ready" und public
+      assetStatus: asset?.status || 'ready',
+      playbackId,
+      mp4Url
     });
   } catch (e) {
-    return res.status(500).json({ error: String(e) });
+    return res.status(500).json({ error: 'mux_asset_exception', message: String(e?.message || e) });
   }
 }
