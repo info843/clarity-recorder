@@ -1,0 +1,241 @@
+<!-- recorder.html  (final, with API_BASE fallback) -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Clarity Interview Recorder</title>
+<style>
+  :root{ --bg:#0a1622; --panel:#0f2436; --txt:#e6f0ff; --muted:#9bb3c9; --btn:#1f9cf0; --btn2:#0ea5e9; --ok:#22c55e; --warn:#f59e0b; --err:#ef4444; }
+  html,body{height:100%}
+  body{
+    margin:0;
+    background:
+      radial-gradient(900px 500px at 10% -10%,#0d2030,transparent),
+      radial-gradient(900px 500px at 120% 120%,#0d2030,transparent),
+      var(--bg);
+    color:var(--txt);
+    font:15px/1.4 ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial
+  }
+  .wrap{max-width:980px;margin:28px auto;padding:0 18px}
+  .card{
+    background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+    border:1px solid rgba(255,255,255,.08);
+    border-radius:16px;
+    padding:18px 18px 22px;
+    box-shadow:0 10px 30px rgba(0,0,0,.35)
+  }
+  .brand{display:flex;align-items:center;gap:12px;margin:0 0 12px}
+  .dot{width:18px;height:18px;border-radius:7px;background:linear-gradient(135deg,#67e8f9,#60a5fa)}
+  h1{font-size:18px;margin:0}
+  .controls{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+  button{
+    background:linear-gradient(180deg,var(--btn),var(--btn2));
+    border:1px solid rgba(255,255,255,.15);
+    color:white;border-radius:10px;padding:10px 14px;
+    font-weight:600;letter-spacing:.2px;cursor:pointer
+  }
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .status{color:var(--muted);margin:6px 0 12px}
+  .view{
+    background:#07111a;border:1px solid rgba(255,255,255,.06);
+    border-radius:12px;padding:8px;display:grid;place-items:center;height:320px
+  }
+  video{width:100%;max-width:720px;height:300px;background:black;border-radius:10px}
+  audio{width:100%}
+  .meta{font-size:12px;color:var(--muted);margin-top:8px}
+  .ok{color:var(--ok)} .warn{color:var(--warn)} .err{color:var(--err)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="brand">
+      <div class="dot"></div><h1>Clarity Interview Recorder</h1>
+      <div style="margin-left:auto;font-size:12px;color:#9bb3c9">iFrame-Control</div>
+    </div>
+    <div class="controls">
+      <button id="btnStart">Start recording</button>
+      <button id="btnStop" disabled>Stop</button>
+      <button id="btnUpload" disabled>Upload</button>
+    </div>
+    <div class="status" id="status">Ready.</div>
+    <div class="view">
+      <video id="video" playsinline muted></video>
+      <audio id="audio" controls style="display:none"></audio>
+    </div>
+    <div class="meta" id="meta"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const $=(s)=>document.querySelector(s);
+  const btnStart=$('#btnStart'), btnStop=$('#btnStop'), btnUpload=$('#btnUpload');
+  const statusEl=$('#status'), metaEl=$('#meta'); const v=$('#video'), a=$('#audio');
+
+  // ★★★ NEW: API Base ermitteln (Query ?api=... oder eigenes Origin)
+  const params   = new URLSearchParams(location.search);
+  const API_BASE = params.get('api') || window.location.origin;
+
+  let mode='audio', uid='', companyId='', lang='en', maxSeconds=0;
+  let stream=null, rec=null, chunks=[], startedAt=0, lastBlob=null, timer=null, lastUploadId=null;
+
+  function say(m, cls){ statusEl.textContent=m; statusEl.className='status '+(cls||''); }
+  function post(type, payload){ parent?.postMessage?.(Object.assign({type},payload||{}),'*'); }
+  function stopTimer(){ if(timer){clearInterval(timer); timer=null;} }
+  const fmt=(ms)=>{ const s=Math.floor(ms/1000); const mm=String(Math.floor(s/60)).padStart(2,'0'); const ss=String(s%60).padStart(2,'0'); return `${mm}:${ss}`; };
+
+  async function startRecording(){
+    try{
+      say('Requesting permissions…');
+      const cons = (mode==='video')
+        ? { audio:{echoCancellation:true,noiseSuppression:true}, video:{width:{ideal:1280},height:{ideal:720}} }
+        : { audio:{echoCancellation:true,noiseSuppression:true}, video:false };
+      stream = await navigator.mediaDevices.getUserMedia(cons);
+
+      if(mode==='video'){ v.srcObject=stream; v.muted=true; v.style.display='block'; a.style.display='none'; await v.play().catch(()=>{}); }
+      else{ v.style.display='none'; a.style.display='block'; }
+
+      chunks=[]; lastBlob=null;
+      const mrType = (mode==='video')
+        ? (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')?'video/webm;codecs=vp9,opus':(MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')?'video/webm;codecs=vp8,opus':'video/webm'))
+        : (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus':'audio/webm');
+      rec = new MediaRecorder(stream,{ mimeType: mrType });
+      rec.ondataavailable=(e)=>{ if(e.data?.size>0) chunks.push(e.data); };
+      rec.onstop=handleStop;
+
+      rec.start(250); startedAt=Date.now();
+      say('Recording…','ok'); post('recorder:started'); btnStart.disabled=true; btnStop.disabled=false; btnUpload.disabled=true;
+
+      stopTimer();
+      if(maxSeconds>0){
+        timer=setInterval(()=>{ metaEl.textContent=`Elapsed: ${fmt(Date.now()-startedAt)} / Max: ${maxSeconds}s`; if(((Date.now()-startedAt)/1000)>=maxSeconds) stopRecording(); },250);
+      }else{
+        timer=setInterval(()=>{ metaEl.textContent=`Elapsed: ${fmt(Date.now()-startedAt)}`; },250);
+      }
+    }catch(err){
+      say('Permission denied or device unavailable.','err');
+      post('recorder:error',{message:String(err?.message||err)});
+    }
+  }
+
+  async function stopRecording(){
+    try{
+      stopTimer();
+      if(rec && rec.state!=='inactive'){ rec.stop(); }
+      if(stream){ stream.getTracks().forEach(t=>t.stop()); }
+      btnStop.disabled=true;
+      say('Processing…','warn');
+    }catch(err){
+      say('Stop failed.','err');
+      post('recorder:error',{message:String(err?.message||err)});
+    }
+  }
+
+  async function handleStop(){
+    try{
+      lastBlob = new Blob(chunks,{ type:(mode==='video'?'video/webm':'audio/webm') });
+      const url = URL.createObjectURL(lastBlob);
+      if(mode==='video'){ v.srcObject=null; v.src=url; v.muted=false; v.controls=true; v.play().catch(()=>{}); }
+      else { a.src=url; a.load(); }
+      say('Ready to upload.','ok'); btnUpload.disabled=false;
+
+      // Auto-Upload
+      await doMuxUpload();
+    }catch(err){
+      say('Processing failed.','err');
+      post('recorder:error',{message:String(err?.message||err)});
+    }
+  }
+
+  async function readJsonSafe(res){
+    const ct=res.headers.get('content-type')||'';
+    if(ct.includes('json')) return res.json();
+    const t=await res.text(); throw new Error(`Non-JSON (${res.status}): ${t.slice(0,200)}…`);
+  }
+
+  async function pollAsset(uploadId, maxMs=90_000){
+    const start=Date.now();
+    while(Date.now()-start<maxMs){
+      await new Promise(r=>setTimeout(r,2500));
+      const r=await fetch(`${API_BASE}/api/mux-asset?uploadId=${encodeURIComponent(uploadId)}`);
+      const j=await readJsonSafe(r);
+      if (j?.assetStatus==='ready' && (j?.playbackId || j?.mp4Url)) return j;
+    }
+    return null;
+  }
+
+  async function doMuxUpload(){
+    if(!lastBlob){ say('Nothing to upload.','warn'); return; }
+    try{
+      say('Preparing upload…'); btnUpload.disabled=true;
+
+      // 1) Direct upload URL (★ API_BASE verwendet)
+      const r1=await fetch(`${API_BASE}/api/mux-upload`,{
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ uid, companyId, mode })
+      });
+      const j1=await readJsonSafe(r1); if(!j1?.uploadUrl) throw new Error(j1?.error || 'No uploadUrl');
+      lastUploadId=j1.uploadId||null;
+
+      // 2) PUT Blob zu Mux
+      say('Uploading to Mux…','warn');
+      const up=await fetch(j1.uploadUrl,{ method:'PUT', body:lastBlob });
+      if(!up.ok) throw new Error(`Upload failed (${up.status})`);
+
+      // 3) Asset prüfen / ggf. pollen (★ API_BASE verwendet)
+      say('Upload complete – checking asset…','warn');
+      let j2=(await (await fetch(`${API_BASE}/api/mux-asset?uploadId=${encodeURIComponent(lastUploadId)}`)).json());
+      if(!(j2?.assetStatus==='ready' && (j2?.playbackId || j2?.mp4Url))){
+        const p=await pollAsset(lastUploadId); if(p) j2=p;
+      }
+
+      // Vorschau (falls MP4 da)
+      if (j2?.mp4Url) {
+        const url=j2.mp4Url;
+        if(mode==='video'){ v.src=url; v.controls=true; } else { a.src=url; a.load(); }
+      }
+
+      say('✅ Uploaded.','ok');
+      post('recorder:finished', {
+        durationMs: Date.now()-startedAt,
+        size: lastBlob.size,
+        uploadUrl: j2?.mp4Url || '',
+        mux: { uploadId: lastUploadId, playbackId: j2?.playbackId || null, mp4Url: j2?.mp4Url || null }
+      });
+    }catch(err){
+      console.error('Mux upload error:', err);
+      say('Upload error – you can still finish.','err');
+      post('recorder:finished',{
+        durationMs: Date.now()-startedAt,
+        size: lastBlob.size,
+        uploadUrl:'',
+        mux:{ uploadId: lastUploadId || null }
+      });
+    }
+  }
+
+  // UI
+  btnStart.addEventListener('click', ()=> startRecording());
+  btnStop.addEventListener('click',  stopRecording);
+  btnUpload.addEventListener('click', doMuxUpload);
+
+  // Messaging
+  window.addEventListener('message', (ev)=>{
+    const d=ev?.data||{};
+    if (d.type==='ping') ev.source?.postMessage?.({ type:'recorder:ready' }, '*');
+    if (d.type==='start') {
+      mode=(d.mode||'audio').toLowerCase();
+      uid=d.uid||''; lang=d.lang||'en'; companyId=d.companyId||''; maxSeconds=Number(d.maxSeconds||0);
+      startRecording();
+    }
+    if (d.type==='stop') stopRecording();
+  });
+
+  // announce ready to parent
+  setTimeout(()=> parent?.postMessage?.({ type:'recorder:ready' }, '*'), 50);
+})();
+</script>
+</body>
+</html>
