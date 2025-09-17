@@ -1,23 +1,10 @@
 {
-  "version": 2,
-  "functions": {
-    "api/*.js": {
-      "runtime": "nodejs22.x",
-      "memory": 1536,
-      "maxDuration": 15
-    }
-  },
-  "headers": [
-    {
-      "source": "/api/(.*)",
-      "headers": [
-        { "key": "Access-Control-Allow-Origin", "value": "*" },
-        { "key": "Access-Control-Allow-Methods", "value": "GET,POST,OPTIONS" },
-        { "key": "Access-Control-Allow-Headers", "value": "Content-Type,Authorization" }
-      ]
-    }
+  "builds": [
+    { "src": "api/*.js", "use": "@vercel/node" },
+    { "src": "index.html", "use": "@vercel/static" }
   ],
   "rewrites": [
+    { "source": "/api/:match*", "destination": "/api/:match*" },
     { "source": "/", "destination": "/index.html" }
   ]
 }
