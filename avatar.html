@@ -1,154 +1,213 @@
+<!-- avatar.html – Glass Sphere + Atom Orbits (transparent) -->
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Clarity Avatar – Glass Sphere</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Clarity Glass Avatar</title>
 <style>
   :root{
-    --c1:#60a5fa; /* blue  */
-    --c2:#34d399; /* green */
-    --c3:#f472b6; /* pink  */
-    --c4:#a78bfa; /* violet*/
-    --dur:2.6s;   /* breathing speed (state) */
-    --boost:1;    /* level intensity (set via JS) */
+    /* Größe & Look */
+    --size: 320;                 /* px – kann per ?size=... überschrieben werden */
+    --hue: 210;                  /* Grundfarbton des Scheins (wird per state geändert) */
+    --level: 0;                  /* 0..1 – Lautstärke/Intensität */
+    --speedBase: 14s;            /* Orbit-Grundtempo */
+    --bg: transparent;
   }
+
   html,body{height:100%}
-  /* komplett transparent – freischwebend */
   body{
-    margin:0; background:transparent; overflow:hidden;
-    display:grid; place-items:center;
-    font:14px/1.4 ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial;
-    color:#eaf2ff;
+    margin:0;
+    background:var(--bg);
+    display:grid;place-items:center;
+    font:14px/1.4 system-ui,Segoe UI,Roboto,Arial;
+    color:#cbd5e1;
   }
 
-  .stage{
-    position:relative; width:360px; height:360px; transform-style:preserve-3d;
-    pointer-events:none;
-  }
-
-  /* weiche, farbige Aura (kein Hintergrund) */
-  .aura{
-    position:absolute; inset:0; margin:auto;
-    width:320px; height:320px; border-radius:50%;
-    background:
-      radial-gradient(45% 45% at 30% 35%, rgba(255,255,255,.35), rgba(255,255,255,0) 60%),
-      radial-gradient(60% 60% at 70% 65%, rgba(255,255,255,.12), rgba(255,255,255,0) 70%),
-      conic-gradient(from 210deg, var(--c1), var(--c2), var(--c3), var(--c4), var(--c1));
-    filter:blur(26px) saturate(1.05);
-    opacity:.55;
-    animation:breathe var(--dur) ease-in-out infinite;
-    transform:scale(calc(1 * var(--boost)));
-  }
-
-  /* die Glas-Kugel */
+  /* Container der Kugel */
   .sphere{
-    position:absolute; inset:0; margin:auto;
-    width:200px; height:200px; border-radius:50%;
-    /* etwas „Glas“: innen hell, unten dunkler, dezente Kante */
-    background:
-      radial-gradient(110% 110% at 35% 28%, rgba(255,255,255,.9), rgba(255,255,255,.35) 22%, rgba(255,255,255,0) 40%),
-      radial-gradient(70% 70% at 60% 65%, rgba(255,255,255,.12), rgba(0,0,0,0) 60%),
-      radial-gradient(65% 65% at 50% 50%, #132034, #0a1523 65%, #07111b 100%);
-    box-shadow:
-      inset 0 18px 34px rgba(255,255,255,.35),
-      inset 0 -36px 70px rgba(0,0,0,.65),
-      0 10px 28px rgba(0,0,0,.45),
-      0 0 calc(90px * var(--boost)) calc(26px * var(--boost)) rgba(167,139,250,.16);
-    animation:float 5s ease-in-out infinite;
-    transform:scale(calc(1 + 0.08*(var(--boost) - 1)));
+    width:min(calc(var(--size) * 1px),92vw);
+    aspect-ratio:1/1;
+    position:relative;
+    isolation:isolate;           /* Glow bleibt „darunter“ */
   }
 
-  /* irisierende „Siri“-Farbwolke im Inneren */
-  .swirl{
-    position:absolute; inset:-18%; border-radius:50%;
-    background:conic-gradient(from 0deg,
-      rgba(96,165,250,.85),
-      rgba(52,211,153,.9),
-      rgba(244,114,182,.9),
-      rgba(167,139,250,.9),
-      rgba(96,165,250,.85));
-    filter:blur(16px) saturate(1.15);
+  /* Außenhalo (pulsierend) */
+  .sphere::before{
+    content:"";
+    position:absolute; inset:-12%;
+    border-radius:50%;
+    background:
+      radial-gradient(closest-side, hsla(var(--hue),90%,70%,.65), transparent 60%),
+      radial-gradient(closest-side, hsla(calc(var(--hue) + 120),80%,60%,.45), transparent 62%),
+      radial-gradient(closest-side, hsla(calc(var(--hue) + 240),75%,65%,.40), transparent 64%);
+    filter:blur(22px);
+    opacity:calc(.40 + var(--level)*.45);
+    transform:scale(calc(1 + var(--level)*.25));
+    transition:opacity .35s ease, transform .35s ease;
+    animation:pulse 3.2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{transform:scale(calc(1 + var(--level)*.22))} 50%{transform:scale(calc(1.05 + var(--level)*.28))} }
+
+  /* Das eigentliche SVG auf die volle Fläche */
+  svg{position:absolute; inset:0; width:100%; height:100%; display:block}
+
+  /* Orbits – weiche, leuchtende Linien */
+  .orbit{
+    fill:none; stroke-linecap:round; stroke-width:1.8;
+    filter:drop-shadow(0 0 4px rgba(255,255,255,.35)) blur(.2px);
+    opacity:calc(.70 + var(--level)*.25);
     mix-blend-mode:screen;
-    opacity:.95;
-    animation:swirl 14s linear infinite;
-    /* nur im Inneren sichtbar lassen */
-    -webkit-mask:radial-gradient(circle at 50% 50%, #000 60%, transparent 72%);
-            mask:radial-gradient(circle at 50% 50%, #000 60%, transparent 72%);
-    transform:scale(calc(1.02 * var(--boost)));
+    transform-origin:50% 50%;
+    animation:spin var(--speedBase) linear infinite;
+    animation-duration:calc(var(--speedBase) - var(--level)*6s);
   }
+  .o2{ animation-direction:reverse; animation-duration:calc(var(--speedBase)*.9 - var(--level)*5s) }
+  .o3{ animation-duration:calc(var(--speedBase)*1.15 - var(--level)*4s) }
 
-  /* glänzender Reflex auf dem Glas */
+  @keyframes spin { to{ transform:rotate(360deg) } }
+
+  /* Glas-Kugel – multipler Layer für Tiefen- & Glanzeffekte */
+  .glass { filter: drop-shadow(0 10px 18px rgba(0,0,0,.35)); }
   .shine{
-    position:absolute; inset:0; margin:auto; width:200px; height:200px; border-radius:50%;
-    background:
-      radial-gradient(120% 60% at 20% 18%, rgba(255,255,255,.55), rgba(255,255,255,.12) 35%, rgba(255,255,255,0) 60%),
-      radial-gradient(80% 50% at 75% 80%, rgba(255,255,255,.12), rgba(255,255,255,0) 60%);
-    mix-blend-mode:screen; pointer-events:none;
-    transform:translateZ(1px);
+    mix-blend-mode:screen; opacity:.9;
+    filter:blur(.2px);
+  }
+  .iris{
+    opacity:.85; mix-blend-mode:screen;
+    filter:blur(.3px);
+  }
+  .spec{
+    mix-blend-mode:screen; opacity:.85; filter:blur(.2px);
   }
 
-  /* dezentes Badge (optional) */
+  /* optional: kleiner State-Badge (ausblendbar) */
   .badge{
-    position:absolute; left:50%; bottom:-8px; translate:-50% 100%;
-    font-weight:700; padding:6px 10px; border-radius:999px;
-    background:rgba(10,18,28,.5); border:1px solid rgba(255,255,255,.14);
-    backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+    position:absolute; left:0; right:0; bottom:-26px;
+    margin:auto; width:max-content; padding:4px 8px;
+    font-size:12px; border-radius:999px;
+    border:1px solid rgba(255,255,255,.15); background:rgba(0,0,0,.15);
+    backdrop-filter:saturate(120%) blur(2px)
   }
-
-  /* Animations */
-  @keyframes float{0%,100%{transform:translateY(-6px)}50%{transform:translateY(6px)}}
-  @keyframes breathe{0%,100%{transform:scale(calc(1 * var(--boost)))}50%{transform:scale(calc(1.08 * var(--boost)))}}
-  @keyframes swirl{to{transform:rotate(360deg) scale(calc(1.02 * var(--boost)));}}
-
-  /* State-Speeds */
-  .listening { --dur:2.1s; }
-  .speaking  { --dur:1.6s; }
-  .thinking  { --dur:3.2s; }
 </style>
 </head>
 <body>
-  <div class="stage" id="stage">
-    <div class="aura"  id="aura"></div>
-    <div class="sphere" id="sphere">
-      <div class="swirl" id="swirl"></div>
-      <div class="shine"></div>
-    </div>
-    <div class="badge" id="badge">idle</div>
+  <div class="sphere" id="sphere">
+    <!-- SVG: 0,0..100,100 -->
+    <svg viewBox="0 0 100 100" aria-hidden="true">
+      <defs>
+        <!-- Glas-Grundverlauf -->
+        <radialGradient id="g_glass" cx="34%" cy="28%" r="70%">
+          <stop offset="0%"  stop-color="#ffffff" stop-opacity=".95"/>
+          <stop offset="28%" stop-color="#dbeafe" stop-opacity=".85"/>
+          <stop offset="60%" stop-color="#9ecff4" stop-opacity=".55"/>
+          <stop offset="100%" stop-color="#7aa0c7" stop-opacity=".35"/>
+        </radialGradient>
+
+        <!-- irisierende Farben (Siri-like) -->
+        <radialGradient id="g_iris" cx="50%" cy="50%" r="60%">
+          <stop offset="0%"  stop-color="hsla(0,0%,100%,.95)"/>
+          <stop offset="30%" stop-color="hsla(var(--hue), 85%, 65%, .55)"/>
+          <stop offset="60%" stop-color="hsla(calc(var(--hue)+120), 80%, 55%, .45)"/>
+          <stop offset="90%" stop-color="hsla(calc(var(--hue)+240), 80%, 65%, .35)"/>
+          <stop offset="100%" stop-color="transparent"/>
+        </radialGradient>
+
+        <!-- Orbit-Farbverläufe -->
+        <linearGradient id="lg1" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%"  stop-color="hsla(var(--hue), 90%, 75%, .85)"/>
+          <stop offset="100%" stop-color="hsla(calc(var(--hue)+140), 90%, 60%, .85)"/>
+        </linearGradient>
+        <linearGradient id="lg2" x1="0%" y1="100%" x2="100%" y2="0%">
+          <stop offset="0%"  stop-color="hsla(calc(var(--hue)+220), 90%, 70%, .9)"/>
+          <stop offset="100%" stop-color="hsla(calc(var(--hue)+20),  90%, 70%, .9)"/>
+        </linearGradient>
+        <linearGradient id="lg3" x1="100%" y1="50%" x2="0%" y2="50%">
+          <stop offset="0%"  stop-color="hsla(calc(var(--hue)+120), 85%, 60%, .9)"/>
+          <stop offset="100%" stop-color="hsla(calc(var(--hue)+300), 85%, 65%, .9)"/>
+        </linearGradient>
+
+        <!-- weicher Rand für Glas -->
+        <radialGradient id="g_edge" cx="50%" cy="50%" r="52%">
+          <stop offset="80%" stop-color="rgba(255,255,255,.12)"/>
+          <stop offset="100%" stop-color="rgba(255,255,255,.0)"/>
+        </radialGradient>
+      </defs>
+
+      <!-- Außenglanz für Glasrand -->
+      <circle class="glass" cx="50" cy="50" r="36" fill="url(#g_glass)"/>
+      <circle cx="50" cy="50" r="36" fill="url(#g_edge)"/>
+
+      <!-- Atom-„Kern“ -->
+      <circle cx="50" cy="50" r="4.5"
+              fill="white" opacity=".95"
+              filter="drop-shadow(0 0 8px rgba(255,255,255,.75))"/>
+
+      <!-- Irisierende Innenwolke -->
+      <circle class="iris" cx="50" cy="50" r="28" fill="url(#g_iris)"/>
+
+      <!-- Spekularlicht oben links -->
+      <ellipse class="shine" cx="38" cy="34" rx="10.5" ry="7.5"
+               fill="white" opacity=".85"
+               filter="blur(1.2px)"/>
+
+      <!-- Orbits (elliptisch + in 3 „Ebenen“ getiltet) -->
+      <g style="transform:rotate(18deg) scaleY(.74)"><ellipse class="orbit o1" cx="50" cy="50" rx="27" ry="27" stroke="url(#lg1)"/></g>
+      <g style="transform:rotate(-32deg) scaleY(.63)"><ellipse class="orbit o2" cx="50" cy="50" rx="23.5" ry="23.5" stroke="url(#lg2)"/></g>
+      <g style="transform:rotate(58deg) scaleY(.55)"><ellipse class="orbit o3" cx="50" cy="50" rx="19.5" ry="19.5" stroke="url(#lg3)"/></g>
+
+      <!-- dezenter innerer Schatten für Tiefe -->
+      <circle cx="50" cy="56" r="30" fill="rgba(0,0,0,.10)" />
+      <!-- Glasrand-Highlight unten rechts -->
+      <ellipse class="spec" cx="62" cy="68" rx="14" ry="6"
+               fill="rgba(255,255,255,.35)"/>
+    </svg>
+
+    <!-- optional: Badge (kann entfernt werden) -->
+    <div id="badge" class="badge" hidden>idle</div>
   </div>
 
 <script>
-(function(){
-  const stage = document.getElementById('stage');
+(() => {
+  // Größe aus ?size=… übernehmen (optional)
+  const qs = new URLSearchParams(location.search);
+  const size = Number(qs.get('size'));
+  if (!Number.isNaN(size) && size>120 && size<1200) {
+    document.documentElement.style.setProperty('--size', size);
+  }
+
   const badge = document.getElementById('badge');
+  const root  = document.documentElement;
 
-  // leichter Parallax für Tiefe
-  const cx = window.innerWidth/2, cy = window.innerHeight/2;
-  window.addEventListener('mousemove', (e)=>{
-    const dx = (e.clientX - cx) / cx, dy = (e.clientY - cy) / cy;
-    stage.style.transform = `rotateX(${dy*6}deg) rotateY(${dx*-8}deg)`;
+  function setState(s='idle'){
+    // Farbstimmung + Halo-Tempo je nach State
+    badge.hidden = false;
+    badge.textContent = s;
+    const map = {
+      idle:      { hue:210, speed:'14s' },
+      listening: { hue:160, speed:'12s' },
+      thinking:  { hue:275, speed:'18s' },
+      speaking:  { hue:200, speed:'9s'  }
+    };
+    const cfg = map[s] || map.idle;
+    root.style.setProperty('--hue', cfg.hue);
+    root.style.setProperty('--speedBase', cfg.speed);
+  }
+  function setLevel(x=0){
+    const v = Math.max(0, Math.min(1, Number(x)||0));
+    root.style.setProperty('--level', String(v));
+  }
+
+  // PostMessage API (kompatibel mit deinem alten Avatar)
+  window.addEventListener('message', (ev) => {
+    const d = ev?.data || {};
+    if (d.type === 'avatar:set')   setState(d.state || 'idle');
+    if (d.type === 'avatar:level') setLevel(d.value);
+    if (d.type === 'ping') ev.source?.postMessage?.({ type:'avatar:ready' }, '*');
   });
 
-  function setState(s){
-    badge.textContent = s || 'idle';
-    stage.classList.remove('listening','speaking','thinking');
-    if(s) stage.classList.add(s);
-  }
-  function setLevel(v){
-    const c = Math.max(0, Math.min(1, Number(v) || 0));
-    // boost treibt Glow/Skalierung in CSS
-    stage.style.setProperty('--boost', (1 + 0.6*c).toFixed(3));
-  }
-
-  // Messaging API wie gehabt
-  window.addEventListener('message', ev=>{
-    const d = ev.data || {};
-    if(d.type==='avatar:set')   setState(d.state||'idle');
-    if(d.type==='avatar:level') setLevel(d.value);
-    if(d.type==='ping') ev.source?.postMessage?.({type:'avatar:ready'}, '*');
-  });
-
-  setTimeout(()=> parent?.postMessage?.({type:'avatar:ready'},'*'), 40);
+  // Announce ready
+  setTimeout(() => parent?.postMessage?.({ type:'avatar:ready' }, '*'), 30);
 })();
 </script>
 </body>
