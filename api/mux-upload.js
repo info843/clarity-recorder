@@ -1,75 +1,56 @@
-// api/mux-upload.js
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type,Authorization'
-};
-
-const MUX_BASE = 'https://api.mux.com/video/v1';
-
-function basicAuth() {
-  const id = process.env.MUX_TOKEN_ID || '';
-  const secret = process.env.MUX_TOKEN_SECRET || '';
-  return 'Basic ' + Buffer.from(id + ':' + secret).toString('base64');
-}
-
+// Serverless: Create a Mux Direct Upload URL
 export default async function handler(req, res) {
+  // CORS (Preflight)
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Max-Age', '86400');
-    res.writeHead(204, CORS_HEADERS).end();
-    return;
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+    return res.status(204).end();
   }
 
-  if (req.method === 'GET') {
-    // Debug-Hook: zeigt, dass die Route existiert (für deinen 404-Test im Browser)
-    res.writeHead(200, { 'Content-Type': 'application/json', ...CORS_HEADERS });
-    res.end(JSON.stringify({ ok: true, route: 'mux-upload' }));
-    return;
-  }
+  res.setHeader('Access-Control-Allow-Origin', '*');
 
   if (req.method !== 'POST') {
-    res.writeHead(405, { 'Content-Type': 'application/json', ...CORS_HEADERS });
-    res.end(JSON.stringify({ error: 'method_not_allowed' }));
-    return;
+    return res.status(405).json({ error: 'method_not_allowed' });
+  }
+
+  const { MUX_TOKEN_ID, MUX_TOKEN_SECRET } = process.env;
+  if (!MUX_TOKEN_ID || !MUX_TOKEN_SECRET) {
+    return res.status(500).json({ error: 'mux_env_missing' });
   }
 
   try {
-    const { uid = '', companyId = '', mode = 'video' } = req.body || {};
+    const auth = Buffer.from(`${MUX_TOKEN_ID}:${MUX_TOKEN_SECRET}`).toString('base64');
 
-    // Erstelle Direct Upload bei Mux
-    const createResp = await fetch(`${MUX_BASE}/uploads`, {
+    // Optional: aus Body auslesen (uid/companyId nur für Logging oder spätere Persistenz)
+    // const { uid, companyId, mode } = req.body || {};
+
+    const r = await fetch('https://api.mux.com/video/v1/uploads', {
       method: 'POST',
       headers: {
-        'Authorization': basicAuth(),
+        'Authorization': `Basic ${auth}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        cors_origin: '*',
         new_asset_settings: {
           playback_policy: ['public'],
-          mp4_support: 'standard',
-          passthrough: JSON.stringify({ uid, companyId, mode }).slice(0, 255)
-        }
+          mp4_support: 'standard'
+        },
+        cors_origin: '*' // oder deine Domain
       })
     });
 
-    if (!createResp.ok) {
-      const errText = await createResp.text();
-      res.writeHead(400, { 'Content-Type': 'application/json', ...CORS_HEADERS });
-      res.end(JSON.stringify({ error: 'mux_upload_create_failed', detail: errText.slice(0, 500) }));
-      return;
+    const j = await r.json();
+    if (!r.ok || !j?.data?.url) {
+      return res.status(400).json({ error: 'mux_upload_create_failed', detail: j });
     }
 
-    const j = await createResp.json();
-    const upload = j?.data;
-    res.writeHead(200, { 'Content-Type': 'application/json', ...CORS_HEADERS });
-    res.end(JSON.stringify({
-      ok: true,
-      uploadUrl: upload?.url || '',
-      uploadId: upload?.id || ''
-    }));
+    const upload = j.data; // {id, url, ...}
+    return res.status(200).json({
+      uploadId: upload.id,
+      uploadUrl: upload.url
+    });
   } catch (e) {
-    res.writeHead(500, { 'Content-Type': 'application/json', ...CORS_HEADERS });
-    res.end(JSON.stringify({ error: 'server_error', message: String(e?.message || e) }));
+    return res.status(500).json({ error: 'mux_upload_exception', message: String(e?.message || e) });
   }
 }
