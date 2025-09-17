@@ -1,58 +1,29 @@
-// api/mux-upload.js
+const { MUX_TOKEN_ID, MUX_TOKEN_SECRET } = process.env;
+const Mux = require('@mux/mux-node');
 
-// Serverless: Create a Mux Direct Upload URL
-export default async function handler(req, res) {
-  // CORS (Preflight)
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
-    return res.status(204).end();
-  }
+module.exports = async (req, res) => {
+  // CORS
+  res.setHeader('Access-Control-Allow-Origin', '*'); // bei Bedarf auf https://www.clarity-nvl.com einschränken
+  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'content-type');
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST')  return res.status(405).json({ error: 'method_not_allowed' });
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
-
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'method_not_allowed' });
-  }
-
-  const { MUX_TOKEN_ID, MUX_TOKEN_SECRET } = process.env;
   if (!MUX_TOKEN_ID || !MUX_TOKEN_SECRET) {
     return res.status(500).json({ error: 'mux_env_missing' });
   }
 
   try {
-    const auth = Buffer.from(`${MUX_TOKEN_ID}:${MUX_TOKEN_SECRET}`).toString('base64');
+    const mux = new Mux({ tokenId: MUX_TOKEN_ID, tokenSecret: MUX_TOKEN_SECRET });
 
-    // Optional: aus Body auslesen (uid/companyId nur für Logging oder spätere Persistenz)
-    // const { uid, companyId, mode } = req.body || {};
-
-    const r = await fetch('https://api.mux.com/video/v1/uploads', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        new_asset_settings: {
-          playback_policy: ['public'],
-          mp4_support: 'standard'
-        },
-        cors_origin: '*' // oder deine Domain
-      })
+    const upload = await mux.video.uploads.create({
+      new_asset_settings: { playback_policy: ['public'], video_quality: 'basic' },
+      cors_origin: '*',
+      test: false
     });
 
-    const j = await r.json();
-    if (!r.ok || !j?.data?.url) {
-      return res.status(400).json({ error: 'mux_upload_create_failed', detail: j });
-    }
-
-    const upload = j.data; // {id, url, ...}
-    return res.status(200).json({
-      uploadId: upload.id,
-      uploadUrl: upload.url
-    });
+    return res.status(200).json({ uploadUrl: upload.url, uploadId: upload.id });
   } catch (e) {
-    return res.status(500).json({ error: 'mux_upload_exception', message: String(e?.message || e) });
+    return res.status(500).json({ error: 'mux_create_failed', detail: e?.message || String(e) });
   }
-}
+};
