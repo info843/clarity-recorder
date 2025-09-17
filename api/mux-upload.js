@@ -1,49 +1,61 @@
+const ALLOWED_APP_ORIGINS = [
+  'https://interview.clarity-nvl.com',
+  'https://www.clarity-nvl.com',
+  'https://clarity-nvl.com',
+  'https://clarity-recorder.vercel.app'
+];
+
+function getRequestOrigin(req) {
+  const o = req.headers?.origin || '';
+  if (o) return o;
+  const r = req.headers?.referer || '';
+  try { return r ? new URL(r).origin : ''; } catch { return ''; }
+}
+
 export default async function handler(req, res) {
-  // CORS
-  if (req.method === 'OPTIONS') return res.status(204)
-    .setHeader('Access-Control-Allow-Origin', '*')
-    .setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-    .setHeader('Access-Control-Allow-Headers', 'Content-Type')
-    .end();
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const origin = getRequestOrigin(req);
+  const isAllowed = ALLOWED_APP_ORIGINS.includes(origin);
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'method_not_allowed' }); // << gut zum Browser-Test
+  if (isAllowed) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   }
-
-  const { MUX_TOKEN_ID, MUX_TOKEN_SECRET } = process.env;
-  if (!MUX_TOKEN_ID || !MUX_TOKEN_SECRET) {
-    return res.status(500).json({ error: 'mux_env_missing' });
-  }
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  if (req.method !== 'POST')  return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const auth = Buffer.from(`${MUX_TOKEN_ID}:${MUX_TOKEN_SECRET}`).toString('base64');
-    const r = await fetch('https://api.mux.com/video/v1/uploads', {
+    const { uid, companyId, mode } = req.body || {};
+    if (!uid || !companyId) return res.status(400).json({ error: 'uid/companyId required' });
+
+    const id  = process.env.MUX_TOKEN_ID || '';
+    const sec = process.env.MUX_TOKEN_SECRET || '';
+    if (!id || !sec) return res.status(500).json({ error: 'MUX credentials missing' });
+
+    const auth = 'Basic ' + Buffer.from(id + ':' + sec).toString('base64');
+
+    const muxRes = await fetch('https://api.mux.com/video/v1/uploads', {
       method: 'POST',
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Content-Type': 'application/json', 'Authorization': auth },
       body: JSON.stringify({
-        cors_origin: '*',
+        cors_origin: isAllowed ? origin : 'https://interview.clarity-nvl.com',
         new_asset_settings: {
           playback_policy: ['public'],
-          mp4_support: 'standard',
-          encoding_tier: 'baseline'
-        }
+          mp4_support: 'standard'
+        },
+        passthrough: JSON.stringify({ uid, companyId, mode })
       })
     });
 
-    const j = await r.json();
-    if (!r.ok || !j?.data?.url) {
-      return res.status(r.status || 500).json({ error: 'mux_create_failed', detail: j });
-    }
+    const json = await muxRes.json().catch(() => ({}));
+    if (!muxRes.ok) return res.status(muxRes.status).json(json);
 
     return res.status(200).json({
-      uploadUrl: j.data.url,
-      uploadId: j.data.id
+      uploadUrl: json?.data?.url,
+      uploadId: json?.data?.id
     });
-  } catch (err) {
-    return res.status(500).json({ error: 'mux_request_failed', detail: String(err) });
+  } catch (e) {
+    return res.status(500).json({ error: String(e) });
   }
 }
