@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Clarity Interview Recorder</title>
+  <title>Interview Recorder</title>
   <style>
     body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;padding:16px}
     .row{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
@@ -15,135 +15,89 @@
 </head>
 <body>
   <h1>Interview Recorder</h1>
-
   <div>
     <button id="start">🎙 Aufnahme starten</button>
     <button id="stop" disabled>⏹ Stop</button>
     <button id="upload" disabled>⬆ Upload</button>
   </div>
-
   <div id="status">Bereit.</div>
-
   <div class="row">
     <video id="preview" autoplay muted playsinline></video>
     <video id="playback" controls style="display:none"></video>
   </div>
-
 <script>
 let stream, rec, chunks=[], blob, lastUploadId=null;
-
 const qs = new URLSearchParams(location.search);
 const uid = qs.get('uid') || 'TEST-UID';
 const companyId = qs.get('companyId') || 'TEST-COMPANY';
+function status(t, cls=''){ const el=document.getElementById('status'); el.className=cls; el.textContent=t; }
 
-function status(t, cls='') {
-  const el = document.getElementById('status');
-  el.className = cls;
-  el.textContent = t;
-}
-
-document.getElementById('start').onclick = async () => {
+document.getElementById('start').onclick=async()=>{
   try{
-    stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
-    document.getElementById('preview').srcObject = stream;
+    stream=await navigator.mediaDevices.getUserMedia({video:true,audio:true});
+    document.getElementById('preview').srcObject=stream;
     chunks=[]; blob=null;
-    rec = new MediaRecorder(stream);
-    rec.ondataavailable = e => e.data?.size && chunks.push(e.data);
-    rec.onstop = () => {
-      blob = new Blob(chunks, { type: rec.mimeType || 'video/webm' });
-      document.getElementById('playback').src = URL.createObjectURL(blob);
-      document.getElementById('playback').style.display = 'block';
+    rec=new MediaRecorder(stream);
+    rec.ondataavailable=e=>e.data?.size&&chunks.push(e.data);
+    rec.onstop=()=>{
+      blob=new Blob(chunks,{type:rec.mimeType||'video/webm'});
+      const url=URL.createObjectURL(blob);
+      const pb=document.getElementById('playback');
+      pb.src=url; pb.style.display='block';
       status(`Fertig: ${(blob.size/1024/1024).toFixed(1)} MB`);
-      document.getElementById('upload').disabled = false;
+      document.getElementById('upload').disabled=false;
     };
     rec.start(1000);
     status('🔴 Aufnahme läuft…');
-    document.getElementById('start').disabled = true;
-    document.getElementById('stop').disabled = false;
-  }catch(e){ status('❌ Start fehlgeschlagen: ' + (e.message||e), 'err'); }
+    document.getElementById('start').disabled=true;
+    document.getElementById('stop').disabled=false;
+  }catch(e){ status('❌ Start fehlgeschlagen: '+(e.message||e),'err'); }
 };
 
-document.getElementById('stop').onclick = () => {
+document.getElementById('stop').onclick=()=>{
   try{ if(rec && rec.state!=='inactive') rec.stop(); }catch{}
   try{ if(stream) stream.getTracks().forEach(t=>t.stop()); }catch{}
-  document.getElementById('stop').disabled = true;
+  document.getElementById('stop').disabled=true;
 };
 
 async function readJsonSafe(res){
-  const ct = res.headers.get('content-type') || '';
-  if (ct.includes('application/json')) return await res.json();
-  const t = await res.text();
+  const ct=res.headers.get('content-type')||'';
+  if(ct.includes('application/json')) return await res.json();
+  const t=await res.text();
   throw new Error(`Server lieferte kein JSON (${res.status}): ${t.slice(0,200)}…`);
 }
-
-async function pollAsset(uploadId, maxMs=90_000){
-  const start = Date.now();
-  while (Date.now() - start < maxMs){
-    await new Promise(r=>setTimeout(r, 2500));
-    const r = await fetch(`/api/mux-asset?uploadId=${encodeURIComponent(uploadId)}`);
-    const j = await readJsonSafe(r);
-    if (j?.assetStatus === 'ready' && j?.playbackId){
-      return j;
-    }
+async function pollAsset(uploadId,maxMs=90000){
+  const start=Date.now();
+  while(Date.now()-start<maxMs){
+    await new Promise(r=>setTimeout(r,2500));
+    const r=await fetch(`/api/mux-asset?uploadId=${encodeURIComponent(uploadId)}`);
+    const j=await readJsonSafe(r);
+    if(j?.assetStatus==='ready'&&j?.playbackId) return j;
   }
   return null;
 }
 
-document.getElementById('upload').onclick = async () => {
+document.getElementById('upload').onclick=async()=>{
   try{
-    if(!blob){ status('Keine Aufnahme vorhanden.', 'err'); return; }
+    if(!blob){ status('Keine Aufnahme vorhanden.','err'); return; }
     status('Upload vorbereiten…');
+    const r1=await fetch('/api/mux-upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uid,companyId})});
+    const j1=await readJsonSafe(r1);
+    if(j1.error||!j1.uploadUrl) throw new Error(j1.error||'Keine uploadUrl');
+    lastUploadId=j1.uploadId||null;
 
-    // 1) Upload URL holen
-    const r1 = await fetch('/api/mux-upload', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ uid, companyId })
-    });
-    const j1 = await readJsonSafe(r1);
-    if (j1.error || !j1.uploadUrl) throw new Error(j1.error || 'Keine uploadUrl');
-    lastUploadId = j1.uploadId || null;
-
-    // 2) Direkt zu Mux hochladen
     status('Lade zu Mux hoch…');
-    const up = await fetch(j1.uploadUrl, { method:'PUT', body: blob });
+    const up=await fetch(j1.uploadUrl,{method:'PUT',body:blob});
     if(!up.ok) throw new Error('Upload fehlgeschlagen');
 
-    // 3) Asset-Status abholen (einmal, dann ggf. Polling)
     status('Upload abgeschlossen — Status wird abgefragt…');
-    const r2 = await fetch(`/api/mux-asset?uploadId=${encodeURIComponent(lastUploadId)}`);
-    const j2 = await readJsonSafe(r2);
+    const r2=await fetch(`/api/mux-asset?uploadId=${encodeURIComponent(lastUploadId)}`);
+    const j2=await readJsonSafe(r2);
+    status(`Upload abgeschlossen — Status: ${j2?.assetStatus||j2?.uploadStatus||'unbekannt'}`,'ok');
 
-    // Sofort anzeigen
-    status(`Upload abgeschlossen — Status: ${j2?.assetStatus || j2?.uploadStatus || 'unbekannt'}`, 'ok');
-
-    // 4) Falls noch nicht ready → Polling
-    let readyInfo = j2;
-    if (!(j2?.assetStatus === 'ready' && j2?.playbackId)) {
-      const polled = await pollAsset(lastUploadId);
-      if (polled) readyInfo = polled;
-    }
-
-    // 5) Player setzen, sobald playbackId da ist
-    if (readyInfo?.playbackId) {
-      const pb = document.getElementById('playback');
-      pb.src = `https://stream.mux.com/${readyInfo.playbackId}.m3u8`;
-      pb.style.display = 'block';
-      status('✅ Asset bereit — Playback gestartet', 'ok');
-
-      // (optional fürs Interview-Modul / Wix)
-      window.parent?.postMessage({
-        type: 'RECORD_UPLOADED',
-        provider: 'mux',
-        uid, companyId,
-        uploadId: lastUploadId,
-        assetId: readyInfo.assetId || null,
-        playbackId: readyInfo.playbackId
-      }, '*');
-    }
-  }catch(e){
-    status('❌ ' + (e.message||e), 'err');
-  }
+    let ready=j2; if(!(j2?.assetStatus==='ready'&&j2?.playbackId)){ const p=await pollAsset(lastUploadId); if(p) ready=p; }
+    if(ready?.playbackId){ const pb=document.getElementById('playback'); pb.src=`https://stream.mux.com/${ready.playbackId}.m3u8`; pb.style.display='block'; status('✅ Asset bereit — Playback gestartet','ok'); }
+  }catch(e){ status('❌ '+(e.message||e),'err'); }
 };
 </script>
 </body>
