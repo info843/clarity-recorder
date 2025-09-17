@@ -1,232 +1,203 @@
-<!-- avatar.html – Atom-Kern (transparent, 3D-Orbits, message API kompatibel) -->
+<!-- avatar.html – Glass-Atom (transparent, 3D orbits, fading trails) -->
 <!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Clarity Atom Avatar</title>
+<title>Clarity Glass Atom</title>
 <style>
-  :root{ --size: 340; --hue: 210; --level: 0; --bg: transparent; }
-
+  :root { --size: 360; }                 /* ?size=300..1000 möglich */
   html,body{height:100%}
   body{
-    margin:0; background:var(--bg);
+    margin:0; background:transparent;    /* absolut transparenter BG */
     display:grid; place-items:center; overflow:hidden;
     font:12px/1.4 system-ui,Segoe UI,Roboto,Arial;
   }
-
-  .atom{
-    width:min(calc(var(--size) * 1px), 92vw);
-    aspect-ratio:1/1;
-    position:relative; isolation:isolate;
-  }
-  canvas{position:absolute; inset:0; width:100%; height:100%; display:block}
-  /* kleiner Status-Badge – falls unerwünscht, <div id="badge"> entfernen */
-  #badge{
-    position:absolute; left:50%; transform:translateX(-50%);
-    bottom:-26px; padding:3px 8px; border-radius:999px;
-    border:1px solid rgba(255,255,255,.18);
-    background:rgba(0,0,0,.18); color:#e5eefc; backdrop-filter:blur(2px);
-    font-weight:600; letter-spacing:.2px
-  }
+  .wrap{ width:min(calc(var(--size)*1px), 92vw); aspect-ratio:1/1; position:relative; }
+  canvas{ position:absolute; inset:0; width:100%; height:100%; display:block }
+  /* optional kleiner Status */
+  #badge{ position:absolute; left:50%; transform:translateX(-50%); bottom:-26px;
+    padding:3px 8px; border-radius:999px; border:1px solid rgba(255,255,255,.18);
+    background:rgba(0,0,0,.18); color:#eaf2ff; backdrop-filter:blur(2px);
+    font-weight:600; letter-spacing:.2px; }
 </style>
 </head>
 <body>
-  <div class="atom">
+  <div class="wrap">
     <canvas id="c"></canvas>
     <div id="badge" hidden>idle</div>
   </div>
 
 <script>
 (() => {
-  // ====== Setup ==============================================================
+  // ===== Canvas & Sizing =====================================================
   const params = new URLSearchParams(location.search);
-  const size = Number(params.get('size'));
-  if (!Number.isNaN(size) && size>120 && size<1200)
-    document.documentElement.style.setProperty('--size', size);
+  const customSize = Number(params.get('size'));
+  if (!Number.isNaN(customSize) && customSize>=300 && customSize<=1000) {
+    document.documentElement.style.setProperty('--size', customSize);
+  }
 
-  const root = document.documentElement;
-  const badge = document.getElementById('badge');
   const cvs = document.getElementById('c');
-  const ctx = cvs.getContext('2d', { alpha:true });
-
-  let W=0,H=0,CX=0,CY=0,DPR=1, R=0;
-  const perspective = 420; // Kamera-Entfernung
-
+  const ctx = cvs.getContext('2d', {alpha:true});
+  let DPR=1, W=0, H=0, CX=0, CY=0, R=0;
   function resize(){
-    const rect = cvs.getBoundingClientRect();
-    DPR = Math.min(devicePixelRatio || 1, 2);
-    W = cvs.width  = Math.round(rect.width  * DPR);
-    H = cvs.height = Math.round(rect.height * DPR);
-    CX = W/2; CY = H/2; R = Math.min(W,H)*0.34;
+    const r = cvs.getBoundingClientRect();
+    DPR = Math.min(devicePixelRatio||1, 2);
+    W = cvs.width  = Math.round(r.width  * DPR);
+    H = cvs.height = Math.round(r.height * DPR);
+    CX = W/2; CY = H/2; R = Math.min(W,H)*0.38; // Kugelradius
     ctx.setTransform(1,0,0,1,0,0);
   }
   addEventListener('resize', resize, {passive:true});
   resize();
 
-  // ====== Atom-Modell ========================================================
-  // Einfache 3D-Punkte (Elektronen) auf einer Kugeloberfläche
-  const electrons = [];
+  // ===== Atom-Modell =========================================================
+  // Drei unterschiedlich geneigte Orbits, jeder mit eigener Farbstimmung
   const ORBITS = [
-    {tiltX:  28, tiltY:  10, colorA: 0,   colorB: 140},
-    {tiltX: -32, tiltY:  30, colorA: 220, colorB:  20},
-    {tiltX:  58, tiltY: -12, colorA: 120, colorB: 300},
+    { r: 0.74, tiltX:  28, tiltY:  10, hue: 180 }, // Aquamarin
+    { r: 0.62, tiltX: -32, tiltY:  30, hue: 300 }, // Magenta/Violett
+    { r: 0.82, tiltX:  50, tiltY: -16, hue:  30 }, // Warm/Amber
   ];
-  function makeElectrons(nPerOrbit=18){
+
+  // Partikel (Elektronen/„Neutrinos“)
+  const electrons = [];
+  function initElectrons(countPerOrbit=12){
     electrons.length = 0;
-    for (let k=0;k<ORBITS.length;k++){
-      for (let i=0;i<nPerOrbit;i++){
-        const t = (i/nPerOrbit)*Math.PI*2; // phasenverschoben
+    ORBITS.forEach((o, idx) => {
+      for (let i=0; i<countPerOrbit; i++){
+        const phase = (i/countPerOrbit)*Math.PI*2;
         electrons.push({
-          orbit:k,
-          theta:t + Math.random()*0.5,
-          phi: (Math.random()*Math.PI*0.55 + Math.PI*0.25), // verteilt
-          speed: 0.35 + Math.random()*0.35,                 // rad/s
-          size:  1.2 + Math.random()*1.4,                   // px
+          orbit: idx,
+          theta: phase + Math.random()*0.5,
+          speed: 0.35 + Math.random()*0.45, // rad/s
+          size:  1.4  + Math.random()*1.2,  // Kopfgröße (px)
+          trail: []                         // {x,y} Punkte
         });
       }
-    }
+    });
   }
-  makeElectrons();
+  initElectrons(13);
 
-  // ====== State/Level Steuerung =============================================
-  let baseHue = 210;     // Grundfarbton
-  let speedMul = 1.0;    // Geschwindigkeit
-  let glow    = 0.6;     // Helligkeit/Randglow
-  let level   = 0.0;     // 0..1 extern
+  // ===== State/Level (Tempo/Glow) ============================================
+  const badge = document.getElementById('badge');
+  let baseHue=210, speedMul=1.0, glow=0.7, tailLen=26, level=0.0;
 
-  function setState(s='idle'){
-    badge.hidden=false;
-    badge.textContent=s;
-    const map = {
-      idle:      {hue:210, count:16, speed:1.00, glow:.55},
-      listening: {hue:160, count:18, speed:1.10, glow:.70},
-      thinking:  {hue:285, count:20, speed:0.90, glow:.75},
-      speaking:  {hue:210, count:22, speed:1.25, glow:.80},
-    };
-    const cfg = map[s] || map.idle;
-    baseHue  = cfg.hue;
-    speedMul = cfg.speed;
-    glow     = cfg.glow;
-    makeElectrons(cfg.count);
-    root.style.setProperty('--hue', baseHue);
+  function setState(state='idle'){
+    badge.hidden=false; badge.textContent=state;
+    const S = {
+      idle:      {hue:210, speed:1.00, glow:.70, tail:24},
+      listening: {hue:160, speed:1.10, glow:.85, tail:28},
+      thinking:  {hue:285, speed:0.95, glow:.90, tail:30},
+      speaking:  {hue:210, speed:1.25, glow:.95, tail:30},
+    }[state] || {hue:210, speed:1.0, glow:.7, tail:24};
+    baseHue=S.hue; speedMul=S.speed; glow=S.glow; tailLen=S.tail;
   }
-  function setLevel(v=0){
-    level = Math.max(0, Math.min(1, Number(v)||0));
-    root.style.setProperty('--level', level);
-  }
+  function setLevel(v=0){ level=Math.max(0,Math.min(1,Number(v)||0)); }
 
-  // ====== 3D Helper ==========================================================
-  const DEG = Math.PI/180;
-  function rotateX(p, a){ const s=Math.sin(a), c=Math.cos(a); const y=p.y*c - p.z*s, z=p.y*s + p.z*c; p.y=y; p.z=z; }
-  function rotateY(p, a){ const s=Math.sin(a), c=Math.cos(a); const x=p.x*c + p.z*s, z=-p.x*s + p.z*c; p.x=x; p.z=z; }
-  function project(p){
-    const d = perspective / (perspective - p.z);
-    return { x: CX + p.x*d, y: CY + p.y*d, s: d };
-  }
+  // ===== 3D Helpers ==========================================================
+  const DEG = Math.PI/180, PERS=460;
+  function rotX(p,a){const s=Math.sin(a),c=Math.cos(a),y=p.y*c-p.z*s,z=p.y*s+p.z*c;p.y=y;p.z=z;}
+  function rotY(p,a){const s=Math.sin(a),c=Math.cos(a),x=p.x*c+p.z*s,z=-p.x*s+p.z*c;p.x=x;p.z=z;}
+  function project(p){const d=PERS/(PERS-p.z); return {x:CX+p.x*d, y:CY+p.y*d, s:d};}
 
-  // ====== Rendering ==========================================================
+  // ===== Rendering ===========================================================
   let t0 = performance.now()/1000;
   function frame(nowMs){
-    const t = nowMs/1000; const dt = Math.min(0.05, t - t0); t0 = t;
+    const t = nowMs/1000, dt = Math.min(t - t0, .05); t0 = t;
 
-    // Fade ohne Hintergrund (Alpha-Fade)
-    ctx.save();
-    ctx.globalCompositeOperation = 'destination-out';
-    ctx.fillStyle = `rgba(0,0,0, ${0.08})`; // Trails
-    ctx.fillRect(0,0,W,H);
-    ctx.restore();
+    // Transparenter Clear mit sehr zartem Fade (verhindert Ghosting)
+    ctx.clearRect(0,0,W,H);
 
-    ctx.globalCompositeOperation = 'lighter';
+    // --- 1) Outer Aura / Puls ------------------------------------------------
+    const pulse = 1 + Math.sin(t*2.1) * (0.03 + level*0.04);
+    const gAura = ctx.createRadialGradient(CX, CY, 0, CX, CY, R*1.25*pulse);
+    gAura.addColorStop(0.00, `rgba(255,255,255,0.35)`);
+    gAura.addColorStop(0.25, `hsla(${baseHue},90%,70%,${0.28+level*0.20})`);
+    gAura.addColorStop(0.55, `hsla(${(baseHue+130)%360},90%,60%,${0.18+level*0.12})`);
+    gAura.addColorStop(1.00, `rgba(0,0,0,0)`);
+    ctx.globalCompositeOperation='lighter';
+    ctx.fillStyle=gAura; ctx.beginPath(); ctx.arc(CX, CY, R*1.25, 0, Math.PI*2); ctx.fill();
 
-    // 1) Nucleus (heller Kern + radialer Glow)
-    const pulse = 1 + Math.sin(t*2.2) * (0.04 + level*0.06);
-    const g = ctx.createRadialGradient(CX, CY, 0, CX, CY, R*1.04*pulse);
-    g.addColorStop(0.00, `rgba(255,255,255,1)`);
-    g.addColorStop(0.12, `rgba(255,255,255,0.75)`);
-    g.addColorStop(0.28, `hsla(${baseHue}, 95%, 70%, ${0.55+level*0.2})`);
-    g.addColorStop(0.55, `hsla(${(baseHue+130)%360}, 90%, 60%, ${0.30+glow*0.25})`);
-    g.addColorStop(0.80, `hsla(${(baseHue+250)%360}, 90%, 65%, ${0.18+glow*0.2})`);
-    g.addColorStop(1.00, `rgba(0,0,0,0)`);
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(CX, CY, R*1.05, 0, Math.PI*2); ctx.fill();
+    // --- 2) Trails & Heads ---------------------------------------------------
+    const spinX = (t*0.22 + level*0.30) * DEG * 180;
+    const spinY = (t*0.17 + level*0.22) * DEG * 180;
 
-    // 2) Elektronen-Orbits + Partikel
-    const spinWorldX = (t*0.25 + level*0.35) * DEG * 180;
-    const spinWorldY = (t*0.18 + level*0.25) * DEG * 180;
+    for(const e of electrons){
+      const o=ORBITS[e.orbit]; e.theta += e.speed*speedMul*(0.9+level*0.7)*dt;
 
-    for (let i=0;i<electrons.length;i++){
-      const e = electrons[i];
-      e.theta += e.speed * speedMul * (0.9 + level*0.6) * dt;
+      const rr = R*o.r, x = rr*Math.cos(e.theta), z = rr*Math.sin(e.theta);
+      let p = { x:x, y:0, z:z };
+      rotX(p, o.tiltX*DEG); rotY(p, o.tiltY*DEG); // Orbitneigung
+      rotX(p, spinX); rotY(p, spinY);             // globale Rotation
 
-      // Punkt in lokaler Orbitalebene
-      const r = R * 0.78;
-      let p = {
-        x: r * Math.sin(e.phi) * Math.cos(e.theta),
-        y: r * Math.cos(e.phi),
-        z: r * Math.sin(e.phi) * Math.sin(e.theta)
-      };
-
-      // Ebene kippen (Orbit-spez.)
-      const o = ORBITS[e.orbit];
-      rotateX(p, (o.tiltX*DEG));
-      rotateY(p, (o.tiltY*DEG));
-
-      // Gesamtdrehung für lebendigen 3D-Eindruck
-      rotateX(p, spinWorldX);
-      rotateY(p, spinWorldY);
-
-      // Projektionskoordinaten
       const q = project(p);
+      // Trail-Punkt merken
+      e.trail.push({x:q.x, y:q.y}); if (e.trail.length>tailLen) e.trail.shift();
 
-      // Orbit-Linien (dünn, animiert, schimmernd)
-      if (i % (electrons.length/ORBITS.length) === 0){
-        ctx.save();
-        ctx.translate(CX, CY);
-        ctx.rotate((o.tiltY*DEG));
-        ctx.scale(1, Math.cos(o.tiltX*DEG));
-        const lg = ctx.createLinearGradient(-r, -r, r, r);
-        lg.addColorStop(0, `hsla(${(baseHue+o.colorA)%360}, 90%, 70%, .25)`);
-        lg.addColorStop(1, `hsla(${(baseHue+o.colorB)%360}, 90%, 65%, .25)`);
-        ctx.strokeStyle = lg;
-        ctx.globalAlpha = 0.55 + level*0.35;
-        ctx.lineWidth = 1.2 * DPR;
-        ctx.beginPath();
-        ctx.ellipse(0,0, r, r*0.55, 0, t*0.2, t*0.2 + Math.PI*2);
-        ctx.stroke();
-        ctx.restore();
+      // Trail zeichnen (verblassende "Perlen")
+      const hue = (o.hue + baseHue*0.3) % 360;
+      for (let i=0;i<e.trail.length;i++){
+        const pt = e.trail[i];
+        const k = i/(e.trail.length-1);
+        const alpha = (k*k)*0.65;                          // hinten schwächer
+        const rad   = (e.size*(.3 + k*.9))*DPR;            // vorne dicker
+        const grd = ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, rad*1.8);
+        grd.addColorStop(0,   `hsla(${hue},95%,80%,${alpha})`);
+        grd.addColorStop(0.6, `hsla(${(hue+60)%360},95%,60%,${alpha*0.75})`);
+        grd.addColorStop(1,   `rgba(0,0,0,0)`);
+        ctx.fillStyle=grd; ctx.beginPath(); ctx.arc(pt.x, pt.y, rad*1.8, 0, Math.PI*2); ctx.fill();
       }
 
-      // Farbverlauf pro Elektron
-      const hue = (baseHue + (o.colorA + o.colorB)/2 + (e.theta*90)%60) % 360;
-      const alpha = 0.65 + (q.s-1)*0.9; // näher = heller
-      const rad = (e.size + (q.s-1)*2.2) * DPR;
-
-      const grd = ctx.createRadialGradient(q.x, q.y, 0, q.x, q.y, rad*1.8);
-      grd.addColorStop(0,   `hsla(${hue}, 95%, 80%, ${alpha})`);
-      grd.addColorStop(0.5, `hsla(${hue}, 95%, 60%, ${alpha*0.55})`);
-      grd.addColorStop(1,   `rgba(0,0,0,0)`);
-
-      ctx.fillStyle = grd;
-      ctx.beginPath(); ctx.arc(q.x, q.y, rad*1.8, 0, Math.PI*2); ctx.fill();
+      // Kopf (heller Punkt)
+      const headR = (e.size*2.0)*DPR*(1 + (q.s-1)*0.6);
+      const head = ctx.createRadialGradient(q.x,q.y,0,q.x,q.y,headR);
+      head.addColorStop(0,`rgba(255,255,255,1)`);
+      head.addColorStop(0.4,`hsla(${(o.hue+30)%360},95%,70%,.9)`);
+      head.addColorStop(1,`rgba(0,0,0,0)`);
+      ctx.fillStyle=head; ctx.beginPath(); ctx.arc(q.x,q.y,headR,0,Math.PI*2); ctx.fill();
     }
+
+    // --- 3) Glass Sphere -----------------------------------------------------
+    // Grundkörper (leicht milchiger Innenverlauf)
+    const glass = ctx.createRadialGradient(CX, CY, R*0.1, CX, CY, R*1.02);
+    glass.addColorStop(0.0, 'rgba(255,255,255,0.60)'); // zentral hell
+    glass.addColorStop(0.3, 'rgba(255,255,255,0.20)');
+    glass.addColorStop(0.75,'rgba(255,255,255,0.10)');
+    glass.addColorStop(1.0, 'rgba(255,255,255,0.04)');
+    ctx.globalCompositeOperation='screen';
+    ctx.fillStyle=glass; ctx.beginPath(); ctx.arc(CX,CY,R,0,Math.PI*2); ctx.fill();
+
+    // Fresnel-Rand (Rim)
+    const rim = ctx.createRadialGradient(CX, CY, R*0.75, CX, CY, R*1.02);
+    rim.addColorStop(0.0,'rgba(255,255,255,0)'); rim.addColorStop(1.0,'rgba(255,255,255,0.35)');
+    ctx.fillStyle=rim; ctx.beginPath(); ctx.arc(CX,CY,R,0,Math.PI*2); ctx.fill();
+
+    // Spekular-Glanz (oben links)
+    const spec = ctx.createRadialGradient(CX-R*0.25, CY-R*0.28, 0, CX-R*0.25, CY-R*0.28, R*0.35);
+    spec.addColorStop(0,'rgba(255,255,255,.95)'); spec.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=spec; ctx.beginPath(); ctx.arc(CX-R*0.25, CY-R*0.28, R*0.35, 0, Math.PI*2); ctx.fill();
+
+    // Zentraler Kern-Flash (weiß, pulsiert)
+    const coreR = R*0.18*(1 + Math.sin(t*2.4)*(0.06+level*0.08));
+    const core = ctx.createRadialGradient(CX, CY, 0, CX, CY, coreR);
+    core.addColorStop(0,'rgba(255,255,255,1)');
+    core.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=core; ctx.beginPath(); ctx.arc(CX,CY,coreR,0,Math.PI*2); ctx.fill();
 
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 
-  // ====== PostMessage API ====================================================
-  function applyState(s){ setState(s); }
-  window.addEventListener('message', (ev)=>{
+  // ===== PostMessage API =====================================================
+  window.addEventListener('message', (ev) => {
     const d = ev?.data || {};
-    if (d.type==='avatar:set')   applyState(d.state||'idle');
+    if (d.type==='avatar:set')   setState(d.state||'idle');
     if (d.type==='avatar:level') setLevel(d.value);
     if (d.type==='ping') ev.source?.postMessage?.({ type:'avatar:ready' }, '*');
   });
 
-  // Initial
   setState('idle'); setLevel(0);
-  setTimeout(()=> parent?.postMessage?.({ type:'avatar:ready' }, '*'), 30);
+  setTimeout(()=> parent?.postMessage?.({ type:'avatar:ready' }, '*'), 40);
 })();
 </script>
 </body>
