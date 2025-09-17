@@ -1,60 +1,75 @@
+// api/mux-upload.js
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type,Authorization'
+};
+
+const MUX_BASE = 'https://api.mux.com/video/v1';
+
+function basicAuth() {
+  const id = process.env.MUX_TOKEN_ID || '';
+  const secret = process.env.MUX_TOKEN_SECRET || '';
+  return 'Basic ' + Buffer.from(id + ':' + secret).toString('base64');
+}
+
 export default async function handler(req, res) {
-  const origin = req.headers.origin || '';
-  const ALLOW = new Set([
-    'https://interview.clarity-nvl.com',
-    'https://clarity-recorder.vercel.app',
-    'https://www.clarity-nvl.com'
-  ]);
-  const allowOrigin = ALLOW.has(origin) ? origin : 'https://interview.clarity-nvl.com';
-  res.setHeader('Access-Control-Allow-Origin', allowOrigin);
-  res.setHeader('Vary', 'Origin');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  if (req.method === 'OPTIONS') return res.status(204).end();
-  if (req.method !== 'GET') return res.status(405).json({ ok:false, error_code:'method_not_allowed' });
-
-  const ID = process.env.MUX_TOKEN_ID;
-  const SECRET = process.env.MUX_TOKEN_SECRET;
-  if (!ID || !SECRET) {
-    return res.status(500).json({ ok:false, error_code:'env_missing' });
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Max-Age', '86400');
+    res.writeHead(204, CORS_HEADERS).end();
+    return;
   }
-  const auth = 'Basic ' + Buffer.from(`${ID}:${SECRET}`).toString('base64');
 
-  const uploadId = String(req.query.uploadId || '').trim();
-  if (!uploadId) return res.status(400).json({ ok:false, error_code:'missing_uploadId' });
+  if (req.method === 'GET') {
+    // Debug-Hook: zeigt, dass die Route existiert (für deinen 404-Test im Browser)
+    res.writeHead(200, { 'Content-Type': 'application/json', ...CORS_HEADERS });
+    res.end(JSON.stringify({ ok: true, route: 'mux-upload' }));
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    res.writeHead(405, { 'Content-Type': 'application/json', ...CORS_HEADERS });
+    res.end(JSON.stringify({ error: 'method_not_allowed' }));
+    return;
+  }
 
   try {
-    // Upload abfragen
-    const upRes = await fetch(`https://api.mux.com/video/v1/uploads/${encodeURIComponent(uploadId)}`, {
-      headers: { 'Authorization': auth, 'Accept':'application/json' }
-    });
-    const upJson = await upRes.json().catch(()=> ({}));
+    const { uid = '', companyId = '', mode = 'video' } = req.body || {};
 
-    const assetId = upJson?.data?.asset_id || null;
-    if (!assetId) {
-      return res.status(200).json({ ok:true, assetStatus: upJson?.data?.status || 'waiting', playbackId:null, mp4Url:null });
+    // Erstelle Direct Upload bei Mux
+    const createResp = await fetch(`${MUX_BASE}/uploads`, {
+      method: 'POST',
+      headers: {
+        'Authorization': basicAuth(),
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        cors_origin: '*',
+        new_asset_settings: {
+          playback_policy: ['public'],
+          mp4_support: 'standard',
+          passthrough: JSON.stringify({ uid, companyId, mode }).slice(0, 255)
+        }
+      })
+    });
+
+    if (!createResp.ok) {
+      const errText = await createResp.text();
+      res.writeHead(400, { 'Content-Type': 'application/json', ...CORS_HEADERS });
+      res.end(JSON.stringify({ error: 'mux_upload_create_failed', detail: errText.slice(0, 500) }));
+      return;
     }
 
-    // Asset abfragen
-    const asRes = await fetch(`https://api.mux.com/video/v1/assets/${assetId}`, {
-      headers: { 'Authorization': auth, 'Accept':'application/json' }
-    });
-    const asJson = await asRes.json().catch(()=> ({}));
-    const playbackId = (asJson?.data?.playback_ids?.[0]?.id) || null;
-
-    let mp4Url = null;
-    if (playbackId) {
-      // Direktlink; für echte Produktion evtl. über signed URLs nachdenken
-      mp4Url = `https://stream.mux.com/${playbackId}/medium.mp4`;
-    }
-
-    return res.status(200).json({
-      ok:true,
-      assetStatus: asJson?.data?.status || 'unknown',
-      playbackId,
-      mp4Url
-    });
+    const j = await createResp.json();
+    const upload = j?.data;
+    res.writeHead(200, { 'Content-Type': 'application/json', ...CORS_HEADERS });
+    res.end(JSON.stringify({
+      ok: true,
+      uploadUrl: upload?.url || '',
+      uploadId: upload?.id || ''
+    }));
   } catch (e) {
-    return res.status(500).json({ ok:false, error_code:'mux_query_exception', message:String(e?.message||e) });
+    res.writeHead(500, { 'Content-Type': 'application/json', ...CORS_HEADERS });
+    res.end(JSON.stringify({ error: 'server_error', message: String(e?.message || e) }));
   }
 }
