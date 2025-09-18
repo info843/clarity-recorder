@@ -3,240 +3,249 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Clarity Glass Voice Avatar</title>
+<title>Clarity Glass Orb Avatar</title>
 <style>
   html,body{margin:0;height:100%;background:transparent;overflow:hidden}
   #root{position:fixed;inset:0}
-  /* optional tiny badge for local debugging – hidden by default */
-  #badge{position:fixed;left:50%;transform:translateX(-50%);bottom:10px;
-    padding:4px 8px;border-radius:999px;font:600 11px/1 system-ui,Segoe UI,Roboto,Arial;
-    color:#eaf2ff;background:rgba(0,0,0,.25);backdrop-filter:blur(4px);
-    border:1px solid rgba(255,255,255,.18);opacity:.0;pointer-events:none}
 </style>
 </head>
 <body>
-<div id="root"></div><div id="badge">idle</div>
+<div id="root"></div>
 
 <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
 <script>
-(() => {
-  // ---------- scene ----------
+(()=>{
+  // ---------- Setup ----------
   const root = document.getElementById('root');
-  const renderer = new THREE.WebGLRenderer({antialias:true, alpha:true, powerPreference:'high-performance'});
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true, powerPreference:'high-performance' });
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
   renderer.setSize(innerWidth, innerHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   root.appendChild(renderer.domElement);
 
-  const scene  = new THREE.Scene();
+  const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 50);
   camera.position.set(0,0,3.2);
 
-  scene.add(new THREE.AmbientLight(0xffffff, .8));
-  const dl = new THREE.DirectionalLight(0xffffff,.35); dl.position.set(3,2,3); scene.add(dl);
+  scene.add(new THREE.AmbientLight(0xffffff, .9));
+  const dir = new THREE.DirectionalLight(0xffffff, .35); dir.position.set(3,2,3); scene.add(dir);
 
-  // ---------- geometry ----------
-  const geo = new THREE.SphereGeometry(1.0, 192, 128);
+  // ---------- Inner Effect Sphere (schwebt "1 cm" Abstand zur Hülle) ----------
+  const R_INNER = 0.85;       // ~1 cm Abstand zur Glaswand (Glasradius 1.0)
+  const geoInner = new THREE.SphereGeometry(R_INNER, 192, 128);
 
-  // uniforms & palettes
   const uniforms = {
     uTime:    { value: 0 },
     uBaseAmp: { value: 0.06 },
     uAudioAmp:{ value: 0.22 },
     uLevel:   { value: 0.0 },
-    uBand:    { value: 0.0 },          // keep for API compatibility
+    uBand:    { value: 0.0 },
     uGlow:    { value: 0.85 },
-    uColorA:  { value: new THREE.Vector3(200/360, 0.90, 0.55) }, // cyan
-    uColorB:  { value: new THREE.Vector3(270/360, 0.85, 0.60) }, // violet
-    uColorC:  { value: new THREE.Vector3(320/360, 0.85, 0.62) }, // magenta
+    uColorA:  { value: new THREE.Vector3(200/360, .90, .55) }, // cyan
+    uColorB:  { value: new THREE.Vector3(270/360, .85, .60) }, // violet
+    uColorC:  { value: new THREE.Vector3(320/360, .85, .62) }, // magenta
     uAspect:  { value: innerWidth/innerHeight }
   };
 
-  const simplex = `
+  const simplex=`
   vec3 mod289(vec3 x){return x - floor(x * (1.0/289.0)) * 289.0;}
   vec4 mod289(vec4 x){return x - floor(x * (1.0/289.0)) * 289.0;}
   vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
   vec4 taylorInvSqrt(vec4 r){return 1.79284291400159 - 0.85373472095314 * r;}
   float snoise(vec3 v){
     const vec2 C = vec2(1.0/6.0, 1.0/3.0);
-    const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
-    vec3 i  = floor(v + dot(v, C.yyy));
-    vec3 x0 = v - i + dot(i, C.xxx);
-    vec3 g = step(x0.yzx, x0.xyz);
-    vec3 l = 1.0 - g;
-    vec3 i1 = min(g.xyz, l.zxy);
-    vec3 i2 = max(g.xyz, l.zxy);
-    vec3 x1 = x0 - i1 + C.xxx;
-    vec3 x2 = x0 - i2 + C.yyy;
-    vec3 x3 = x0 - D.yyy;
-    i = mod289(i);
-    vec4 p = permute( permute( permute(i.z + vec4(0.0, i1.z, i2.z, 1.0))
-             + i.y + vec4(0.0, i1.y, i2.y, 1.0)) + i.x + vec4(0.0, i1.x, i2.x, 1.0));
-    float n_ = 0.142857142857;
-    vec3  ns = n_ * D.wyz - D.xzx;
-    vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
-    vec4 x_ = floor(j * ns.z);
-    vec4 y_ = floor(j - 7.0 * x_);
-    vec4 x = x_ * ns.x + ns.yyyy;
-    vec4 y = y_ * ns.x + ns.yyyy;
-    vec4 h = 1.0 - abs(x) - abs(y);
-    vec4 b0 = vec4(x.xy, y.xy);
-    vec4 b1 = vec4(x.zw, y.zw);
-    vec4 s0 = floor(b0)*2.0 + 1.0;
-    vec4 s1 = floor(b1)*2.0 + 1.0;
-    vec4 sh = -step(h, vec4(0.0));
-    vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;
-    vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
-    vec3 p0 = vec3(a0.xy,h.x);
-    vec3 p1 = vec3(a1.xy,h.y);
-    vec3 p2 = vec3(a0.zw,h.z);
-    vec3 p3 = vec3(a1.zw,h.w);
-    vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
+    const vec4 D = vec4(0.0,0.5,1.0,2.0);
+    vec3 i=floor(v+dot(v,C.yyy));
+    vec3 x0=v-i+dot(i,C.xxx);
+    vec3 g=step(x0.yzx,x0.xyz); vec3 l=1.0-g;
+    vec3 i1=min(g.xyz,l.zxy), i2=max(g.xyz,l.zxy);
+    vec3 x1=x0-i1+C.xxx, x2=x0-i2+C.yyy, x3=x0-D.yyy;
+    i=mod289(i);
+    vec4 p=permute(permute(permute(i.z+vec4(0.0,i1.z,i2.z,1.0))+i.y+vec4(0.0,i1.y,i2.y,1.0))+i.x+vec4(0.0,i1.x,i2.x,1.0));
+    float n_=0.142857142857; vec3 ns=n_*D.wyz-D.xzx;
+    vec4 j=p-49.0*floor(p*ns.z*ns.z); vec4 x_=floor(j*ns.z); vec4 y_=floor(j-7.0*x_);
+    vec4 x=x_*ns.x+ns.yyyy, y=y_*ns.x+ns.yyyy, h=1.0-abs(x)-abs(y);
+    vec4 b0=vec4(x.xy,y.xy), b1=vec4(x.zw,y.zw);
+    vec4 s0=floor(b0)*2.0+1.0, s1=floor(b1)*2.0+1.0; vec4 sh=-step(h,vec4(0.0));
+    vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy, a1=b1.xzyw+s1.xzyw*sh.zzww;
+    vec3 p0=vec3(a0.xy,h.x), p1=vec3(a1.xy,h.y), p2=vec3(a0.zw,h.z), p3=vec3(a1.zw,h.w);
+    vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
     p0*=norm.x; p1*=norm.y; p2*=norm.z; p3*=norm.w;
-    vec4 m = max(0.6-vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)),0.0);
-    m = m*m;
-    return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+    vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0); m*=m;
+    return 42.0*dot(m*m, vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
   }`;
 
-  const vShader = `
-    uniform float uTime, uBaseAmp, uAudioAmp, uLevel, uBand;
+  const vInner=`
+    uniform float uTime,uBaseAmp,uAudioAmp,uLevel,uBand;
     varying vec3 vPos; varying float vDef;
     ${simplex}
     void main(){
-      vec3 p = position;
-      float t = uTime * 0.35;
-      float n1 = snoise(normal*1.4 + vec3(t*0.6, t*0.4, t*0.8));
-      float n2 = snoise(position*0.8 + vec3(-t*0.3, t*0.5, -t*0.2));
-      float deform = uBaseAmp * n1 + uAudioAmp * (0.6*uLevel + 0.4*uBand) * n2;
-      vDef = deform;
-      vec3 d = normalize(p) * (1.0 + deform);
-      vPos = d;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(d,1.0);
+      vec3 p=position;
+      float t=uTime*0.35;
+      float n1=snoise(normal*1.4+vec3(t*0.6,t*0.4,t*0.8));
+      float n2=snoise(position*0.8+vec3(-t*0.3,t*0.5,-t*0.2));
+      float d=uBaseAmp*n1 + uAudioAmp*(0.6*uLevel+0.4*uBand)*n2;
+      vDef=d; vec3 q=normalize(p)*(1.0+d);
+      vPos=q; gl_Position=projectionMatrix*modelViewMatrix*vec4(q,1.0);
     }`;
 
-  const fShader = `
+  const fInner=`
     precision highp float;
     varying vec3 vPos; varying float vDef;
-    uniform float uGlow, uTime, uLevel, uBand, uAspect;
-    uniform vec3 uColorA, uColorB, uColorC;
-
+    uniform float uGlow,uTime,uLevel,uBand,uAspect;
+    uniform vec3 uColorA,uColorB,uColorC;
     vec3 hsl2rgb(vec3 hsl){
-      float h=hsl.x, s=hsl.y, l=hsl.z;
+      float h=hsl.x,s=hsl.y,l=hsl.z;
       float c=(1.0-abs(2.0*l-1.0))*s;
       float x=c*(1.0-abs(mod(h*6.0,2.0)-1.0));
-      float m=l-0.5*c;
-      vec3 rgb;
-      if (h < 1.0/6.0) rgb=vec3(c,x,0.0);
-      else if (h < 2.0/6.0) rgb=vec3(x,c,0.0);
-      else if (h < 3.0/6.0) rgb=vec3(0.0,c,x);
-      else if (h < 4.0/6.0) rgb=vec3(0.0,x,c);
-      else if (h < 5.0/6.0) rgb=vec3(x,0.0,c);
+      float m=l-0.5*c; vec3 rgb;
+      if(h<1.0/6.0) rgb=vec3(c,x,0.0);
+      else if(h<2.0/6.0) rgb=vec3(x,c,0.0);
+      else if(h<3.0/6.0) rgb=vec3(0.0,c,x);
+      else if(h<4.0/6.0) rgb=vec3(0.0,x,c);
+      else if(h<5.0/6.0) rgb=vec3(x,0.0,c);
       else rgb=vec3(c,0.0,x);
       return rgb+m;
     }
-
     void main(){
-      vec3 n = normalize(vPos);
-      float ang = atan(n.y, n.x);
-      float mixAB = (sin(ang*2.0 + uTime*0.7)*0.5 + 0.5);
+      vec3 n=normalize(vPos);
+      float a=atan(n.y,n.x);
+      float mixAB=(sin(a*2.0+uTime*0.7)*0.5+0.5);
       vec3 colA=hsl2rgb(uColorA), colB=hsl2rgb(uColorB), colC=hsl2rgb(uColorC);
-      vec3 base = mix(colA, colB, mixAB);
-      float pull = clamp(0.25 + 0.75*(0.6*uLevel + 0.4*uBand), 0.0, 1.0);
-      vec3 color = mix(base, colC, pull);
-      float sheen = smoothstep(0.0, 0.2, vDef + 0.1);
-      color = mix(color, vec3(1.0), sheen*0.25);
-
-      // Fresnel / Rim (glasiger Rand)
-      float fres = pow(1.0 - abs(n.z), 2.6);
-      vec3 glow = color * uGlow * fres;
-      vec3 outCol = color + glow*0.55;
-
-      gl_FragColor = vec4(outCol, 0.96);
+      vec3 base=mix(colA,colB,mixAB);
+      float pull=clamp(0.25+0.75*(0.6*uLevel+0.4*uBand),0.0,1.0);
+      vec3 color=mix(base,colC,pull);
+      float sheen=smoothstep(0.0,0.2,vDef+0.1);
+      color=mix(color,vec3(1.0),sheen*0.25);
+      float fres=pow(1.0-abs(n.z),2.6);
+      vec3 glow=color*uGlow*fres;
+      gl_FragColor=vec4(color+glow*0.55,0.96);
     }`;
 
-  const mat = new THREE.ShaderMaterial({
-    uniforms, vertexShader: vShader, fragmentShader: fShader,
-    transparent:true, side:THREE.FrontSide
+  const innerMat = new THREE.ShaderMaterial({
+    uniforms, vertexShader:vInner, fragmentShader:fInner, transparent:true
   });
-  const sphere = new THREE.Mesh(geo, mat); scene.add(sphere);
+  const innerSphere = new THREE.Mesh(geoInner, innerMat);
+  scene.add(innerSphere);
 
-  // soft halo
-  const halo = new THREE.Mesh(new THREE.PlaneGeometry(6,6), new THREE.MeshBasicMaterial({
-    color:0x6a7bff, transparent:true, opacity:0.12,
-    blending:THREE.AdditiveBlending, depthWrite:false
-  }));
-  halo.position.set(0,0,-0.6); scene.add(halo);
+  // ---------- Glass Shell (Radius 1.0) ----------
+  const R_GLASS = 1.0;
+  const geoGlass = new THREE.SphereGeometry(R_GLASS, 128, 96);
+  const glassMat = new THREE.ShaderMaterial({
+    transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
+    uniforms:{ uTime:{value:0.0}, uTint:{value:new THREE.Color(0xEAF2FF)}, uStrength:{value:0.22} },
+    vertexShader:`
+      varying vec3 vN; varying vec3 vV;
+      void main(){
+        vec4 mv = modelViewMatrix * vec4(position,1.0);
+        vV = -mv.xyz; vN = normalize(normalMatrix * normal);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader:`
+      precision highp float;
+      varying vec3 vN; varying vec3 vV;
+      uniform vec3 uTint; uniform float uStrength;
+      void main(){
+        float fres = pow(1.0 - max(0.0, dot(normalize(vN), normalize(vV))), 2.2);
+        vec3 col = uTint * (0.35 + 0.65*fres);
+        float a = 0.08 + fres * uStrength;     // dünnes Glas, starker Rand
+        gl_FragColor = vec4(col, a);
+      }`
+  });
+  const glass = new THREE.Mesh(geoGlass, glassMat);
+  scene.add(glass);
 
-  // ---------- state/level API ----------
-  const badge = document.getElementById('badge');
+  // ---------- Outer Pulse Ring (~1 cm außerhalb) ----------
+  const RING_SCALE = 1.18; // etwas außerhalb der Glasoberfläche
+  const ringGeo = new THREE.PlaneGeometry(6,6,1,1);
+  const ringMat = new THREE.ShaderMaterial({
+    transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
+    uniforms:{ uTime:{value:0}, uLevel:{value:0} },
+    vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+    fragmentShader:`
+      precision highp float; varying vec2 vUv; uniform float uTime; uniform float uLevel;
+      void main(){
+        vec2 p = vUv*2.0-1.0;
+        float d = length(p);
+        // Grundradius + Puls
+        float R = 0.78 + 0.015*sin(uTime*2.2) + 0.02*uLevel;
+        float width = 0.035 + 0.015*uLevel;
+        float ring = smoothstep(R, R-width, abs(d-R));
+        float fade = smoothstep(1.1, 0.8, d); // weiches Ausblenden außen
+        float a = ring * fade * (0.55 + 0.35*uLevel);
+        gl_FragColor = vec4(vec3(1.0), a);
+      }`
+  });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.scale.setScalar(RING_SCALE);
+  ring.position.z = -0.55; // knapp hinter der Kugel, damit es wirklich außen wirkt
+  scene.add(ring);
+
+  // ---------- State/Level API ----------
   const STYLES = {
     idle:      { glow:.85, base:.06, audio:.22, rotX:.05, rotY:.12 },
     listening: { glow:.95, base:.08, audio:.28, rotX:.05, rotY:.16 },
     thinking:  { glow:.92, base:.07, audio:.24, rotX:.04, rotY:.10 },
     speaking:  { glow:.98, base:.09, audio:.30, rotX:.06, rotY:.20 },
   };
-  let rotX = .05, rotY = .12, targetLevel = 0.0, currentLevel = 0.0;
-  let lastMsgTs = performance.now();
-
+  let rotX=.05, rotY=.12, targetLevel=0, currentLevel=0, lastMsg=performance.now();
   function setState(s='idle'){
-    const m = STYLES[s] || STYLES.idle;
-    uniforms.uGlow.value    = m.glow;
-    uniforms.uBaseAmp.value = m.base;
-    uniforms.uAudioAmp.value= m.audio;
+    const m = STYLES[s]||STYLES.idle;
+    uniforms.uGlow.value=m.glow;
+    uniforms.uBaseAmp.value=m.base;
+    uniforms.uAudioAmp.value=m.audio;
     rotX=m.rotX; rotY=m.rotY;
-    badge.textContent = s; // hidden by default (opacity 0) → turn on if you want
   }
   function setLevel(v=0){
-    targetLevel = Math.max(0, Math.min(1, Number(v)||0));
-    lastMsgTs = performance.now();
+    targetLevel=Math.max(0,Math.min(1,Number(v)||0));
+    lastMsg=performance.now();
   }
 
-  // ---------- loop ----------
+  // ---------- Loop ----------
   let tPrev = performance.now()/1000;
   const nobreath = new URLSearchParams(location.search).get('nobreath')==='1';
 
-  function tick(){
-    requestAnimationFrame(tick);
-    const tNow = performance.now()/1000, dt = Math.min(tNow - tPrev, .05); tPrev = tNow;
+  function frame(){
+    requestAnimationFrame(frame);
+    const tNow=performance.now()/1000, dt=Math.min(tNow-tPrev,.05); tPrev=tNow;
 
-    // smooth level; fallback breathing if no messages for 3s
-    const since = performance.now() - lastMsgTs;
-    const fallback = (!nobreath && since > 3000) ? (Math.sin(tNow*1.6)*.5+.5)*.35 : targetLevel;
+    const since = performance.now()-lastMsg;
+    const fallback = (!nobreath && since>3000) ? (Math.sin(tNow*1.6)*.5+.5)*.35 : targetLevel;
     currentLevel = currentLevel*0.85 + fallback*0.15;
 
-    uniforms.uLevel.value = currentLevel;
+    uniforms.uLevel.value=currentLevel;
     uniforms.uTime.value += dt;
+    ringMat.uniforms.uTime.value += dt;
+    ringMat.uniforms.uLevel.value = currentLevel;
 
-    sphere.rotation.y += rotY * dt;
-    sphere.rotation.x += rotX * dt;
+    innerSphere.rotation.y += rotY*dt;
+    innerSphere.rotation.x += rotX*dt;
 
-    const scale = 1.0 + (currentLevel * 0.25);
-    halo.scale.setScalar(1.0 + scale * 0.12);
-    halo.material.opacity = 0.10 + scale * 0.14;
+    // Billboard für Ring
+    ring.lookAt(camera.position);
 
     renderer.render(scene,camera);
   }
-  tick();
+  frame();
 
-  // ---------- resize ----------
-  addEventListener('resize', () => {
-    renderer.setSize(innerWidth, innerHeight);
-    camera.aspect = innerWidth/innerHeight;
-    camera.updateProjectionMatrix();
-    uniforms.uAspect.value = innerWidth/innerHeight;
+  // ---------- Resize ----------
+  addEventListener('resize', ()=>{
+    renderer.setSize(innerWidth,innerHeight);
+    camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+    uniforms.uAspect.value=innerWidth/innerHeight;
   });
 
-  // ---------- postMessage bridge ----------
-  addEventListener('message', (ev) => {
-    const d = ev?.data || {};
-    if (d.type==='avatar:set')   setState(d.state || 'idle');
-    if (d.type==='avatar:level') setLevel(d.value);
-    if (d.type==='ping') ev.source?.postMessage?.({ type:'avatar:ready' }, '*');
+  // ---------- Messaging ----------
+  addEventListener('message', (ev)=>{
+    const d=ev?.data||{};
+    if(d.type==='avatar:set')   setState(d.state||'idle');
+    if(d.type==='avatar:level') setLevel(d.value);
+    if(d.type==='ping') ev.source?.postMessage?.({type:'avatar:ready'}, '*');
   });
 
   // init
   setState('idle'); setLevel(0);
-  setTimeout(() => parent?.postMessage?.({ type:'avatar:ready' }, '*'), 40);
+  setTimeout(()=> parent?.postMessage?.({type:'avatar:ready'}, '*'), 40);
 })();
 </script>
 </body>
