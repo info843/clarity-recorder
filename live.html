@@ -1,88 +1,15 @@
-// api/openai-realtime-token.js
-// Vercel Serverless Function (Node 18+). Mintet kurzlebige Ephemeral Tokens für OpenAI Realtime WebRTC.
-// Leg die Datei in dein bestehendes Vercel-Projekt (wo schon recorder/avatar-APIs liegen).
-
-export default async function handler(req, res) {
-  try {
-    if (req.method !== 'POST') {
-      res.status(405).json({ error: 'Method not allowed' });
-      return;
-    }
-
-    const { uid, companyId, lang, voice } = await parseBody(req);
-    if (!process.env.OPENAI_API_KEY) {
-      res.status(500).json({ error: 'OPENAI_API_KEY missing' });
-      return;
-    }
-
-    // Optional: Ein paar einfache Assertions (UID/Company) – kannst du erweitern.
-    if (!uid || !companyId) {
-      res.status(400).json({ error: 'uid/companyId required' });
-      return;
-    }
-
-    // Ephemeral Session anfordern
-    const model = process.env.OPENAI_REALTIME_MODEL || 'gpt-4o-realtime-preview-2025-09-12';
-    const expiresIn = 60; // Sekunden – kurzlebig halten
-    const body = {
-      model,
-      voice: voice || 'verse',         // beliebig: alloy, verse, aria ...
-      modalities: ['audio', 'text'],   // Realtime Audio + Text
-      expires_in: expiresIn
-    };
-
-    const r = await fetch('https://api.openai.com/v1/realtime/sessions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(body)
-    });
-
-    if (!r.ok) {
-      const txt = await r.text().catch(() => '');
-      res.status(r.status).json({ error: 'Failed to mint realtime token', details: txt });
-      return;
-    }
-
-    const data = await r.json();
-    // data enthält z. B. { client_secret: { value, expires_at }, id, ... }
-    res.status(200).json({
-      ok: true,
-      token: data?.client_secret?.value || null,
-      expiresAt: data?.client_secret?.expires_at || null,
-      model
-    });
-  } catch (err) {
-    res.status(500).json({ error: String(err?.message || err) });
-  }
-}
-
-async function parseBody(req) {
-  try {
-    const chunks = [];
-    for await (const c of req) chunks.push(c);
-    const buf = Buffer.concat(chunks).toString('utf8');
-    return JSON.parse(buf || '{}');
-  } catch {
-    return {};
-  }
-}
-html
-Copy code
 <!-- public/live.html -->
 <!doctype html>
 <html lang="de">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Clarity Live Interview (Realtime)</title>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Clarity Live Interview (Realtime + Mux Recording)</title>
   <style>
     :root { --bg:#0b0d12; --fg:#e5e7eb; --muted:#9ca3af; --accent:#60a5fa; }
     body{margin:0;font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--fg)}
-    .wrap{max-width:960px;margin:0 auto;padding:16px}
-    .row{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+    .wrap{max-width:980px;margin:0 auto;padding:16px}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
     .card{background:#0f1320;border:1px solid #1f2937;border-radius:14px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
     h1{font-size:20px;margin:0 0 12px}
     label{display:block;margin:8px 0 6px;color:var(--muted)}
@@ -93,268 +20,243 @@ Copy code
     .status{font-family:ui-monospace,Consolas,monospace;font-size:12px;background:#0b1220;border:1px dashed #293243;border-radius:10px;padding:10px;height:170px;overflow:auto;white-space:pre-wrap}
     audio{width:100%}
     .pill{display:inline-block;background:#111827;border:1px solid #374151;border-radius:999px;padding:4px 10px;font-size:12px;margin-right:6px}
+    .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
   </style>
 </head>
 <body>
   <div class="wrap">
-    <h1>Clarity Live Interview (Realtime)</h1>
+    <h1>Clarity Live Interview (Realtime + Mux Recording)</h1>
     <div class="row">
       <div class="card">
         <label>Session</label>
-        <div id="sessionPills">
+        <div id="pills">
           <span class="pill" id="pillState">state: idle</span>
           <span class="pill" id="pillModel">model: —</span>
+          <span class="pill" id="pillRec">record: off</span>
         </div>
-        <label for="inUid">UID</label>
-        <input id="inUid" placeholder="UID (linkId)" />
-        <label for="inCompany">Company ID</label>
-        <input id="inCompany" placeholder="companyId" />
-        <label for="inLang">Language</label>
-        <select id="inLang">
-          <option value="de">de</option>
-          <option value="en">en</option>
-        </select>
-        <label for="inVoice">Voice</label>
-        <select id="inVoice">
-          <option value="verse">verse</option>
-          <option value="alloy">alloy</option>
-          <option value="aria">aria</option>
-        </select>
-        <label for="inTokenUrl">Token Endpoint</label>
-        <input id="inTokenUrl" placeholder="/api/openai-realtime-token" value="/api/openai-realtime-token" />
+
+        <label>UID</label><input id="inUid" placeholder="UID (linkId)"/>
+        <label>Company ID</label><input id="inCompany" placeholder="companyId"/>
+        <label>Language</label>
+        <select id="inLang"><option value="de">de</option><option value="en">en</option></select>
+        <label>Voice</label>
+        <select id="inVoice"><option value="verse">verse</option><option value="alloy">alloy</option><option value="aria">aria</option></select>
+
+        <div class="row2">
+          <div>
+            <label>Token Endpoint</label>
+            <input id="inTokenUrl" value="/api/openai-realtime-token" placeholder="/api/openai-realtime-token"/>
+          </div>
+          <div>
+            <label>Mux Upload API</label>
+            <input id="inMuxUpload" value="/api/mux-upload" placeholder="/api/mux-upload"/>
+          </div>
+        </div>
+
         <div style="display:flex;gap:8px;margin-top:12px">
           <button id="btnStart" class="primary">Start Live</button>
           <button id="btnStop">Stop</button>
+          <button id="btnToggleRec">Record to Mux: Off</button>
         </div>
+
         <label style="margin-top:14px">Status</label>
         <div id="log" class="status"></div>
       </div>
       <div class="card">
-        <label>Audio Output (Agent)</label>
+        <label>Agent Audio</label>
         <audio id="agentAudio" autoplay controls></audio>
-        <label>Text (letzte Antwort)</label>
-        <textarea id="agentText" rows="6" placeholder="Agent messages…"></textarea>
+        <label>Agent Text</label>
+        <textarea id="agentText" rows="9" placeholder="Agent messages…"></textarea>
       </div>
     </div>
   </div>
 
   <script>
-    // --- Minimaler Realtime-WebRTC Client (OpenAI) ---
-    // - Holt Ephemeral Token von deinem Vercel-Endpoint
-    // - Baut RTCPeerConnection und DataChannel auf
-    // - Streamt Mic → Realtime → Audio-Response
-    // - PostMessage-Schnittstelle für Wix (parent)
-
     const els = {
-      uid: document.getElementById('inUid'),
-      company: document.getElementById('inCompany'),
-      lang: document.getElementById('inLang'),
-      voice: document.getElementById('inVoice'),
-      tokenUrl: document.getElementById('inTokenUrl'),
-      start: document.getElementById('btnStart'),
-      stop: document.getElementById('btnStop'),
-      audio: document.getElementById('agentAudio'),
-      text: document.getElementById('agentText'),
-      log: document.getElementById('log'),
-      pillState: document.getElementById('pillState'),
-      pillModel: document.getElementById('pillModel'),
+      uid: v('#inUid'), company: v('#inCompany'), lang: v('#inLang'), voice: v('#inVoice'),
+      tokenUrl: v('#inTokenUrl'), muxUpload: v('#inMuxUpload'),
+      start: v('#btnStart'), stop: v('#btnStop'), toggleRec: v('#btnToggleRec'),
+      audio: v('#agentAudio'), text: v('#agentText'), log: v('#log'),
+      pillState: v('#pillState'), pillModel: v('#pillModel'), pillRec: v('#pillRec')
     };
 
-    let pc = null;
-    let dc = null;
-    let mediaStream = null;
-    let sessionId = null;
-    let modelInUse = null;
+    function v(sel){ return document.querySelector(sel); }
+    function log(...a){ const t=a.map(x=>typeof x==='object'?JSON.stringify(x):String(x)).join(' '); els.log.textContent+=`[${new Date().toLocaleTimeString()}] ${t}\n`; els.log.scrollTop=els.log.scrollHeight; console.log(...a); }
+    function setState(s){ els.pillState.textContent=`state: ${s}` }
 
-    const log = (...a) => {
-      const t = a.map(v => (typeof v === 'object' ? JSON.stringify(v) : String(v))).join(' ');
-      els.log.textContent += `[${new Date().toLocaleTimeString()}] ${t}\n`;
-      els.log.scrollTop = els.log.scrollHeight;
-      console.log(...a);
-    };
+    let pc=null, dc=null, micStream=null, sessionId=null, modelInUse=null;
+    let doRecording=false, mediaRecorder=null, chunks=[];
+    let muxUploadUrl=null, muxUploadId=null, muxPlaybackId=null;
 
-    function setState(s){ els.pillState.textContent = `state: ${s}` }
+    // URL Prefill
+    (()=>{const p=new URLSearchParams(location.search);
+      if(p.get('uid')) els.uid.value=p.get('uid');
+      if(p.get('companyId')) els.company.value=p.get('companyId');
+      if(p.get('lang')) els.lang.value=p.get('lang');
+      if(p.get('voice')) els.voice.value=p.get('voice');
+    })();
 
-    async function getToken({ uid, companyId, lang, voice }) {
-      const r = await fetch(els.tokenUrl.value || '/api/openai-realtime-token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid, companyId, lang, voice })
-      });
-      const j = await r.json();
-      if (!r.ok || !j?.token) throw new Error(j?.error || 'Failed to fetch token');
-      modelInUse = j.model;
-      els.pillModel.textContent = `model: ${modelInUse}`;
-      return j.token;
-    }
-
-    // Primitive Wix-Bridge (Empfang von parent)
-    window.addEventListener('message', async (ev) => {
-      try {
-        const { type, data } = ev.data || {};
-        if (type === 'clarity.live.start') {
-          els.uid.value = data?.uid || '';
-          els.company.value = data?.companyId || '';
-          els.lang.value = data?.lang || 'de';
-          await startLive();
-        } else if (type === 'clarity.live.stop') {
-          await stopLive();
-        } else if (type === 'clarity.live.context') {
-          // Kontext/Guardrails in die Session schreiben
-          if (dc && dc.readyState === 'open') {
-            dc.send(JSON.stringify({ type: 'session.update', session: {
-              instructions: buildSystemInstructions(data)
-            }}));
-          }
+    window.addEventListener('message', async (ev)=>{
+      const {type,data}=ev.data||{};
+      if(type==='clarity.live.start'){
+        if(data?.uid) els.uid.value=data.uid;
+        if(data?.companyId) els.company.value=data.companyId;
+        if(data?.lang) els.lang.value=data.lang;
+        await startLive();
+      } else if (type==='clarity.live.stop'){
+        await stopLive();
+      } else if (type==='clarity.live.record'){
+        setRecording(!!data?.enabled);
+      } else if (type==='clarity.live.context'){
+        if(dc && dc.readyState==='open'){
+          dc.send(JSON.stringify({ type:'session.update', session:{ instructions: buildSystemInstructions(data) }}));
         }
-      } catch (e) { log('postMessage error:', e.message) }
+      }
     });
 
     function buildSystemInstructions(ctx){
       const companyName = ctx?.companyName || 'Your Company';
       const position = ctx?.position || 'Position';
-      const lang = ctx?.lang || 'de';
-      return `
-You are Clarity's professional interview agent. Company: "${companyName}", Role: "${position}".
-Use ONLY provided jobDescription and companyFacts. No web browsing. If missing info: say so and refer to the company.
+      const lang = ctx?.lang || els.lang.value || 'de';
+      return `You are Clarity's interview agent for "${companyName}" role "${position}".
+Use ONLY provided jobDescription & companyFacts. No web browsing. If info missing, say so & refer to company.
 One concise question per turn. Inclusive, unbiased. Reformulate once if needed.
-No smalltalk. Salary only if provided in data; else refer to direct discussion.
-Language: ${lang}.
-`.trim();
+No smalltalk. Salary only if provided; else refer to direct discussion.
+Language: ${lang}.`.trim();
     }
 
-    async function startLive() {
-      try {
-        if (pc) await stopLive();
-        setState('connecting');
-        els.start.disabled = true;
-
-        const uid = els.uid.value.trim();
-        const companyId = els.company.value.trim();
-        const lang = els.lang.value;
-        const voice = els.voice.value;
-
-        // 1) Token
-        const token = await getToken({ uid, companyId, lang, voice });
-
-        // 2) Mic
-        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        log('Mic ready');
-
-        // 3) PeerConnection
-        pc = new RTCPeerConnection();
-        pc.onconnectionstatechange = () => {
-          setState(pc.connectionState);
-          log('PC state:', pc.connectionState);
-        };
-        pc.onicecandidate = () => {}; // trickle ICE von OpenAI nicht benötigt
-
-        // DataChannel
-        dc = pc.createDataChannel('oai-events');
-        dc.onopen = () => { log('DataChannel open'); };
-        dc.onclose = () => { log('DataChannel closed'); };
-        dc.onmessage = (ev) => {
-          try {
-            const msg = JSON.parse(ev.data);
-            handleAgentEvent(msg);
-          } catch {
-            // Fallback: plain text
-            els.text.value = ev.data;
-          }
-        };
-
-        // Audio Output
-        const audioEl = els.audio;
-        pc.ontrack = (ev) => {
-          audioEl.srcObject = ev.streams[0];
-        };
-
-        // Upstream Audio
-        const audioTx = pc.addTransceiver(mediaStream.getTracks()[0], { direction: 'sendrecv' });
-        audioTx.sender.replaceTrack(mediaStream.getTracks()[0]);
-
-        // 4) SDP Offer
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-
-        // 5) Realtime SDP Answer von OpenAI
-        const model = modelInUse || 'gpt-4o-realtime-preview-2025-09-12';
-        const rtRes = await fetch(`https://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/sdp'
-          },
-          body: offer.sdp
-        });
-
-        const answerSdp = await rtRes.text();
-        await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
-        log('Realtime connected');
-        setState('connected');
-
-        // 6) Erste System-Instruktion setzen
-        if (dc && dc.readyState === 'open') {
-          // Basis-Instruktion (kann später via postMessage überschrieben werden)
-          dc.send(JSON.stringify({ type: 'session.update', session: {
-            instructions: buildSystemInstructions({ companyName:'', position:'', lang })
-          }}));
-          // Erstes "Startprompt" anfordern – die eigentliche Frage generiert das Modell
-          dc.send(JSON.stringify({ type: 'response.create', response: { instructions: 'Begin with a brief greeting and the first warm-up question.' }}));
-        }
-
-        // Informiere Parent (Wix) – z. B. Avatar "speaking"
-        window.parent?.postMessage({ type:'clarity.avatar', data:{ state:'speaking' } }, '*');
-      } catch (err) {
-        log('startLive error:', err.message);
-        setState('error');
-      } finally {
-        els.start.disabled = false;
-      }
+    async function getToken(){
+      const r = await fetch(els.tokenUrl.value, { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ uid: els.uid.value.trim(), companyId: els.company.value.trim(), lang: els.lang.value, voice: els.voice.value })
+      });
+      const j = await r.json();
+      if(!r.ok || !j?.token) throw new Error(j?.error||'token error');
+      modelInUse = j.model; els.pillModel.textContent=`model: ${modelInUse||'—'}`;
+      return j.token;
     }
 
-    async function stopLive() {
-      try {
-        setState('closing');
-        if (dc) { try { dc.close(); } catch{} }
-        if (pc) { try { pc.close(); } catch{} }
-        if (mediaStream) {
-          mediaStream.getTracks().forEach(t => t.stop());
-        }
-      } catch (e) {
-        log('stopLive error:', e.message);
-      } finally {
-        dc = null; pc = null; mediaStream = null;
-        setState('idle');
-        window.parent?.postMessage({ type:'clarity.avatar', data:{ state:'idle' } }, '*');
-      }
+    function setRecording(enabled){
+      doRecording = !!enabled;
+      els.pillRec.textContent = `record: ${doRecording?'on':'off'}`;
+      els.toggleRec.textContent = `Record to Mux: ${doRecording?'On':'Off'}`;
     }
 
-    function handleAgentEvent(msg){
-      // Realtime schickt verschiedene Events (response.delta, response.completed etc.)
-      if (msg.type === 'response.delta' && msg.delta) {
-        els.text.value += msg.delta;
-      }
-      if (msg.type === 'response.completed') {
-        els.text.value += '\n';
-        window.parent?.postMessage({ type:'clarity.avatar', data:{ state:'listening' } }, '*');
-      }
-      // Du kannst hier weitere Typen behandeln (tool calls etc.)
-    }
+    els.toggleRec.addEventListener('click', ()=> setRecording(!doRecording));
 
-    // Buttons
     els.start.addEventListener('click', startLive);
     els.stop.addEventListener('click', stopLive);
 
-    // Autoprefill via URL ?uid=&companyId=&lang=&tokenUrl=
-    (function initFromQuery(){
-      const p = new URLSearchParams(location.search);
-      if (p.get('uid')) els.uid.value = p.get('uid');
-      if (p.get('companyId')) els.company.value = p.get('companyId');
-      if (p.get('lang')) els.lang.value = p.get('lang');
-      if (p.get('voice')) els.voice.value = p.get('voice');
-      if (p.get('tokenUrl')) els.tokenUrl.value = p.get('tokenUrl');
-    })();
+    async function startLive(){
+      try{
+        if(pc) await stopLive();
+        setState('connecting'); els.start.disabled=true;
+
+        const token = await getToken();
+
+        // Mic
+        micStream = await navigator.mediaDevices.getUserMedia({ audio:true });
+        log('Mic ready');
+
+        // Optional Parallelaufnahme → Mux Direct Upload
+        if(doRecording){
+          const up = await fetch(els.muxUpload.value, { method:'POST' });
+          const j = await up.json();
+          if(!up.ok || !j?.uploadUrl || !j?.uploadId) throw new Error('mux-upload init failed');
+          muxUploadUrl = j.uploadUrl; muxUploadId = j.uploadId;
+          mediaRecorder = new MediaRecorder(micStream, { mimeType: 'audio/webm' });
+          chunks = [];
+          mediaRecorder.ondataavailable = e => { if(e.data?.size) chunks.push(e.data); };
+          mediaRecorder.onstop = uploadToMux;
+          mediaRecorder.start(1000);
+          setState('recording'); log('MediaRecorder started');
+        }
+
+        // WebRTC
+        pc = new RTCPeerConnection();
+        pc.onconnectionstatechange = ()=>{ setState(pc.connectionState); log('pc:', pc.connectionState); };
+        dc = pc.createDataChannel('oai-events');
+        dc.onopen = ()=> log('DataChannel open');
+        dc.onmessage = onAgentEvent;
+
+        pc.ontrack = (ev)=> els.audio.srcObject = ev.streams[0];
+        const tx = pc.addTransceiver(micStream.getTracks()[0], { direction:'sendrecv' });
+        tx.sender.replaceTrack(micStream.getTracks()[0]);
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        const model = modelInUse || 'gpt-4o-realtime-preview-2025-09-12';
+        const rt = await fetch(`https://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`, {
+          method:'POST',
+          headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/sdp' },
+          body: offer.sdp
+        });
+        const answerSdp = await rt.text();
+        await pc.setRemoteDescription({ type:'answer', sdp: answerSdp });
+        setState('connected'); log('Realtime connected');
+
+        if(dc && dc.readyState==='open'){
+          dc.send(JSON.stringify({ type:'session.update', session:{ instructions: buildSystemInstructions() }}));
+          dc.send(JSON.stringify({ type:'response.create', response:{ instructions:'Begin with a brief greeting and the first warm-up question.' }}));
+        }
+
+        // inform parent (Avatar → speaking)
+        parentPost({ type:'clarity.avatar', data:{ state:'speaking' } });
+
+      }catch(e){
+        log('startLive error:', e.message);
+        setState('error');
+      }finally{
+        els.start.disabled=false;
+      }
+    }
+
+    function onAgentEvent(ev){
+      try{
+        const msg = JSON.parse(ev.data);
+        if(msg.type==='response.delta' && msg.delta){ els.text.value += msg.delta; }
+        if(msg.type==='response.completed'){ els.text.value += '\n'; parentPost({ type:'clarity.avatar', data:{ state:'listening' } }); }
+      }catch{ els.text.value += (ev.data||'') }
+    }
+
+    async function stopLive(){
+      try{
+        setState('closing');
+        if(mediaRecorder && mediaRecorder.state!=='inactive'){ mediaRecorder.stop(); }
+        if(dc){ try{ dc.close(); }catch{} }
+        if(pc){ try{ pc.close(); }catch{} }
+        if(micStream){ micStream.getTracks().forEach(t=>t.stop()); }
+      }catch(e){
+        log('stopLive error:', e.message);
+      }finally{
+        dc=null; pc=null; micStream=null; mediaRecorder=null;
+        setState('idle');
+        parentPost({ type:'clarity.avatar', data:{ state:'idle' } });
+      }
+    }
+
+    async function uploadToMux(){
+      try{
+        setState('uploading');
+        const blob = new Blob(chunks, { type:'audio/webm' });
+        // Direct upload per PUT auf Mux-UploadUrl
+        const r = await fetch(muxUploadUrl, { method:'PUT', headers:{ 'Content-Type':'application/octet-stream' }, body: blob });
+        if(!r.ok) throw new Error('Mux direct upload failed');
+        log('Mux upload OK, uploadId:', muxUploadId);
+
+        // inform parent (Wix) – damit dort saveRecorderResult + Polling/Report starten kann
+        parentPost({ type:'mux.upload.done', data:{ uploadId: muxUploadId } });
+      }catch(err){
+        log('uploadToMux error:', err.message);
+        parentPost({ type:'mux.upload.error', data:{ message: err.message } });
+      }finally{
+        setState('connected'); // zurück in connected (falls Session noch offen)
+      }
+    }
+
+    function parentPost(msg){
+      try{ window.parent?.postMessage(msg,'*'); }catch{}
+    }
   </script>
 </body>
 </html>
