@@ -1,3 +1,4 @@
+<!-- public/live.html -->
 <!doctype html>
 <html lang="de">
 <head>
@@ -44,7 +45,7 @@
         <div class="row2">
           <div>
             <label>Token Endpoint</label>
-            <input id="inTokenUrl" value="" placeholder="/_functions/openai/realtimeToken"/>
+            <input id="inTokenUrl" value="" placeholder="https://www.clarity-nvl.com/_functions/openai/realtimeToken"/>
           </div>
           <div>
             <label>Mux Upload API</label>
@@ -91,15 +92,15 @@
     let mediaRecorder=null, chunks=[], doRecording=true;
     let muxUploadUrl=null, muxUploadId=null;
 
-    // Prefill & Default-URLs
+    // Prefill & Default-URLs (Token-URL → WWW-Domain von Wix)
     (()=>{const p=new URLSearchParams(location.search);
       if(p.get('uid')) els.uid.value=p.get('uid');
       if(p.get('companyId')) els.company.value=p.get('companyId');
       if(p.get('lang')) els.lang.value=p.get('lang');
       if(p.get('voice')) els.voice.value=p.get('voice');
 
-      // ✅ Token-URL direkt auf Wix-HTTP-Function setzen
-      const DEFAULT_TOKEN_URL = 'https://clarity-nvl.com/_functions/openai/realtimeToken';
+      // ✅ Standard: Wix-HTTP-Function über www-Domain
+      const DEFAULT_TOKEN_URL = 'https://www.clarity-nvl.com/_functions/openai/realtimeToken';
       els.tokenUrl.value = p.get('tokenUrl') || DEFAULT_TOKEN_URL;
     })();
 
