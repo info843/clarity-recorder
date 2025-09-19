@@ -88,18 +88,19 @@
     function log(...a){ const t=a.map(x=>typeof x==='object'?JSON.stringify(x):String(x)).join(' '); els.log.textContent+=`[${new Date().toLocaleTimeString()}] ${t}\n`; els.log.scrollTop=els.log.scrollHeight; console.log(...a); }
     function setState(s){ els.pillState.textContent=`state: ${s}` }
 
-    let pc=null, dc=null, stream=null, sessionId=null, modelInUse=null;
+    let pc=null, dc=null, stream=null, modelInUse=null;
     let mediaRecorder=null, chunks=[], doRecording=true;
     let muxUploadUrl=null, muxUploadId=null;
 
-    // Prefill & Default-URLs (Token-URL → WWW-Domain von Wix)
-    (()=>{const p=new URLSearchParams(location.search);
+    // Prefill & sichere Defaults
+    (()=>{
+      const p = new URLSearchParams(location.search);
       if(p.get('uid')) els.uid.value=p.get('uid');
       if(p.get('companyId')) els.company.value=p.get('companyId');
       if(p.get('lang')) els.lang.value=p.get('lang');
       if(p.get('voice')) els.voice.value=p.get('voice');
 
-      // ✅ Standard: Wix-HTTP-Function über www-Domain
+      // **WICHTIG**: Default auf WWW (nicht Apex)
       const DEFAULT_TOKEN_URL = 'https://www.clarity-nvl.com/_functions/openai/realtimeToken';
       els.tokenUrl.value = p.get('tokenUrl') || DEFAULT_TOKEN_URL;
     })();
@@ -149,7 +150,7 @@
 
         const token = await getToken();
 
-        // Kamera + Mikro holen (720p)
+        // Kamera + Mikro (Prompt kommt hier)
         stream = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation:true, noiseSuppression:true },
           video: { width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:30} }
@@ -157,7 +158,7 @@
         els.preview.srcObject = stream;
         log('Cam+Mic ready');
 
-        // Aufnahme (Video+Audio) → Mux
+        // Aufnahme → Mux
         if(doRecording){
           const up = await fetch(els.muxUpload.value, { method:'POST' });
           const j = await up.json();
@@ -173,7 +174,7 @@
           setState('recording'); log('MediaRecorder started (video+audio)');
         }
 
-        // Realtime WebRTC (Audio ↔︎ Model; Video nur für Aufnahme)
+        // Realtime WebRTC (Audio ↔︎ Model)
         pc = new RTCPeerConnection();
         pc.onconnectionstatechange = ()=>{ setState(pc.connectionState); log('pc:', pc.connectionState); };
         dc = pc.createDataChannel('oai-events');
