@@ -99,8 +99,8 @@
       if(p.get('lang')) els.lang.value=p.get('lang');
       if(p.get('voice')) els.voice.value=p.get('voice');
 
-      const DEFAULT_TOKEN_URL = 'https://www.clarity-nvl.com/_functions/openai/realtimeToken';
-      els.tokenUrl.value = p.get('tokenUrl') || DEFAULT_TOKEN_URL;
+     const DEFAULT_TOKEN_URL = '/api/wix-token-proxy';
+    els.tokenUrl.value = p.get('tokenUrl') || DEFAULT_TOKEN_URL;
     })();
 
     window.addEventListener('message', async (ev)=>{
