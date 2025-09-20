@@ -44,7 +44,7 @@
         <div class="row2">
           <div>
             <label>Token Endpoint</label>
-            <input id="inTokenUrl" value="" placeholder="https://www.clarity-nvl.com/_functions/openai/realtimeToken"/>
+            <input id="inTokenUrl" value="" placeholder="/api/wix-token-proxy"/>
           </div>
           <div>
             <label>Mux Upload API</label>
@@ -91,27 +91,41 @@
     let mediaRecorder=null, chunks=[], doRecording=true;
     let muxUploadUrl=null, muxUploadId=null;
 
-    // Prefill & Defaults (TOKEN: www!)
-    (()=>{
+    // Prefill & Defaults (Token via same-origin Proxy → kein CORS)
+    (()=> {
       const p = new URLSearchParams(location.search);
       if(p.get('uid')) els.uid.value=p.get('uid');
       if(p.get('companyId')) els.company.value=p.get('companyId');
       if(p.get('lang')) els.lang.value=p.get('lang');
       if(p.get('voice')) els.voice.value=p.get('voice');
 
-     const DEFAULT_TOKEN_URL = '/api/wix-token-proxy';
-    els.tokenUrl.value = p.get('tokenUrl') || DEFAULT_TOKEN_URL;
+      const DEFAULT_TOKEN_URL = '/api/wix-token-proxy';
+      els.tokenUrl.value = p.get('tokenUrl') || DEFAULT_TOKEN_URL;
+      log('Token endpoint:', els.tokenUrl.value);
     })();
 
     window.addEventListener('message', async (ev)=>{
       const {type,data}=ev.data||{};
-      if(type==='clarity.live.start'){ if(data?.uid) els.uid.value=data.uid; if(data?.companyId) els.company.value=data.companyId; if(data?.lang) els.lang.value=data.lang; await startLive(); }
+      if(type==='clarity.live.start'){
+        if(data?.uid) els.uid.value=data.uid;
+        if(data?.companyId) els.company.value=data.companyId;
+        if(data?.lang) els.lang.value=data.lang;
+        await startLive();
+      }
       if(type==='clarity.live.stop'){ await stopLive(); }
       if(type==='clarity.live.record'){ setRecording(!!data?.enabled); }
-      if(type==='clarity.live.context'){ if(dc && dc.readyState==='open'){ dc.send(JSON.stringify({ type:'session.update', session:{ instructions: buildSystemInstructions(data) }})); } }
+      if(type==='clarity.live.context'){
+        if(dc && dc.readyState==='open'){
+          dc.send(JSON.stringify({ type:'session.update', session:{ instructions: buildSystemInstructions(data) }}));
+        }
+      }
     });
 
-    function setRecording(v){ doRecording=!!v; els.pillRec.textContent=`record: ${doRecording?'on':'off'}`; els.toggleRec.textContent=`Record to Mux: ${doRecording?'On':'Off'}`; }
+    function setRecording(v){
+      doRecording=!!v;
+      els.pillRec.textContent=`record: ${doRecording?'on':'off'}`;
+      els.toggleRec.textContent=`Record to Mux: ${doRecording?'On':'Off'}`;
+    }
     els.toggleRec.addEventListener('click', ()=> setRecording(!doRecording));
 
     function buildSystemInstructions(ctx){
@@ -121,20 +135,34 @@
       return `You are Clarity's interview agent for "${companyName}" role "${position}". Use ONLY jobDescription & companyFacts. No web browsing. One concise question/turn, inclusive & unbiased. Reformulate once if needed. No smalltalk. Salary only if provided; else refer to direct discussion. Language: ${lang}.`.trim();
     }
 
+    // -------- Robustes Token-Fetching (Status/Body-Logging) --------
     async function getToken(){
+      const payload = {
+        uid: els.uid.value.trim(),
+        companyId: els.company.value.trim(),
+        lang: els.lang.value,
+        voice: els.voice.value
+      };
+      log('Fetching token…', JSON.stringify(payload));
+
       const r = await fetch(els.tokenUrl.value, {
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({
-          uid: els.uid.value.trim(),
-          companyId: els.company.value.trim(),
-          lang: els.lang.value,
-          voice: els.voice.value
-        })
+        body: JSON.stringify(payload)
       });
-      const j = await r.json();
-      if(!r.ok || !j?.token) throw new Error(j?.error||'token error');
-      modelInUse = j.model; els.pillModel.textContent=`model: ${modelInUse||'—'}`;
+
+      const raw = await r.text();
+      log('Token response status:', r.status, 'body:', raw.slice(0, 300));
+
+      let j = null;
+      try { j = JSON.parse(raw); } catch {
+        throw new Error(`token endpoint returned non-JSON (status ${r.status})`);
+      }
+      if(!r.ok || !j?.token){
+        throw new Error(`token error (status ${r.status}): ${j?.error || 'no token field'}`);
+      }
+      modelInUse = j.model;
+      els.pillModel.textContent=`model: ${modelInUse || '—'}`;
       return j.token;
     }
 
@@ -148,7 +176,7 @@
 
         const token = await getToken();
 
-        // Jetzt fragt der Browser nach Kamera/Mic
+        // Mic/Kamera wird erst nach erfolgreichem Token geholt
         stream = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation:true, noiseSuppression:true },
           video: { width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:30} }
@@ -156,7 +184,7 @@
         els.preview.srcObject = stream;
         log('Cam+Mic ready');
 
-        // Aufnahme → Mux
+        // Aufnahme (Video+Audio) → Mux
         if(doRecording){
           const up = await fetch(els.muxUpload.value, { method:'POST' });
           const j = await up.json();
@@ -172,7 +200,7 @@
           setState('recording'); log('MediaRecorder started (video+audio)');
         }
 
-        // Realtime WebRTC (Audio ↔︎ Model)
+        // Realtime WebRTC (Audio ↔︎ Model; Video nur Aufnahme)
         pc = new RTCPeerConnection();
         pc.onconnectionstatechange = ()=>{ setState(pc.connectionState); log('pc:', pc.connectionState); };
         dc = pc.createDataChannel('oai-events');
