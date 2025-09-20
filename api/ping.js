@@ -1,5 +1,9 @@
-export default async function handler(req, res) {
-if (req.method === 'OPTIONS') return res.status(204).end();
-res.setHeader('Access-Control-Allow-Origin', '*');
-res.status(200).json({ ok: true, where: 'serverless', ts: Date.now() });
-}
+// CJS, funktioniert in "Framework: Other" und allen Vercel-Setups
+module.exports = async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.status(200).end(JSON.stringify({
+    ok: true,
+    now: new Date().toISOString(),
+    method: req.method
+  }));
+};
