@@ -1,9 +1,6 @@
-// CommonJS Version: /api/wix-token-proxy
-// Proxy -> Wix (_functions/openai/realtimeToken)
-// Vermeidet CORS, weil live.html same-origin (interview.clarity-nvl.com) trifft.
-
-module.exports = async (req, res) => {
-  // Breite CORS (eigentlich unnötig bei same-origin, schadet aber nicht)
+// ESM
+export default async function handler(req, res) {
+  // CORS (eigentlich nicht nötig bei same-origin, schadet aber nicht)
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -23,12 +20,11 @@ module.exports = async (req, res) => {
     return;
   }
 
-  // Body robust parsen (manchmal String, manchmal schon Objekt)
   let payload = {};
   try {
     payload = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
   } catch (e) {
-    res.status(400).json({ ok: false, error: 'INVALID_JSON', detail: String(e && e.message || e) });
+    res.status(400).json({ ok: false, error: 'INVALID_JSON', detail: String(e?.message || e) });
     return;
   }
 
@@ -37,18 +33,16 @@ module.exports = async (req, res) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        // optional: Origin setzen, falls Wix später strenger wird
-        'Origin': 'https://interview.clarity-nvl.com'
+        'Origin': 'https://interview.clarity-nvl.com' // optional
       },
       body: JSON.stringify(payload)
     });
 
-    // Immer erst Text lesen, dann JSON versuchen → bessere Fehler
     const text = await upstream.text();
     try {
       const json = JSON.parse(text);
       res.status(upstream.status).json(json);
-    } catch (_) {
+    } catch {
       res.status(502).json({
         ok: false,
         error: 'UPSTREAM_NON_JSON',
@@ -57,6 +51,6 @@ module.exports = async (req, res) => {
       });
     }
   } catch (e) {
-    res.status(502).json({ ok: false, error: 'UPSTREAM_FETCH_FAILED', detail: String(e && e.message || e) });
+    res.status(502).json({ ok: false, error: 'UPSTREAM_FETCH_FAILED', detail: String(e?.message || e) });
   }
-};
+}
