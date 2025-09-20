@@ -1,9 +1,8 @@
-// /api/wix-token-proxy.ts  (Vercel Serverless Function)
-// Forwardet POST an deine Wix-Function und gibt deren JSON 1:1 zurück.
-// Erwartet ENV: WIX_REALTIME_TOKEN_URL (z.B. https://www.clarity-nvl.com/_functions/openai/realtimeToken)
+// Next.js Pages API route: /api/wix-token-proxy
+// Proxy zu deiner Wix-Function, damit live.html same-origin ohne CORS arbeiten kann.
 
 export default async function handler(req: any, res: any) {
-  // CORS (für lokale Tests / Sicherheit unkritisch, weil wir same-origin aufrufen)
+  // CORS lockern (same-origin reicht eigentlich, aber so ist es robust)
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -23,43 +22,38 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  // Body robust lesen
+  // Body robust lesen (Next kann body schon geparst liefern oder als String)
   let payload: any = {};
   try {
     payload = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
-  } catch {
-    // falls body als Stream kommt
-    try {
-      const chunks: Buffer[] = [];
-      for await (const c of req) chunks.push(c);
-      const raw = Buffer.concat(chunks).toString('utf8');
-      payload = raw ? JSON.parse(raw) : {};
-    } catch (e: any) {
-      res.status(400).json({ ok: false, error: 'INVALID_JSON', detail: String(e?.message || e) });
-      return;
-    }
+  } catch (e: any) {
+    res.status(400).json({ ok: false, error: 'INVALID_JSON', detail: String(e?.message || e) });
+    return;
   }
 
   try {
-    // Wichtig: Origin-Header setzen, damit Wix-CORS (falls aktiv) sauber greift
-    const f = await fetch(WIX_URL, {
+    // Origin header mitgeben, falls Wix-CORS später strenger wird
+    const upstream = await fetch(WIX_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        // Die „öffentliche“ Origin deines Interview-Hosts:
-        'Origin': 'https://interview.clarity-nvl.com'
+        'Origin': 'https://interview.clarity-nvl.com',
       },
       body: JSON.stringify(payload)
     });
 
-    const text = await f.text();
-
-    // Versuche JSON zu liefern; wenn nicht parsbar, als 502 + Text zurückgeben
+    const text = await upstream.text(); // immer erst Text lesen
+    // Versuche JSON zurückzugeben; wenn nicht-JSON, melde sauber
     try {
       const json = JSON.parse(text);
-      res.status(f.status).json(json);
+      res.status(upstream.status).json(json);
     } catch {
-      res.status(502).json({ ok: false, error: 'UPSTREAM_NON_JSON', status: f.status, body: text.slice(0, 400) });
+      res.status(502).json({
+        ok: false,
+        error: 'UPSTREAM_NON_JSON',
+        status: upstream.status,
+        body: text.slice(0, 500)
+      });
     }
   } catch (e: any) {
     res.status(502).json({ ok: false, error: 'UPSTREAM_FETCH_FAILED', detail: String(e?.message || e) });
