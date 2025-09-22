@@ -1,3 +1,115 @@
+// backend/http-functions.js
+import { response } from 'wix-http-functions';
+import { getSecret } from 'wix-secrets-backend';
+
+/** CORS */
+function corsHeaders(request) {
+  const reqOrigin =
+    request?.headers?.origin ||
+    request?.headers?.get?.('origin') ||
+    '';
+
+  const ALLOW = [
+    'https://interview.clarity-nvl.com',
+    'https://www.clarity-nvl.com'
+  ];
+  const allowOrigin = ALLOW.includes(reqOrigin) ? reqOrigin : ALLOW[0];
+
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Methods': 'OPTIONS, POST',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+    'Vary': 'Origin',
+    'Content-Type': 'application/json'
+  };
+}
+
+/** Preflight */
+export function options_realtimeToken(request) {
+  return response({ status: 204, headers: corsHeaders(request) });
+}
+
+/**
+ * POST /_functions/realtimeToken
+ * Body: { uid, companyId, lang, voice, model }
+ * Returns: { ok:true, token, model }
+ */
+export async function post_realtimeToken(request) {
+  const headers = corsHeaders(request);
+
+  try {
+    const raw = await request.body.text();
+    const body = raw ? JSON.parse(raw) : {};
+
+    const voice = body.voice || 'verse';
+    const lang  = (body.lang || 'de').toLowerCase();
+    const model = body.model || 'gpt-4o-realtime-preview-2025-09-12';
+
+    const apiKey =
+      (await getSecret('openai_api_key').catch(() => null)) ||
+      (await getSecret('OPENAI_API_KEY').catch(() => null));
+
+    if (!apiKey) {
+      return response({
+        status: 500,
+        headers,
+        body: { ok: false, error: 'OPENAI_API_KEY missing in Wix Secrets' }
+      });
+    }
+
+    // Create short-lived realtime session (🔊 audio enabled via Beta header)
+    const upstream = await fetch('https://api.openai.com/v1/realtime/sessions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'OpenAI-Beta': 'realtime=v1' // <<< wichtig für Audio
+      },
+      body: JSON.stringify({
+        model,
+        modalities: ['audio', 'text'],
+        voice,
+        instructions: lang.startsWith('de')
+          ? 'Du führst ein professionelles deutschsprachiges Interview. Sprich klar, in kurzen Sätzen.'
+          : 'You conduct a professional interview. Speak clearly in short sentences.'
+      })
+    });
+
+    if (!upstream.ok) {
+      const errText = await upstream.text().catch(() => '');
+      return response({
+        status: upstream.status,
+        headers,
+        body: { ok: false, error: 'OPENAI_SESS_CREATE_FAILED', detail: errText }
+      });
+    }
+
+    const data = await upstream.json();
+    const token = data?.client_secret?.value;
+
+    if (!token) {
+      return response({
+        status: 502,
+        headers,
+        body: { ok: false, error: 'NO_TOKEN_FROM_OPENAI' }
+      });
+    }
+
+    return response({
+      status: 200,
+      headers,
+      body: { ok: true, token, model: data?.model || model }
+    });
+  } catch (e) {
+    return response({
+      status: 500,
+      headers,
+      body: { ok: false, error: e?.message || 'UNKNOWN' }
+    });
+  }
+}
+html
+Copy code
 <!-- live.html -->
 <!doctype html>
 <html lang="de">
@@ -6,7 +118,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>CLARITY Interview Live</title>
   <style>
-    :root { --bg:#0b1020; --panel:#131a2e; --muted:#6b7280; --ok:#22c55e; --warn:#f59e0b; --err:#ef4444; }
+    :root { --bg:#0b1020; --panel:#131a2e; --muted:#6b7280; }
     *{box-sizing:border-box}
     body{margin:0;background:var(--bg);color:#e5e7eb;font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Arial}
     .wrap{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-columns:1fr 360px;gap:20px}
@@ -28,7 +140,7 @@
 <div class="wrap">
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <div class="pill" id="statePill">state: <b id="stateTxt">idle</b></div>
+      <div class="pill">state: <b id="stateTxt">idle</b></div>
       <div class="pill">model: <b id="modelTxt">—</b></div>
     </div>
 
@@ -64,7 +176,8 @@
     <div class="row" style="margin-top:10px">
       <div>
         <label>Token Endpoint</label>
-        <input id="tokenUrl" value="/api/wix-token-proxy" />
+        <!-- <<< Default auf Wix-HTTP-Function -->
+        <input id="tokenUrl" value="/_functions/realtimeToken" />
       </div>
       <div>
         <label>Mux Upload API (optional)</label>
@@ -95,7 +208,6 @@
 </div>
 
 <script>
-/* ---------- small utils ---------- */
 const els = {
   uid:        document.getElementById('uid'),
   company:    document.getElementById('company'),
@@ -121,7 +233,7 @@ const log = (...a) => {
   console.log(...a);
 };
 
-// init from URL params
+// URL-Params übernehmen
 (() => {
   const p = new URLSearchParams(location.search);
   if (p.get('uid')) els.uid.value = p.get('uid');
@@ -131,35 +243,25 @@ const log = (...a) => {
   log('Token endpoint:', els.tokenUrl.value);
 })();
 
-/* ---------- state ---------- */
 let pc = null;
 let dc = null;
 let mediaStream = null;
 let audioUnlocked = false;
-let stopRecording = null; // optional mux recorder closer
+let stopRecording = null;
 
-/* ---------- autoplay unlock ---------- */
 els.btnUnlock.addEventListener('click', async () => {
-  try {
-    await els.audio.play();
-    audioUnlocked = true;
-    els.btnUnlock.textContent = 'Audio aktiv';
-    log('Audio entsperrt');
-  } catch (e) {
-    log('Audio entsperren fehlgeschlagen:', e?.message || e);
-  }
+  try { await els.audio.play(); audioUnlocked = true; log('Audio entsperrt'); }
+  catch (e) { log('Audio entsperren fehlgeschlagen:', e?.message || e); }
 });
 
-/* ---------- start ---------- */
 els.btnStart.addEventListener('click', async () => {
+  els.stateTxt.textContent = 'starting';
   try {
-    els.stateTxt.textContent = 'starting';
-
-    // 1) get camera + mic
+    // 1) Mic + Cam
     mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
     els.video.srcObject = mediaStream;
 
-    // 2) fetch realtime session token via Wix
+    // 2) Token holen
     log('Token endpoint:', els.tokenUrl.value);
     log('Fetching token…', JSON.stringify({
       uid: els.uid.value, companyId: els.company.value, lang: els.lang.value, voice: els.voice.value
@@ -174,45 +276,42 @@ els.btnStart.addEventListener('click', async () => {
         lang: els.lang.value,
         voice: els.voice.value
       })
-    });
+    }).catch(err => { throw new Error('TOKEN_FETCH_FAILED ' + err?.message); });
 
-    const tokenJson = await tokenRes.json();
-    if (!tokenRes.ok || !tokenJson?.ok) throw new Error(tokenJson?.error || 'TOKEN_FAILED');
-
+    const tokenJson = await tokenRes.json().catch(() => ({}));
+    if (!tokenRes.ok || !tokenJson?.ok || !tokenJson?.token) {
+      throw new Error(`TOKEN_BAD_RESPONSE status=${tokenRes.status} body=${JSON.stringify(tokenJson)}`);
+    }
     const { token, model } = tokenJson;
     els.modelTxt.textContent = model || '—';
-    log('Token response (proxy) status:', tokenRes.status, 'body:', JSON.stringify(tokenJson));
+    log('Token OK');
 
-    // 3) build RTCPeerConnection
+    // 3) PeerConnection
     pc = new RTCPeerConnection();
     pc.onconnectionstatechange = () => log('pc:', pc.connectionState);
     pc.oniceconnectionstatechange = () => log('ice:', pc.iceConnectionState);
 
-    // 🔧 robust audio handling:
-    // - send mic
+    // Mic senden + Agent-Audio explizit empfangen
     const micTrack = mediaStream.getAudioTracks()[0];
-    pc.addTrack(micTrack, mediaStream);
-    // - explicitly receive agent audio
+    if (micTrack) pc.addTrack(micTrack, mediaStream);
     pc.addTransceiver('audio', { direction: 'recvonly' });
 
-    // (optional: preview local video only)
+    // Cam nur lokal (wenn du Remote-Video willst: zusätzlich recvonly video)
     const camTrack = mediaStream.getVideoTracks()[0];
     if (camTrack) pc.addTrack(camTrack, mediaStream);
 
     pc.ontrack = (ev) => {
       log('ontrack kind=', ev.track?.kind, 'streams=', ev.streams?.length);
-      if (ev.track.kind === 'audio' && ev.streams && ev.streams[0]) {
+      if (ev.track.kind === 'audio' && ev.streams?.[0]) {
         els.audio.srcObject = ev.streams[0];
-        if (audioUnlocked) { els.audio.play().catch(()=>{}); }
+        if (audioUnlocked) els.audio.play().catch(()=>{});
       }
     };
 
-    // 4) create data channel for control messages
+    // 4) DataChannel
     dc = pc.createDataChannel('oai-events');
     dc.onopen = () => {
       log('DataChannel open');
-
-      // first greeting as audio to guarantee TTS
       dc.send(JSON.stringify({
         type: 'response.create',
         response: {
@@ -231,60 +330,51 @@ els.btnStart.addEventListener('click', async () => {
           els.agentText.value += msg.delta;
           els.agentText.scrollTop = els.agentText.scrollHeight;
         }
-      } catch { /* ignore */ }
+      } catch {/* ignore */}
     };
 
-    // 5) negotiate SDP with the Realtime API
+    // 5) SDP
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
     const rt = await fetch(`https://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`, {
       method: 'POST',
-      // 🔧 IMPORTANT FIX: include OpenAI-Beta header here too
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/sdp',
-        'OpenAI-Beta': 'realtime=v1'
+        'OpenAI-Beta': 'realtime=v1' // <<< wichtig für Audio
       },
       body: offer.sdp
-    });
+    }).catch(err => { throw new Error('SDP_POST_FAILED ' + err?.message); });
 
-    if (!rt.ok) {
-      const txt = await rt.text().catch(()=> '');
-      throw new Error(`SDP_EXCHANGE_FAILED ${rt.status} ${txt}`);
-    }
-
+    if (!rt.ok) throw new Error(`SDP_EXCHANGE_FAILED ${rt.status} ${await rt.text()}`);
     const answer = { type: 'answer', sdp: await rt.text() };
     await pc.setRemoteDescription(answer);
 
     els.stateTxt.textContent = 'connected';
     log('Realtime connected');
 
-    // 6) optional recording to Mux if your /api/mux-upload is present
-    if (els.muxUrl.value) {
-      try {
-        const mr = new MediaRecorder(mediaStream, { mimeType: 'video/webm;codecs=vp9,opus' });
-        const chunks = [];
-        mr.ondataavailable = e => e.data && chunks.push(e.data);
-        mr.onstop = async () => {
-          try {
-            const blob = new Blob(chunks, { type: 'video/webm' });
-            const fd = new FormData();
-            fd.append('file', blob, `clarity-interview-${Date.now()}.webm`);
-            const up = await fetch(els.muxUrl.value, { method: 'POST', body: fd });
-            const j = await up.json().catch(()=> ({}));
-            if (up.ok) log('Mux upload OK, uploadId:', j?.id || j?.uploadId || 'n/a');
-            else log('Mux upload failed', up.status, JSON.stringify(j));
-          } catch (e) {
-            log('Mux upload error', e?.message || e);
-          }
-        };
-        mr.start(1000);
-        stopRecording = () => { try { mr.stop(); } catch {} };
-        log('MediaRecorder started (video+audio)');
-      } catch {
-        log('MediaRecorder not supported for this codec; skipping local recording.');
-      }
+    // 6) Optional: Mux Upload
+    try {
+      const mr = new MediaRecorder(mediaStream, { mimeType: 'video/webm;codecs=vp9,opus' });
+      const chunks = [];
+      mr.ondataavailable = e => e.data && chunks.push(e.data);
+      mr.onstop = async () => {
+        try {
+          const blob = new Blob(chunks, { type: 'video/webm' });
+          const fd = new FormData();
+          fd.append('file', blob, `clarity-interview-${Date.now()}.webm`);
+          const up = await fetch(els.muxUrl.value, { method: 'POST', body: fd });
+          const j = await up.json().catch(()=> ({}));
+          if (up.ok) log('Mux upload OK, uploadId:', j?.id || j?.uploadId || 'n/a');
+          else log('Mux upload failed', up.status, JSON.stringify(j));
+        } catch (e) { log('Mux upload error', e?.message || e); }
+      };
+      mr.start(1000);
+      stopRecording = () => { try { mr.stop(); } catch {} };
+      log('MediaRecorder started (video+audio)');
+    } catch (e) {
+      log('MediaRecorder not supported or init failed:', e?.message || e);
     }
   } catch (e) {
     els.stateTxt.textContent = 'error';
@@ -292,7 +382,6 @@ els.btnStart.addEventListener('click', async () => {
   }
 });
 
-/* ---------- stop ---------- */
 els.btnStop.addEventListener('click', () => {
   try { if (dc) dc.close(); } catch {}
   try { if (pc) pc.close(); } catch {}
