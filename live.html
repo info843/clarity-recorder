@@ -1,4 +1,3 @@
-<!-- live.html -->
 <!doctype html>
 <html lang="de">
 <head>
@@ -86,7 +85,7 @@ const els = {
   tokenUrl: q('#inTokenUrl'), muxUpload: q('#inMuxUpload'),
   start: q('#btnStart'), stop: q('#btnStop'), toggleRec: q('#btnToggleRec'),
   audio: q('#agentAudio'), unlock: q('#btnUnlockAudio'),
-  text: q('#agentText'), log: q('#log'),
+  agentText: q('#agentText'), log: q('#log'),
   pillState: q('#pillState'), pillModel: q('#pillModel'), pillRec: q('#pillRec'),
   preview: q('#preview')
 };
@@ -104,14 +103,23 @@ let pc=null, dc=null, stream=null, modelInUse=null;
 let mediaRecorder=null, chunks=[], doRecording=true;
 let muxUploadUrl=null, muxUploadId=null;
 let lastSystemInstructions='';
+let audioUnlocked=false;
+
+// Web Audio Fallback
+let audioCtx = null;
+let remoteSource = null;
 
 /* ---------- unlock audio (first user gesture) ---------- */
-let audioUnlocked=false;
 els.unlock.addEventListener('click', async ()=>{
   try{
     els.audio.muted = false;
     els.audio.volume = 1.0;
-    await els.audio.play();
+
+    // WebAudio aktivieren/resumen
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state !== 'running') await audioCtx.resume();
+
+    await els.audio.play().catch(()=>{});
     audioUnlocked = true;
     els.unlock.disabled = true;
     els.unlock.textContent = 'Audio aktiv';
@@ -263,7 +271,7 @@ async function startLive(){
     dc = pc.createDataChannel('oai-events');
     dc.onopen = onDataChannelOpen;
 
-    // ✅ handle both event formats and always show text
+    // handle both event formats and always show text
     dc.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
@@ -283,26 +291,53 @@ async function startLive(){
       }
     };
 
-    // ✅ incoming audio from model → attach and play when unmuted
-    pc.ontrack = (ev) => {
+    // incoming audio from model → attach and play when unmuted (plus WebAudio Fallback)
+    pc.ontrack = async (ev) => {
       const [remoteStream] = ev.streams || [];
       console.log('[live] ontrack kind=', ev.track?.kind, 'streams=', ev.streams?.length);
 
       if (ev.track.kind === 'audio' && remoteStream) {
+        // 1) <audio>-Weg
         els.audio.srcObject = remoteStream;
         els.audio.muted = false;
         els.audio.volume = 1.0;
 
         const tryPlay = () => els.audio.play().catch(()=>{});
-        ev.track.onunmute = () => {
+        ev.track.onunmute = async () => {
           console.log('[live] remote audio unmuted');
           if (audioUnlocked) tryPlay();
+          // 2) WebAudio-Fallback
+          try {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state !== 'running') await audioCtx.resume();
+            // Alte Quelle trennen, neue verbinden
+            if (remoteSource) { try { remoteSource.disconnect(); } catch {} }
+            remoteSource = audioCtx.createMediaStreamSource(remoteStream);
+            remoteSource.connect(audioCtx.destination);
+            console.log('[live] WebAudio pipe active');
+          } catch (e) {
+            console.warn('[live] WebAudio fallback failed:', e?.message || e);
+          }
         };
-        if (audioUnlocked && !ev.track.muted) tryPlay();
+
+        if (audioUnlocked && !ev.track.muted) {
+          tryPlay();
+          // WebAudio-Fallback direkt aktivieren
+          try {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state !== 'running') await audioCtx.resume();
+            if (remoteSource) { try { remoteSource.disconnect(); } catch {} }
+            remoteSource = audioCtx.createMediaStreamSource(remoteStream);
+            remoteSource.connect(audioCtx.destination);
+            console.log('[live] WebAudio pipe active (immediate)');
+          } catch (e) {
+            console.warn('[live] WebAudio fallback failed (immediate):', e?.message || e);
+          }
+        }
       }
     };
 
-    // ✅ Mic senden + Remote-Audio explizit anfordern
+    // Mic senden + Remote-Audio explizit anfordern
     const micTrack = stream.getAudioTracks()[0];
     if (micTrack) pc.addTrack(micTrack, stream);          // mic → send
     pc.addTransceiver('audio', { direction: 'recvonly' }); // agent → recv
@@ -323,7 +358,7 @@ async function startLive(){
     await pc.setRemoteDescription({ type:'answer', sdp: answerSdp });
     setState('connected'); log('Realtime connected');
 
-    // 🔎 Diagnose: kommen Audio-Pakete an?
+    // Diagnose: kommen Audio-Pakete an?
     try {
       const statTimer = setInterval(async () => {
         if (!pc) return clearInterval(statTimer);
@@ -373,6 +408,9 @@ async function stopLive(){
     if(dc){ try{ dc.close(); }catch{} }
     if(pc){ try{ pc.close(); }catch{} }
     if(stream){ stream.getTracks().forEach(t=>t.stop()); }
+    // WebAudio abbinden
+    try { if (remoteSource) remoteSource.disconnect(); } catch {}
+    remoteSource = null;
   }catch(e){
     log('stopLive error:', e.message);
   }finally{
