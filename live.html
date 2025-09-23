@@ -110,6 +110,7 @@ let audioUnlocked=false;
 els.unlock.addEventListener('click', async ()=>{
   try{
     els.audio.muted = false;
+    els.audio.volume = 1.0;
     await els.audio.play();
     audioUnlocked = true;
     els.unlock.disabled = true;
@@ -261,19 +262,50 @@ async function startLive(){
     pc.onconnectionstatechange = ()=>{ setState(pc.connectionState); log('pc:', pc.connectionState); };
     dc = pc.createDataChannel('oai-events');
     dc.onopen = onDataChannelOpen;
-    dc.onmessage = onAgentEvent;
 
-    // ✅ incoming audio from model → play through #agentAudio + Debug-Log
-    pc.ontrack = (ev)=>{
-      console.log('[live] ontrack kind=', ev.track?.kind, 'streams=', ev.streams?.length);
-      els.audio.srcObject = ev.streams[0];
-      if(audioUnlocked) els.audio.play().catch(()=>{});
+    // ✅ handle both event formats and always show text
+    dc.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg?.type === 'response.output_text.delta' && msg?.delta) {
+          els.agentText.value += msg.delta;
+          els.agentText.scrollTop = els.agentText.scrollHeight;
+        }
+        if (msg?.type === 'response.delta' && msg?.delta) {
+          els.agentText.value += msg.delta;
+          els.agentText.scrollTop = els.agentText.scrollHeight;
+        }
+        if (msg?.type === 'response.completed') {
+          els.agentText.value += '\n';
+        }
+      } catch {
+        els.agentText.value += (e.data || '');
+      }
     };
 
-    // ✅ Mic senden + Remote-Audio explizit anfordern (robuster als sendrecv)
+    // ✅ incoming audio from model → attach and play when unmuted
+    pc.ontrack = (ev) => {
+      const [remoteStream] = ev.streams || [];
+      console.log('[live] ontrack kind=', ev.track?.kind, 'streams=', ev.streams?.length);
+
+      if (ev.track.kind === 'audio' && remoteStream) {
+        els.audio.srcObject = remoteStream;
+        els.audio.muted = false;
+        els.audio.volume = 1.0;
+
+        const tryPlay = () => els.audio.play().catch(()=>{});
+        ev.track.onunmute = () => {
+          console.log('[live] remote audio unmuted');
+          if (audioUnlocked) tryPlay();
+        };
+        if (audioUnlocked && !ev.track.muted) tryPlay();
+      }
+    };
+
+    // ✅ Mic senden + Remote-Audio explizit anfordern
     const micTrack = stream.getAudioTracks()[0];
-    if (micTrack) pc.addTrack(micTrack, stream);                  // mic → send
-    pc.addTransceiver('audio', { direction: 'recvonly' });        // agent → recv
+    if (micTrack) pc.addTrack(micTrack, stream);          // mic → send
+    pc.addTransceiver('audio', { direction: 'recvonly' }); // agent → recv
 
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
@@ -283,13 +315,26 @@ async function startLive(){
       headers:{
         Authorization:`Bearer ${token}`,
         'Content-Type':'application/sdp',
-        'OpenAI-Beta':'realtime=v1' // 👈 wichtig für Agent-Audio
+        'OpenAI-Beta':'realtime=v1'
       },
       body: offer.sdp
     });
     const answerSdp = await rt.text();
     await pc.setRemoteDescription({ type:'answer', sdp: answerSdp });
     setState('connected'); log('Realtime connected');
+
+    // 🔎 Diagnose: kommen Audio-Pakete an?
+    try {
+      const statTimer = setInterval(async () => {
+        if (!pc) return clearInterval(statTimer);
+        const stats = await pc.getStats(null);
+        stats.forEach(r => {
+          if (r.type === 'inbound-rtp' && r.kind === 'audio') {
+            console.log('[live] inbound audio bytes=', r.bytesReceived, 'packets=', r.packetsReceived);
+          }
+        });
+      }, 1000);
+    } catch {}
 
     parentPost({ type:'clarity.avatar', data:{ state:'speaking' } });
 
@@ -304,36 +349,20 @@ async function startLive(){
   }
 }
 
-/* ---------- on DataChannel open: smoke test ---------- */
+/* ---------- on DataChannel open: force first audio ---------- */
 function onDataChannelOpen(){
   log('DataChannel open');
-  // 1) ensure instructions
   if(lastSystemInstructions){
     dc.send(JSON.stringify({ type:'session.update', session:{ instructions: lastSystemInstructions }}));
   }
-  // 2) Force first reply as AUDIO (+text)
   dc.send(JSON.stringify({
     type:'response.create',
     response:{
       instructions:'Bitte begrüße die Kandidatin / den Kandidaten kurz und stelle die erste Warm-up-Frage.',
-      modalities:['audio','text'],     // 👈 sicherstellen
-      voice: els.voice.value           // 👈 gewünschte Stimme
+      modalities:['audio','text'],
+      voice: els.voice.value
     }
   }));
-}
-
-/* ---------- handle model events ---------- */
-function onAgentEvent(ev){
-  try{
-    const msg = JSON.parse(ev.data);
-    if(msg.type==='response.delta' && msg.delta){ els.text.value += msg.delta; }
-    if(msg.type==='response.completed'){
-      els.text.value += '\n';
-      parentPost({ type:'clarity.avatar', data:{ state:'listening' } });
-    }
-  }catch{
-    els.text.value += (ev.data||'');
-  }
 }
 
 /* ---------- stop & upload ---------- */
