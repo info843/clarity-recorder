@@ -64,7 +64,6 @@
 
     <div class="card">
       <label>Agent Audio</label>
-      <!-- Autoplay-safe: muted by default. We unmute & play on first user click -->
       <audio id="agentAudio" autoplay playsinline controls muted></audio>
       <div style="margin:8px 0">
         <button id="btnUnlockAudio">Audio entsperren</button>
@@ -276,7 +275,12 @@ async function startLive(){
     const model = modelInUse || 'gpt-4o-realtime-preview-2025-09-12';
     const rt = await fetch(`https://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`, {
       method:'POST',
-      headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/sdp' },
+      headers:{
+        Authorization:`Bearer ${token}`,
+        'Content-Type':'application/sdp',
+        // 🔧 NEU: Beta-Header aktivieren → garantiertes Agent-Audio
+        'OpenAI-Beta':'realtime=v1'
+      },
       body: offer.sdp
     });
     const answerSdp = await rt.text();
@@ -303,10 +307,14 @@ function onDataChannelOpen(){
   if(lastSystemInstructions){
     dc.send(JSON.stringify({ type:'session.update', session:{ instructions: lastSystemInstructions }}));
   }
-  // 2) smoke test: make the model speak immediately
+  // 2) smoke test: make the model speak immediately (mit explizitem voice & modalities)
   dc.send(JSON.stringify({
     type:'response.create',
-    response:{ instructions:'Bitte begrüße die Kandidatin / den Kandidaten kurz und stelle die erste Warm-up-Frage.' }
+    response:{
+      instructions:'Bitte begrüße die Kandidatin / den Kandidaten kurz und stelle die erste Warm-up-Frage.',
+      modalities:['audio','text'],
+      voice: els.voice.value
+    }
   }));
 }
 
