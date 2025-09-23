@@ -75,6 +75,7 @@
   </div>
 
   <script>
+  window.addEventListener('DOMContentLoaded', () => {
     // ------- kleine Helfer -------
     const els = {
       btnStart: document.getElementById('btnStart'),
@@ -86,8 +87,8 @@
       btnSend: document.getElementById('btnSend'),
       btnClearTxt: document.getElementById('btnClearTxt'),
       remoteAudio: document.getElementById('remoteAudio'),
-      pillState: document.getElementById('pillState'),
       beep: null,
+      pillState: document.getElementById('pillState'),
     };
     function log(...a){
       const line = a.map(v=> typeof v==='string' ? v : JSON.stringify(v)).join(' ');
@@ -96,17 +97,12 @@
       els.txtLog.scrollTop = els.txtLog.scrollHeight;
       console.log(...a);
     }
-    function setState(s){
-      els.pillState.textContent = s;
-    }
+    function setState(s){ els.pillState.textContent = s; }
 
     // ------- Realtime globals -------
-    let pc = null;
-    let dc = null;
-    let ws = null; // Realtime nutzt DataChannel; belassen für evtl. Erweiterungen
-    let remoteStream = null;
+    let pc = null, dc = null, remoteStream = null, audioCtx = null;
 
-    // ------- Start/Stop -------
+    // ------- Buttons -------
     els.btnStart.onclick = startLive;
     els.btnStop.onclick = stopLive;
     els.btnSend.onclick = () => {
@@ -117,39 +113,44 @@
         log('[dc] sent', msg.type || Object.keys(msg));
       }catch(e){ log('send parse error', e.message); }
     };
-    els.btnClearTxt.onclick = () => { els.txtAgent.value = ''; els.txtLog.value=''; };
+    els.btnClearTxt.onclick = () => { els.txtAgent.value=''; els.txtLog.value=''; };
 
-    // Test-Ton
+    // Test-Ton immer hörbar machen (AudioContext sicher aktivieren)
     els.btnBeep.onclick = async () => {
-      if(!els.beep){
-        const ctx = new (window.AudioContext||window.webkitAudioContext)();
-        const o = ctx.createOscillator(); const g = ctx.createGain();
-        o.connect(g).connect(ctx.destination); o.type='sine'; o.frequency.value=880;
-        els.beep = {ctx,o,g};
-      }
-      const {ctx,o,g} = els.beep;
-      if(ctx.state==='suspended') await ctx.resume();
-      g.gain.setValueAtTime(0.0001, ctx.currentTime);
-      o.start();
-      g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime+0.02);
-      setTimeout(()=>{ g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime+0.02); }, 300);
-      setTimeout(()=>{ try{o.stop();}catch{} }, 380);
+      try{
+        if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+        if(audioCtx.state === 'suspended') await audioCtx.resume();
+        const o = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        o.type='sine'; o.frequency.value=880;
+        g.gain.value=0.0001;
+        o.connect(g).connect(audioCtx.destination);
+        o.start();
+        g.gain.exponentialRampToValueAtTime(0.2, audioCtx.currentTime+0.02);
+        setTimeout(()=>g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime+0.02), 300);
+        setTimeout(()=>{ try{o.stop();}catch{} }, 380);
+      }catch(e){ log('[beep] error', e.message); }
     };
 
     async function startLive(){
-      setState('starting');
-      log('Start Live');
-      // Token vom Proxy holen (Wix-HTTP-Fn spiegelt zu OpenAI)
-      const voice = els.selVoice.value || 'alloy';
-      const req = { uid: 'IV-2PTWPRKM-WX2TFPTE7N-NVL02C', companyId:'NVL-02', lang:'de', voice };
+      setState('starting'); log('Start Live');
+
+      // Browser-Policy: AudioContext & Autoplay vorbereiten
+      try{
+        if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+        if(audioCtx.state === 'suspended') await audioCtx.resume();
+      }catch(e){ log('audiocontext error', e?.message||e); }
+
+      // Token vom Proxy holen
+      const voice = els.selVoice.value || 'verse';
       const tokenRes = await fetch('/api/wix-token-proxy', {
-        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(req)
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ voice })
       }).catch(()=>null);
 
       if(!tokenRes){ log('token error: fetch failed'); setState('error'); return; }
-
-      let tokenJson = null;
-      try{ tokenJson = await tokenRes.json(); }catch{}
+      let tokenJson = null; try{ tokenJson = await tokenRes.json(); }catch{}
       log('Token response (proxy) status:', tokenRes.status, 'body:', tokenJson||{});
       if(!tokenRes.ok || !tokenJson?.ok){ setState('error'); return; }
 
@@ -159,6 +160,7 @@
       pc = new RTCPeerConnection();
       remoteStream = new MediaStream();
       els.remoteAudio.srcObject = remoteStream;
+      els.remoteAudio.muted = false; // wir wollen hören
 
       pc.onicecandidate = (e) => {
         if(e.candidate && dc && dc.readyState==='open'){
@@ -166,34 +168,29 @@
         }
       };
 
-      // Nur Empfang einer Audiospur (recvonly)
+      // Nur Empfang (recvonly)
       pc.addTransceiver('audio', { direction:'recvonly' });
 
       pc.ontrack = (ev) => {
-        // Remote-Audio Track
         const [track] = ev.streams[0].getAudioTracks();
-        log('[live] remote track flags: muted=', track.muted, 'enabled=', track.enabled, 'state=', track.readyState);
         remoteStream.addTrack(track);
-        try{
-          els.remoteAudio.muted = false;
-          const playPromise = els.remoteAudio.play();
-          if(playPromise?.catch) playPromise.catch(()=>{});
-        }catch{}
+        log('[live] remote track flags: muted=', track.muted, 'enabled=', track.enabled, 'state=', track.readyState);
+        // Autoplay-Sicherung
+        const playPromise = els.remoteAudio.play();
+        if(playPromise?.catch) playPromise.catch(()=>{});
       };
 
-      // DataChannel für Realtime-Events
+      // DataChannel
       dc = pc.createDataChannel('oai-events');
       dc.onopen = onDataChannelOpen;
       dc.onmessage = onAgentEvent;
       dc.onclose = ()=> log('DataChannel closed');
       dc.onerror = (e)=> log('DataChannel error', e?.message||e);
 
-      // Offer bauen
+      // Offer -> OpenAI (WebRTC)
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-
-      // An OpenAI Realtime (WebRTC) senden
-      const sdpResp = await fetch(`https://api.openai.com/v1/realtime?model=${encodeURIComponent(model||'gpt-4o-realtime-preview-2025-09-12')}`, {
+      const sdpResp = await fetch(`https://api.openai.com/v1/realtime?model=${encodeURIComponent(model || 'gpt-4o-realtime-preview')}`, {
         method:'POST',
         headers:{
           'Authorization': `Bearer ${token}`,
@@ -220,35 +217,27 @@
       try{ dc && dc.close(); }catch{}
       try{ pc && pc.close(); }catch{}
       dc=null; pc=null; remoteStream=null;
-      setState('stopped');
-      log('stopped');
+      setState('stopped'); log('stopped');
     }
 
     /* ---------- DataChannel events ---------- */
     function onDataChannelOpen(){
       log('DataChannel open');
-
-      // PATCH 2: Session minimal halten (nur Voice + Modalitäten)
       const sess = {
-        voice: els.selVoice.value || 'alloy',
+        voice: els.selVoice.value || 'verse',
         modalities: ['audio','text']
-        // KEIN turn_detection, KEIN output_audio usw.
       };
       dc.send(JSON.stringify({ type: 'session.update', session: sess }));
       log('[rt] session.update sent', JSON.stringify(sess));
-      // response.create NICHT hier senden — erst wenn die Session bestätigt ist (siehe onAgentEvent → session.created)
+      // response.create erst nach session.created
     }
 
-    // PATCH 1 + 3: komplettes Logging + Text-Only-Probe nach session.created
     function onAgentEvent(ev){
       try{
         const msg = JSON.parse(ev.data);
-
-        // Rohes Event immer in Console und Log-Box (ohne Kürzung)
         console.log('[rt raw]', msg);
         log('[rt] event', JSON.stringify(msg));
 
-        // Wenn eine Response fehlschlägt, Fehlergrund groß ausgeben
         if (msg?.type === 'response.done') {
           const r = msg.response;
           if (r?.status === 'failed') {
@@ -256,20 +245,19 @@
           }
         }
 
-        // Nach Session-Start die ersten Requests schicken
         if (msg?.type === 'session.created') {
-          // (a) Audio + Text – sehr simple Anweisung, damit Audio überhaupt erzeugt wird
+          // Audio + Text
           dc.send(JSON.stringify({
             type:'response.create',
             response:{
               modalities:['audio','text'],
               instructions:'Sag bitte genau: TESTTEST. Danach zähle 1 2 3.',
-              voice: els.selVoice.value || 'alloy'
+              voice: els.selVoice.value || 'verse'
             }
           }));
           log('[rt] response.create (nach session.created) sent');
 
-          // (b) Direkt im Anschluss eine Text-Only-Probe (um zu prüfen, ob nur Audio blockiert ist)
+          // Text-Only-Probe
           setTimeout(()=>{
             dc.send(JSON.stringify({
               type:'response.create',
@@ -279,28 +267,16 @@
           }, 300);
         }
 
-        // Textstream in die Ausgabe schieben
         if(msg?.type==='response.output_text.delta' && msg?.delta){
-          els.txtAgent.value += msg.delta;
-          els.txtAgent.scrollTop = els.txtAgent.scrollHeight;
+          els.txtAgent.value += msg.delta; els.txtAgent.scrollTop = els.txtAgent.scrollHeight;
         }
         if(msg?.type==='response.delta' && msg?.delta){
-          els.txtAgent.value += msg.delta;
-          els.txtAgent.scrollTop = els.txtAgent.scrollHeight;
+          els.txtAgent.value += msg.delta; els.txtAgent.scrollTop = els.txtAgent.scrollHeight;
         }
-        if(msg?.type==='response.completed'){
-          els.txtAgent.value += '\n';
-        }
-
-        // Optionale Muted-Diagnose, wenn Track vorhanden
-        if (msg?.type === 'response.output_audio.delta'){
-          // Wenn Audio ankommt, sollte der Track wenige Sekunden später unmuted sein.
-          // (Die eigentliche Track-Mute/State-Ausgabe passiert bei ontrack.)
-        }
-      }catch{
-        // Nicht-JSON ignorieren
-      }
+        if(msg?.type==='response.completed'){ els.txtAgent.value += '\n'; }
+      }catch{}
     }
+  });
   </script>
 </body>
 </html>
