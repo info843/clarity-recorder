@@ -122,6 +122,7 @@ let audioCtx=null, remoteSource=null, micSource=null, analyser=null, meterTimer=
 let mixDest=null;           // MediaStreamDestination
 let mixedStream=null;       // Für MediaRecorder (enthält gemischtes Audio + lokales Video)
 let remoteStreamForPlayback=null;
+let boostGain=null, comp=null;
 
 /* ---------- Output devices ---------- */
 async function listOutputs(){
@@ -274,7 +275,7 @@ async function startLive(){
     micSource = audioCtx.createMediaStreamSource(localStream);
     micSource.connect(mixDest);
 
-    // init Mux upload (jetzt mit MIX: remote+mic)
+    // init Mux upload (Mix: remote+mic)
     if(doRecording){
       const up = await fetch(els.muxUpload.value,{method:'POST'});
       const j = await up.json();
@@ -285,8 +286,7 @@ async function startLive(){
       mixedStream = new MediaStream();
       const vtrack = localStream.getVideoTracks()[0];
       if(vtrack) mixedStream.addTrack(vtrack);
-      // Audio-Track wird hinzugefügt, sobald Remote-Stream da ist (siehe ontrack)
-      // vorerst zumindest Mic (damit nicht stumm)
+      // Audio-Track wird hinzugefügt/ersetzt sobald Remote-Stream da ist (siehe ontrack)
       const mixTrackInitial = mixDest.stream.getAudioTracks()[0];
       if(mixTrackInitial) mixedStream.addTrack(mixTrackInitial);
 
@@ -316,22 +316,39 @@ async function startLive(){
         els.audio.muted=false; els.audio.volume=1.0;
         if(audioUnlocked){ try{ await els.audio.play(); }catch{} }
 
-        // 2) WebAudio → Destination (für Playback + Mix + Meter)
+        // 2) WebAudio → Gain/Compressor → Analyser → Destination + Mix
         try{
           if(audioCtx.state!=='running') await audioCtx.resume();
           if(remoteSource){ try{remoteSource.disconnect();}catch{} }
           remoteSource = audioCtx.createMediaStreamSource(remoteStream);
-          remoteSource.connect(analyser);
-          analyser.connect(audioCtx.destination);
-          // in den Mix (für Aufnahme)
-          remoteSource.connect(mixDest);
 
-          // Falls MediaRecorder schon läuft und nur Mic im Mix war:
-          if(mixedStream && mixDest?.stream?.getAudioTracks()[0] && !mixedStream.getAudioTracks().length){
-            mixedStream.addTrack(mixDest.stream.getAudioTracks()[0]);
+          // Booster + Compressor
+          if (!boostGain) {
+            boostGain = audioCtx.createGain();
+            boostGain.gain.value = 2.5; // bei Bedarf lauter stellen (3–4)
+          }
+          if (!comp) {
+            comp = audioCtx.createDynamicsCompressor();
+            comp.threshold.value = -30;
+            comp.knee.value = 20;
+            comp.ratio.value = 6;
+            comp.attack.value = 0.003;
+            comp.release.value = 0.25;
+          }
+
+          remoteSource.connect(boostGain);
+          boostGain.connect(comp);
+          comp.connect(analyser);
+          analyser.connect(audioCtx.destination);
+          comp.connect(mixDest);
+
+          // Falls MediaRecorder schon läuft und bisher nur Mic im Mix war:
+          const mixTrack = mixDest.stream.getAudioTracks()[0];
+          if(mixedStream && mixTrack && mixedStream.getAudioTracks().length===0){
+            mixedStream.addTrack(mixTrack);
           }
           console.log('[live] WebAudio pipe & mix active');
-        }catch(e){ console.warn('[live] WebAudio fallback/mix failed:', e?.message||e); }
+        }catch(e){ console.warn('[live] WebAudio pipeline error:', e?.message||e); }
       }
     };
 
@@ -374,15 +391,27 @@ async function startLive(){
 /* ---------- DataChannel events ---------- */
 function onDataChannelOpen(){
   log('DataChannel open');
-  if(lastSystemInstructions){
-    dc.send(JSON.stringify({type:'session.update', session:{instructions:lastSystemInstructions}}));
-  }
+
+  // Session HART auf Audio konfigurieren (wichtig gegen „stille“ Pakete)
+  const sess = {
+    voice: els.voice.value || 'verse',
+    modalities: ['audio', 'text'],
+    output_audio: { format: 'opus' }, // alternativ: 'pcm16'
+    turn_detection: { type: 'server_vad', threshold: 0.5 }
+  };
+  dc.send(JSON.stringify({ type: 'session.update', session: sess }));
+
+  // Begrüßung (erzwingt Audio + Text)
   dc.send(JSON.stringify({
     type:'response.create',
-    response:{ instructions:'Bitte begrüße die Kandidatin / den Kandidaten kurz und stelle die erste Warm-up-Frage.',
-      modalities:['audio','text'], voice:els.voice.value }
+    response:{
+      modalities:['audio','text'],
+      instructions:'Bitte begrüße die Kandidatin / den Kandidaten kurz und stelle die erste Warm-up-Frage.',
+      voice: els.voice.value || 'verse'
+    }
   }));
 }
+
 function onAgentEvent(ev){
   try{
     const msg=JSON.parse(ev.data);
@@ -409,6 +438,7 @@ async function stopLive(){
     try{ if(remoteSource) remoteSource.disconnect(); }catch{}
     try{ if(micSource) micSource.disconnect(); }catch{}
     remoteSource=null; micSource=null; analyser=null; mixDest=null; mixedStream=null;
+    boostGain=null; comp=null;
   }catch(e){ log('stopLive error:', e.message); }
   finally{
     dc=null; pc=null; localStream=null; mediaRecorder=null;
