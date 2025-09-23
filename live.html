@@ -87,7 +87,6 @@
       btnSend: document.getElementById('btnSend'),
       btnClearTxt: document.getElementById('btnClearTxt'),
       remoteAudio: document.getElementById('remoteAudio'),
-      beep: null,
       pillState: document.getElementById('pillState'),
     };
     function log(...a){
@@ -102,6 +101,10 @@
     // ------- Realtime globals -------
     let pc = null, dc = null, remoteStream = null, audioCtx = null;
 
+    // einfache Serialisierung der response.create Aufrufe
+    let activeResponseId = null;
+    let queueAfterDone = null; // {modalities, instructions, voice}
+
     // ------- Buttons -------
     els.btnStart.onclick = startLive;
     els.btnStop.onclick = stopLive;
@@ -115,7 +118,7 @@
     };
     els.btnClearTxt.onclick = () => { els.txtAgent.value=''; els.txtLog.value=''; };
 
-    // Test-Ton immer hörbar machen (AudioContext sicher aktivieren)
+    // Test-Ton
     els.btnBeep.onclick = async () => {
       try{
         if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
@@ -135,7 +138,7 @@
     async function startLive(){
       setState('starting'); log('Start Live');
 
-      // Browser-Policy: AudioContext & Autoplay vorbereiten
+      // AudioContext & Autoplay
       try{
         if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
         if(audioCtx.state === 'suspended') await audioCtx.resume();
@@ -160,7 +163,7 @@
       pc = new RTCPeerConnection();
       remoteStream = new MediaStream();
       els.remoteAudio.srcObject = remoteStream;
-      els.remoteAudio.muted = false; // wir wollen hören
+      els.remoteAudio.muted = false;
 
       pc.onicecandidate = (e) => {
         if(e.candidate && dc && dc.readyState==='open'){
@@ -168,16 +171,13 @@
         }
       };
 
-      // Nur Empfang (recvonly)
       pc.addTransceiver('audio', { direction:'recvonly' });
 
       pc.ontrack = (ev) => {
         const [track] = ev.streams[0].getAudioTracks();
         remoteStream.addTrack(track);
         log('[live] remote track flags: muted=', track.muted, 'enabled=', track.enabled, 'state=', track.readyState);
-        // Autoplay-Sicherung
-        const playPromise = els.remoteAudio.play();
-        if(playPromise?.catch) playPromise.catch(()=>{});
+        const p = els.remoteAudio.play(); if(p?.catch) p.catch(()=>{});
       };
 
       // DataChannel
@@ -217,6 +217,7 @@
       try{ dc && dc.close(); }catch{}
       try{ pc && pc.close(); }catch{}
       dc=null; pc=null; remoteStream=null;
+      activeResponseId = null; queueAfterDone = null;
       setState('stopped'); log('stopped');
     }
 
@@ -229,7 +230,19 @@
       };
       dc.send(JSON.stringify({ type: 'session.update', session: sess }));
       log('[rt] session.update sent', JSON.stringify(sess));
-      // response.create erst nach session.created
+    }
+
+    // Hilfsfunktion: safe response.create (serialisiert)
+    function createResponseSafe(payload){
+      if(!dc || dc.readyState!=='open') return;
+      if(activeResponseId){
+        // Anstellen bis die laufende fertig ist
+        queueAfterDone = payload;
+        log('[rt] queued response.create until current finishes');
+        return;
+      }
+      dc.send(JSON.stringify({ type:'response.create', response: payload }));
+      log('[rt] response.create sent', JSON.stringify(payload));
     }
 
     function onAgentEvent(ev){
@@ -238,41 +251,51 @@
         console.log('[rt raw]', msg);
         log('[rt] event', JSON.stringify(msg));
 
+        // Fehler explizit loggen
+        if (msg?.type === 'error') {
+          log('[rt] ERROR', JSON.stringify(msg.error, null, 2));
+        }
+        if (msg?.type === 'response.done' && msg?.response?.status === 'failed') {
+          log('[rt] RESPONSE FAILED', JSON.stringify(msg.response.status_details, null, 2));
+        }
+
+        // Session gestartet → erste (Audio+Text) Probe
+        if (msg?.type === 'session.created') {
+          activeResponseId = null;
+          queueAfterDone = {
+            modalities:['text'],
+            instructions:'TEXT-ONLY-PROBE: Schreibe genau "TEXT-OK".'
+          };
+          createResponseSafe({
+            modalities:['audio','text'],
+            instructions:'Sag bitte genau: TESTTEST. Danach zähle 1 2 3.',
+            voice: els.selVoice.value || 'verse'
+          });
+        }
+
+        // Track aktive Response-ID
+        if (msg?.type === 'response.created') {
+          activeResponseId = msg?.response?.id || null;
+        }
+
+        // Wenn Audio/Text-Delta → in Ausgabefeld streamen
+        if (msg?.type==='response.output_text.delta' && msg?.delta){
+          els.txtAgent.value += msg.delta; els.txtAgent.scrollTop = els.txtAgent.scrollHeight;
+        }
+        if (msg?.type==='response.delta' && msg?.delta){
+          els.txtAgent.value += msg.delta; els.txtAgent.scrollTop = els.txtAgent.scrollHeight;
+        }
+
+        // Fertig: nächste aus der Queue senden
         if (msg?.type === 'response.done') {
-          const r = msg.response;
-          if (r?.status === 'failed') {
-            log('[rt] RESPONSE FAILED', JSON.stringify(r.status_details, null, 2));
+          activeResponseId = null;
+          if(queueAfterDone){
+            const next = queueAfterDone; queueAfterDone = null;
+            // kleine Verzögerung, um Kollisionen sicher zu vermeiden
+            setTimeout(()=> createResponseSafe(next), 50);
           }
         }
 
-        if (msg?.type === 'session.created') {
-          // Audio + Text
-          dc.send(JSON.stringify({
-            type:'response.create',
-            response:{
-              modalities:['audio','text'],
-              instructions:'Sag bitte genau: TESTTEST. Danach zähle 1 2 3.',
-              voice: els.selVoice.value || 'verse'
-            }
-          }));
-          log('[rt] response.create (nach session.created) sent');
-
-          // Text-Only-Probe
-          setTimeout(()=>{
-            dc.send(JSON.stringify({
-              type:'response.create',
-              response:{ modalities:['text'], instructions:'TEXT-ONLY-PROBE: Schreibe genau "TEXT-OK".' }
-            }));
-            log('[rt] response.create (TEXT-ONLY probe) sent');
-          }, 300);
-        }
-
-        if(msg?.type==='response.output_text.delta' && msg?.delta){
-          els.txtAgent.value += msg.delta; els.txtAgent.scrollTop = els.txtAgent.scrollHeight;
-        }
-        if(msg?.type==='response.delta' && msg?.delta){
-          els.txtAgent.value += msg.delta; els.txtAgent.scrollTop = els.txtAgent.scrollHeight;
-        }
         if(msg?.type==='response.completed'){ els.txtAgent.value += '\n'; }
       }catch{}
     }
