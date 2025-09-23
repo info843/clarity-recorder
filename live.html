@@ -1,3 +1,4 @@
+<!-- live.html -->
 <!doctype html>
 <html lang="de">
 <head>
@@ -262,13 +263,17 @@ async function startLive(){
     dc.onopen = onDataChannelOpen;
     dc.onmessage = onAgentEvent;
 
-    // incoming audio from model → play through #agentAudio
-    pc.ontrack = (ev)=>{ els.audio.srcObject = ev.streams[0]; if(audioUnlocked) els.audio.play().catch(()=>{}); };
+    // ✅ incoming audio from model → play through #agentAudio + Debug-Log
+    pc.ontrack = (ev)=>{
+      console.log('[live] ontrack kind=', ev.track?.kind, 'streams=', ev.streams?.length);
+      els.audio.srcObject = ev.streams[0];
+      if(audioUnlocked) els.audio.play().catch(()=>{});
+    };
 
-    // send our microphone to the model; receive audio back
-    const audioTrack = stream.getAudioTracks()[0];
-    const tx = pc.addTransceiver(audioTrack, { direction:'sendrecv' });
-    tx.sender.replaceTrack(audioTrack);
+    // ✅ Mic senden + Remote-Audio explizit anfordern (robuster als sendrecv)
+    const micTrack = stream.getAudioTracks()[0];
+    if (micTrack) pc.addTrack(micTrack, stream);                  // mic → send
+    pc.addTransceiver('audio', { direction: 'recvonly' });        // agent → recv
 
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
@@ -278,8 +283,7 @@ async function startLive(){
       headers:{
         Authorization:`Bearer ${token}`,
         'Content-Type':'application/sdp',
-        // 🔧 NEU: Beta-Header aktivieren → garantiertes Agent-Audio
-        'OpenAI-Beta':'realtime=v1'
+        'OpenAI-Beta':'realtime=v1' // 👈 wichtig für Agent-Audio
       },
       body: offer.sdp
     });
@@ -307,13 +311,13 @@ function onDataChannelOpen(){
   if(lastSystemInstructions){
     dc.send(JSON.stringify({ type:'session.update', session:{ instructions: lastSystemInstructions }}));
   }
-  // 2) smoke test: make the model speak immediately (mit explizitem voice & modalities)
+  // 2) Force first reply as AUDIO (+text)
   dc.send(JSON.stringify({
     type:'response.create',
     response:{
       instructions:'Bitte begrüße die Kandidatin / den Kandidaten kurz und stelle die erste Warm-up-Frage.',
-      modalities:['audio','text'],
-      voice: els.voice.value
+      modalities:['audio','text'],     // 👈 sicherstellen
+      voice: els.voice.value           // 👈 gewünschte Stimme
     }
   }));
 }
