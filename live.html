@@ -15,7 +15,7 @@
     button { cursor:pointer; }
     textarea { width:100%; height:170px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    #status { height:220px; overflow:auto; white-space:pre-wrap; }
+    #status { height:240px; overflow:auto; white-space:pre-wrap; }
     #pegel { height:8px; background:#1c2436; border-radius:6px; position:relative; }
     #pegel > i { position:absolute; left:0; top:0; bottom:0; width:0%; background:#6aa3ff; border-radius:6px; transition:width .08s linear; }
     audio { width:100%; margin-top:8px; }
@@ -33,7 +33,7 @@
       <div class="row"><label>Voice</label>
         <select id="voice">
           <option>verse</option>
-          <option>alloy</option>
+          <option selected>alloy</option>
           <option>ash</option>
           <option>ballad</option>
           <option>coral</option>
@@ -51,7 +51,7 @@
         <button id="btnStop">Stop</button>
         <button id="btnTest">Testton</button>
       </div>
-      <div class="row"><label>Remote Audio Pegel</label><div id="pegel"><i></i></div></div>
+      <div class="row"><label>Remote Pegel</label><div id="pegel"><i></i></div></div>
       <audio id="agentAudio" playsinline></audio>
       <div class="mono" id="status"></div>
     </div>
@@ -87,7 +87,6 @@
     console.log(...a);
   };
 
-  // Output devices (if supported)
   async function refreshSinks(){
     try{
       if (!navigator.mediaDevices?.enumerateDevices) return;
@@ -103,7 +102,6 @@
   }
   await refreshSinks();
 
-  // Testton
   els.btnTest.onclick = async () => {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const o = ctx.createOscillator();
@@ -115,6 +113,7 @@
   };
 
   let pc, dc, micStream, meterTimer;
+  let sessionIsReady = false;
 
   els.btnStart.onclick = async () => {
     try {
@@ -124,10 +123,9 @@
       const token = await fetchToken();
       if (!token) return;
 
-      // PeerConnection
       pc = new RTCPeerConnection({iceServers: [{urls:'stun:stun.l.google.com:19302'}]});
 
-      // --- Remote audio: nur <audio>, kein WebAudio-Mix ---
+      // Remote audio -> HTMLAudioElement
       pc.ontrack = (ev) => {
         if (ev.track.kind === 'audio') {
           const s = ev.streams[0];
@@ -135,36 +133,34 @@
           els.audio.muted = false;
           els.audio.volume = 1.0;
           els.audio.play().catch(e => log('audio play error', e.message));
-
-          // Debug-Flags:
           const at = s.getAudioTracks()[0];
           log('[live] remote track flags: muted=', at.muted, 'enabled=', at.enabled, 'state=', at.readyState);
-
-          // simpler Pegel (getSettings VU fallback)
           clearInterval(meterTimer);
           meterTimer = setInterval(()=> {
             const t = s.getAudioTracks()[0];
             if (!t) return;
-            // Wir haben hier keinen echten PCM-Meter; nur „lebt der Track?“
             const w = (t.muted || t.readyState!=='live') ? 0 : 95;
             els.pegelBar.style.width = w + '%';
           }, 120);
         }
       };
 
-      // Mic → sendonly
+      // Mic holen und hinzufügen – **ohne** extra recvonly-Transceiver
       micStream = await navigator.mediaDevices.getUserMedia({audio:true, video:false});
-      micStream.getTracks().forEach(t => pc.addTrack(t, micStream));
+      const micTrack = micStream.getAudioTracks()[0];
+      const sender = pc.addTrack(micTrack, micStream);
 
-      // Zusätzlich einen reinen recvonly-Audio-Transceiver anfordern
-      pc.addTransceiver('audio', { direction: 'recvonly' });
+      // ERZINGE sendrecv (einzige m=audio Line)
+      if (sender?.transceiver) {
+        sender.transceiver.direction = 'sendrecv';
+      }
 
       // DataChannel
       dc = pc.createDataChannel('oai-events');
       dc.onopen = onDataChannelOpen;
       dc.onmessage = onAgentEvent;
 
-      // SDP
+      // SDP Offer
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
@@ -188,7 +184,6 @@
       await pc.setRemoteDescription(answer);
       log('pc: connected (SDP answer set)');
 
-      // Sink wechseln
       els.sink.onchange = async () => {
         const id = els.sink.value;
         if (els.audio.setSinkId) {
@@ -208,6 +203,7 @@
       micStream && micStream.getTracks().forEach(t=>t.stop());
       clearInterval(meterTimer);
       els.pegelBar.style.width = '0%';
+      sessionIsReady = false;
       log('stopped');
     } catch {}
   };
@@ -219,14 +215,12 @@
       voice: els.voice.value
     };
     log('Token endpoint:', els.tokenUrl.value);
-    // 1) eigener Proxy
     try{
       const r = await fetch(els.tokenUrl.value, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
       const j = await r.json();
       log('Token response (proxy) status:', r.status, 'body:', j);
       if (r.ok && j?.ok && j?.token) return j.token;
     }catch(e){ log('proxy fetch error', e.message); }
-    // 2) Wix backend fallback
     try{
       const r2 = await fetch(els.tokenUrl2.value, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
       const j2 = await r2.json();
@@ -241,33 +235,41 @@
   function onDataChannelOpen(){
     log('DataChannel open');
 
-    // Minimal-Session (ohne output_audio & ohne turn_detection)
+    // 1) Session minimal setzen
     const sess = {
-      voice: els.voice.value || 'verse',
+      voice: els.voice.value || 'alloy',
       modalities: ['audio', 'text']
     };
     dc.send(JSON.stringify({ type: 'session.update', session: sess }));
     log('[rt] session.update sent', sess);
 
-    // Begrüßung (erzwingt Audio+Text)
-    dc.send(JSON.stringify({
-      type:'response.create',
-      response:{
-        modalities:['audio','text'],
-        instructions:'Sage bitte exakt TESTTEST und zähle dann laut eins zwei drei.',
-        voice: els.voice.value || 'verse'
-      }
-    }));
-    log('[rt] response.create Begrüßung sent');
+    // 2) response.create NICHT sofort senden – wir warten auf session.created
+    //    (siehe onAgentEvent)
   }
 
   function onAgentEvent(ev){
-    try{
+    // Roh-Log kurz (max 200 Zeichen), hilft bei Debug
+    try {
+      const raw = typeof ev.data === 'string' ? ev.data : '';
+      if (raw) log('[rt] event', raw.slice(0, 200));
       const msg = JSON.parse(ev.data);
 
-      // Sichtbares Error-Logging (entscheidend!)
       if (msg?.type === 'error') {
         log('[rt] ERROR payload:', JSON.stringify(msg));
+      }
+
+      if (msg?.type === 'session.created') {
+        sessionIsReady = true;
+        // Jetzt erst Begrüßung anfordern (sicheres Mapping auf m=audio)
+        dc.send(JSON.stringify({
+          type:'response.create',
+          response:{
+            modalities:['audio','text'],
+            instructions:'Sage bitte exakt TESTTEST und zähle dann laut eins zwei drei.',
+            voice: els.voice.value || 'alloy'
+          }
+        }));
+        log('[rt] response.create (nach session.created) sent');
       }
 
       if (msg?.type === 'response.output_text.delta' && msg?.delta) {
@@ -281,8 +283,8 @@
       if (msg?.type === 'response.completed') {
         els.agentText.value += '\n';
       }
-    }catch{
-      // non-JSON events ignorieren
+    } catch {
+      // non-JSON ignorieren
     }
   }
 })();
