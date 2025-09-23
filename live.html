@@ -388,7 +388,6 @@ async function startLive(){
   finally{ els.start.disabled=false; }
 }
 
-/* ---------- DataChannel events ---------- */
 function onDataChannelOpen(){
   log('DataChannel open');
 
@@ -399,30 +398,58 @@ function onDataChannelOpen(){
     output_audio: { format: 'opus' }, // alternativ: 'pcm16'
     turn_detection: { type: 'server_vad', threshold: 0.5 }
   };
-  dc.send(JSON.stringify({ type: 'session.update', session: sess }));
+  try {
+    dc.send(JSON.stringify({ type: 'session.update', session: sess }));
+    log('[rt] session.update sent', sess);
+  } catch(e){
+    log('session.update error:', e.message);
+  }
 
   // Begrüßung (erzwingt Audio + Text)
-  dc.send(JSON.stringify({
-    type:'response.create',
-    response:{
-      modalities:['audio','text'],
-      instructions:'Bitte begrüße die Kandidatin / den Kandidaten kurz und stelle die erste Warm-up-Frage.',
-      voice: els.voice.value || 'verse'
-    }
-  }));
+  try {
+    dc.send(JSON.stringify({
+      type:'response.create',
+      response:{
+        modalities:['audio','text'],
+        instructions:'Bitte begrüße die Kandidatin / den Kandidaten kurz und stelle die erste Warm-up-Frage.',
+        voice: els.voice.value || 'verse'
+      }
+    }));
+    log('[rt] response.create Begrüßung sent');
+  } catch(e){
+    log('response.create error:', e.message);
+  }
 }
 
 function onAgentEvent(ev){
-  try{
-    const msg=JSON.parse(ev.data);
+  try {
+    const msg = JSON.parse(ev.data);
+
+    // Text-Ausgabe → ins AgentText-Feld schreiben
     if(msg?.type==='response.output_text.delta' && msg?.delta){
-      els.agentText.value += msg.delta; els.agentText.scrollTop=els.agentText.scrollHeight;
+      els.text.value += msg.delta;
+      els.text.scrollTop = els.text.scrollHeight;
     }
     if(msg?.type==='response.delta' && msg?.delta){
-      els.agentText.value += msg.delta; els.agentText.scrollTop=els.agentText.scrollHeight;
+      els.text.value += msg.delta;
+      els.text.scrollTop = els.text.scrollHeight;
     }
-    if(msg?.type==='response.completed'){ els.agentText.value += '\n'; parentPost({type:'clarity.avatar',data:{state:'listening'}}); }
-  }catch{ els.agentText.value += (ev.data||''); }
+
+    // Abschluss einer Antwort
+    if(msg?.type==='response.completed'){
+      els.text.value += '\n';
+      parentPost({ type:'clarity.avatar', data:{ state:'listening' } });
+      log('[rt] response.completed');
+    }
+
+    // Debug: alles loggen
+    if(msg?.type && !msg.type.startsWith('response.')){
+      log('[rt] event', msg.type);
+    }
+  } catch(e){
+    els.text.value += (ev.data||'');
+    log('onAgentEvent parse error:', e.message);
+  }
 }
 
 /* ---------- stop & upload ---------- */
