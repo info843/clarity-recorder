@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Clarity Live Interview (Realtime + Recording → Mux)</title>
+  <title>Clarity Live Interview (Realtime + Video Recording → Mux)</title>
   <style>
     :root { --bg:#0b0d12; --fg:#e5e7eb; --muted:#9ca3af; --accent:#60a5fa; }
     body{margin:0;font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--fg)}
@@ -24,8 +24,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>Clarity Live Interview (Realtime + Recording → Mux)</h1>
-
+  <h1>Clarity Live Interview (Realtime + Video Recording → Mux)</h1>
   <div class="row">
     <div class="card">
       <label>Session</label>
@@ -41,17 +40,20 @@
       <select id="inLang"><option value="de">de</option><option value="en">en</option></select>
       <label>Voice</label>
       <select id="inVoice">
-        <option value="verse">verse</option><option value="alloy">alloy</option><option value="ash">ash</option>
+        <option value="verse" selected>verse</option>
+        <option value="alloy">alloy</option>
+        <option value="ash">ash</option>
+        <option value="aria">aria</option>
       </select>
 
       <div class="row2">
         <div>
           <label>Token Endpoint</label>
-          <input id="inTokenUrl" value="" placeholder="/api/wix-token-proxy (fallback: /_functions/realtimeToken)"/>
+          <input id="inTokenUrl" value="" placeholder="/api/wix-token-proxy"/>
         </div>
         <div>
           <label>Mux Upload API</label>
-          <input id="inMuxUpload" value="" placeholder="/api/mux-upload (fallback: /_functions/muxUpload)"/>
+          <input id="inMuxUpload" value="/api/mux-upload" placeholder="/api/mux-upload"/>
         </div>
       </div>
 
@@ -67,7 +69,7 @@
 
     <div class="card">
       <label>Agent Audio</label>
-      <audio id="agentAudio" autoplay playsinline></audio>
+      <audio id="agentAudio" autoplay controls></audio>
 
       <label>Preview (Your Camera)</label>
       <video id="preview" autoplay playsinline muted></video>
@@ -87,20 +89,46 @@ const els = {
   pillState: q('#pillState'), pillModel: q('#pillModel'), pillRec: q('#pillRec'),
   preview: q('#preview')
 };
+
 function q(s){ return document.querySelector(s); }
-function log(...a){ const t=a.map(x=>typeof x==='object'?JSON.stringify(x):String(x)).join(' '); els.log.textContent+=`[${new Date().toLocaleTimeString()}] ${t}\n`; els.log.scrollTop=els.log.scrollHeight; console.log(...a); }
+function log(...a){
+  const t=a.map(x=>typeof x==='object'?JSON.stringify(x):String(x)).join(' ');
+  els.log.textContent+=`[${new Date().toLocaleTimeString()}] ${t}\n`; els.log.scrollTop=els.log.scrollHeight; console.log(...a);
+}
 function setState(s){ els.pillState.textContent=`state: ${s}` }
 
+// --- Realtime/WebRTC globals ---
 let pc=null, dc=null, stream=null, modelInUse=null;
+let awaitingSessionCreated=false;
+let dcIsOpen=false;
+const dcQueue=[];
+function rtSend(obj){
+  const s = JSON.stringify(obj);
+  if(dc && dc.readyState==='open'){
+    dc.send(s);
+    log('[rt] sent', obj.type || 'payload', s);
+  }else{
+    dcQueue.push(s);
+    log('[rt] queued', obj.type || 'payload (dc not open)');
+  }
+}
+let activeResponseId=null;
+let queuedResponsePayload=null;
+
+// --- Recorder/Mux globals ---
 let mediaRecorder=null, chunks=[], doRecording=true;
 let muxUploadUrl=null, muxUploadId=null;
-let audioCtx = null;
 
-// response.create Serialisierung (verhindert "active response in progress")
-let activeResponseId = null;
-let queuedResponsePayload = null;
+// --- AudioContext unlock (hilft Autoplay) ---
+let audioCtx=null;
+async function ensureAudio(){
+  try{
+    if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    if(audioCtx.state==='suspended') await audioCtx.resume();
+  }catch(e){ log('AudioContext error:', e?.message||e); }
+}
 
-// Prefill & Defaults + Fallback-Routen
+// Prefill & Defaults
 (()=> {
   const p = new URLSearchParams(location.search);
   if(p.get('uid')) els.uid.value=p.get('uid');
@@ -108,25 +136,12 @@ let queuedResponsePayload = null;
   if(p.get('lang')) els.lang.value=p.get('lang');
   if(p.get('voice')) els.voice.value=p.get('voice');
 
-  const defaultToken = '/api/wix-token-proxy';
-  const defaultMux   = '/api/mux-upload';
-  els.tokenUrl.value = p.get('tokenUrl') || defaultToken;
-  els.muxUpload.value= p.get('muxUrl')  || defaultMux;
+  const DEFAULT_TOKEN_URL = '/api/wix-token-proxy';
+  els.tokenUrl.value = p.get('tokenUrl') || DEFAULT_TOKEN_URL;
   log('Token endpoint:', els.tokenUrl.value, 'Mux endpoint:', els.muxUpload.value);
 })();
 
-// UI
-els.start.addEventListener('click', startLive);
-els.stop.addEventListener('click', stopLive);
-els.toggleRec.addEventListener('click', ()=> setRecording(!doRecording));
-
-function setRecording(v){
-  doRecording=!!v;
-  els.pillRec.textContent=`record: ${doRecording?'on':'off'}`;
-  els.toggleRec.textContent=`Record to Mux: ${doRecording?'On':'Off'}`;
-}
-
-// postMessage hooks (kannst du später fürs Iframe nutzen)
+// postMessage hooks (optional)
 window.addEventListener('message', async (ev)=>{
   const {type,data}=ev.data||{};
   if(type==='clarity.live.start'){
@@ -138,11 +153,16 @@ window.addEventListener('message', async (ev)=>{
   if(type==='clarity.live.stop'){ await stopLive(); }
   if(type==='clarity.live.record'){ setRecording(!!data?.enabled); }
   if(type==='clarity.live.context'){
-    if(dc && dc.readyState==='open'){
-      dc.send(JSON.stringify({ type:'session.update', session:{ instructions: buildSystemInstructions(data) }}));
-    }
+    rtSend({ type:'session.update', session:{ instructions: buildSystemInstructions(data) }});
   }
 });
+
+function setRecording(v){
+  doRecording=!!v;
+  els.pillRec.textContent=`record: ${doRecording?'on':'off'}`;
+  els.toggleRec.textContent=`Record to Mux: ${doRecording?'On':'Off'}`;
+}
+els.toggleRec.addEventListener('click', ()=> setRecording(!doRecording));
 
 function buildSystemInstructions(ctx){
   const companyName = ctx?.companyName || 'Your Company';
@@ -151,7 +171,7 @@ function buildSystemInstructions(ctx){
   return `You are Clarity's interview agent for "${companyName}" role "${position}". Use ONLY jobDescription & companyFacts. No web browsing. One concise question/turn, inclusive & unbiased. Reformulate once if needed. No smalltalk. Salary only if provided; else refer to direct discussion. Language: ${lang}.`.trim();
 }
 
-// --- Token fetch mit Fallback ---
+// -------- Token-Fetching --------
 async function getToken(){
   const payload = {
     uid: els.uid.value.trim(),
@@ -159,41 +179,42 @@ async function getToken(){
     lang: els.lang.value,
     voice: els.voice.value
   };
-  const tryOnce = async (url) => {
-    log('Fetching token…', url, JSON.stringify(payload));
-    const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-    const raw = await r.text();
-    log('Token response status:', r.status, 'body:', raw.slice(0, 300));
-    let j=null; try{ j=JSON.parse(raw); }catch{}
-    return { ok:r.ok && !!j?.token, json:j, status:r.status };
-  };
+  log('Fetching token…', els.tokenUrl.value, JSON.stringify(payload));
 
-  // 1) bevorzugt /api/wix-token-proxy, 2) fallback /_functions/realtimeToken
-  const urls = [els.tokenUrl.value || '/api/wix-token-proxy', '/_functions/realtimeToken'];
-  for(const url of urls){
-    try{
-      const {ok,json,status} = await tryOnce(url);
-      if(ok){ modelInUse = json.model; els.pillModel.textContent=`model: ${modelInUse || '—'}`; return json.token; }
-      log('token try failed @', url, status, json);
-    }catch(e){ log('token fetch error @', url, e.message); }
+  const r = await fetch(els.tokenUrl.value, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(payload)
+  });
+
+  const raw = await r.text();
+  log('Token response status:', r.status, 'body:', raw.slice(0, 300));
+
+  let j = null;
+  try { j = JSON.parse(raw); } catch {
+    throw new Error(`token endpoint returned non-JSON (status ${r.status})`);
   }
-  throw new Error('token error: all routes failed');
+  if(!r.ok || !j?.token){
+    throw new Error(`token error (status ${r.status}): ${j?.error || 'no token field'}`);
+  }
+  modelInUse = j.model;
+  els.pillModel.textContent=`model: ${modelInUse || '—'}`;
+  return j.token;
 }
 
+els.start.addEventListener('click', startLive);
+els.stop.addEventListener('click', stopLive);
+
+// ====== Realtime Start ======
 async function startLive(){
   try{
+    await ensureAudio();
     if(pc) await stopLive();
     setState('connecting'); els.start.disabled=true;
 
-    // AudioContext anwerfen (Autoplay-Policy)
-    try{
-      if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
-      if(audioCtx.state === 'suspended') await audioCtx.resume();
-    }catch(e){ log('audiocontext error', e?.message||e); }
-
     const token = await getToken();
 
-    // Mic/Kamera
+    // Mic+Cam NACH Token
     stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation:true, noiseSuppression:true },
       video: { width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:30} }
@@ -201,23 +222,12 @@ async function startLive(){
     els.preview.srcObject = stream;
     log('Cam+Mic ready');
 
-    // Aufnahme (Video+Audio) → Mux
+    // Aufnahme → Mux
     if(doRecording){
-      // Mux endpoint mit Fallback
-      const tryMux = async (url) => {
-        const up = await fetch(url, { method:'POST' });
-        const j = await up.json().catch(()=> ({}));
-        return { ok: up.ok && j?.uploadUrl && j?.uploadId, j, status: up.status, url };
-      };
-      const muxUrls = [els.muxUpload.value || '/api/mux-upload', '/_functions/muxUpload'];
-      let init=null;
-      for(const u of muxUrls){
-        init = await tryMux(u);
-        if(init.ok) break;
-        log('mux init failed @', u, init.status, init.j);
-      }
-      if(!init?.ok) throw new Error('mux-upload init failed');
-      muxUploadUrl = init.j.uploadUrl; muxUploadId = init.j.uploadId;
+      const up = await fetch(els.muxUpload.value, { method:'POST' });
+      const j = await up.json();
+      if(!up.ok || !j?.uploadUrl || !j?.uploadId) throw new Error('mux-upload init failed');
+      muxUploadUrl = j.uploadUrl; muxUploadId = j.uploadId;
 
       const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') ? 'video/webm;codecs=vp9,opus' : 'video/webm';
       mediaRecorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 3_000_000, audioBitsPerSecond: 128_000 });
@@ -228,31 +238,45 @@ async function startLive(){
       setState('recording'); log('MediaRecorder started (video+audio)');
     }
 
-    // Realtime WebRTC (send Mic, recv Agent)
+    // WebRTC
     pc = new RTCPeerConnection();
     pc.onconnectionstatechange = ()=>{ setState(pc.connectionState); log('pc:', pc.connectionState); };
 
-    // Audio vom Agent
-    pc.ontrack = (ev)=> {
+    // ZUERST einen reinen Empfangskanal für Agent-Audio (wichtig!)
+    pc.addTransceiver('audio', { direction:'recvonly' });
+
+    // Remote-Audio an <audio>
+    pc.ontrack = (ev)=>{
       els.audio.srcObject = ev.streams[0];
-      const p = els.audio.play(); if(p?.catch) p.catch(()=>{});
-      const [track] = ev.streams[0].getAudioTracks();
-      log('[live] remote track flags: muted=', track.muted, 'enabled=', track.enabled, 'state=', track.readyState);
+      const tr = ev.track || ev.streams[0]?.getAudioTracks?.()?.[0];
+      log('[live] remote track flags: muted=', tr?.muted, 'enabled=', tr?.enabled, 'state=', tr?.readyState);
+      // Autoplay-Sicherung
+      els.audio.play().catch(()=>{ /* möglicherweise noch gesperrt – Start war user gesture */ });
     };
 
-    // Mic → Model (sendrecv)
+    // Eigener Mic-Track bidirektional
     const audioTrack = stream.getAudioTracks()[0];
     const tx = pc.addTransceiver(audioTrack, { direction:'sendrecv' });
     tx.sender.replaceTrack(audioTrack);
 
     // DataChannel
     dc = pc.createDataChannel('oai-events');
-    dc.onopen = onDataChannelOpen;
+    dc.onopen = ()=>{
+      dcIsOpen = true;
+      log('DataChannel open');
+      // Queue flush
+      while(dcQueue.length){
+        const m = dcQueue.shift();
+        try{ dc.send(m); }catch(e){ log('[rt] flush error', e.message); }
+      }
+      // nach Open: session.update; response.create erst nach session.created
+      awaitingSessionCreated = true;
+      rtSend({ type:'session.update', session:{ voice: els.voice.value, modalities:['audio','text'], instructions: buildSystemInstructions({ lang: els.lang.value }) }});
+    };
     dc.onmessage = onAgentEvent;
-    dc.onclose = ()=> log('DataChannel closed');
-    dc.onerror = (e)=> log('DataChannel error', e?.message||e);
+    dc.onclose = ()=> { dcIsOpen=false; log('DataChannel closed'); };
 
-    // Offer → OpenAI Realtime
+    // SDP Offer/Answer
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     const model = modelInUse || 'gpt-4o-realtime-preview';
@@ -261,27 +285,13 @@ async function startLive(){
       headers:{
         Authorization:`Bearer ${token}`,
         'Content-Type':'application/sdp',
-        'OpenAI-Beta':'realtime=v1' // wichtig für stabile Audio-Sitzung
+        'OpenAI-Beta': 'realtime=v1'
       },
       body: offer.sdp
     });
-    if(!rt.ok){
-      const msg = await rt.text().catch(()=>null);
-      throw new Error(`Realtime SDP error ${rt.status} ${msg||''}`);
-    }
     const answerSdp = await rt.text();
     await pc.setRemoteDescription({ type:'answer', sdp: answerSdp });
     setState('connected'); log('Realtime connected');
-
-    // Startprompt
-    if(dc && dc.readyState==='open'){
-      dc.send(JSON.stringify({ type:'session.update', session:{ voice: els.voice.value, modalities:['audio','text'], instructions: buildSystemInstructions({ lang: els.lang.value }) }}));
-      // Erste Audio+Text Probe — serialisiert
-      createResponseSafe({ modalities:['audio','text'], voice: els.voice.value, instructions:'Sag bitte genau: TESTTEST. Danach zähle 1 2 3.' });
-      // Danach Text-only-Probe
-      queuedResponsePayload = { modalities:['text'], instructions:'TEXT-ONLY-PROBE: Schreibe genau "TEXT-OK".' };
-    }
-    parentPost({ type:'clarity.avatar', data:{ state:'speaking' } });
 
   }catch(e){
     log('startLive error:', e.message);
@@ -291,47 +301,54 @@ async function startLive(){
   }
 }
 
-// Serialisierte response.create
+// Antwort-Serialisierung
 function createResponseSafe(payload){
-  if(!dc || dc.readyState!=='open') return;
   if(activeResponseId){
     queuedResponsePayload = payload;
     log('[rt] queued response.create until current finishes');
     return;
   }
-  dc.send(JSON.stringify({ type:'response.create', response: payload }));
-  log('[rt] response.create sent', JSON.stringify(payload));
+  rtSend({ type:'response.create', response: payload });
 }
 
-function onDataChannelOpen(){
-  log('DataChannel open');
-  // Session-Settings werden in startLive gesetzt
-}
-
+// DC Events
 function onAgentEvent(ev){
   try{
     const msg = JSON.parse(ev.data);
-    log('[rt] event', msg.type || '', JSON.stringify(msg));
+    if(msg?.type==='session.created'){
+      log('[rt] event session.created', JSON.stringify(msg));
+      if(awaitingSessionCreated){
+        awaitingSessionCreated=false;
+        // Erstes Audio + Text
+        createResponseSafe({
+          modalities:['audio','text'],
+          voice: els.voice.value,
+          instructions: 'Sag bitte genau: TESTTEST. Danach zähle 1 2 3.'
+        });
+        // Danach Text-Probe
+        queuedResponsePayload = { modalities:['text'], instructions:'TEXT-ONLY-PROBE: Schreibe genau "TEXT-OK".' };
+      }
+      return;
+    }
 
-    if (msg?.type === 'error') {
-      log('[rt] ERROR', JSON.stringify(msg.error));
+    // Logs & Streaming
+    if (msg?.type==='response.output_text.delta' && msg?.delta) {
+      els.text.value += msg.delta; els.text.scrollTop = els.text.scrollHeight;
     }
+    if (msg?.type==='response.delta' && msg?.delta) {
+      els.text.value += msg.delta; els.text.scrollTop = els.text.scrollHeight;
+    }
+    if (msg?.type==='response.completed') { els.text.value += '\n'; }
+
     if (msg?.type === 'response.created') {
-      activeResponseId = msg?.response?.id || null;
+      activeResponseId = msg?.response?.id || true;
+      log('[rt] response.created', activeResponseId);
     }
-    if (msg?.type==='response.output_text.delta' && msg?.delta){
-      els.text.value += msg.delta;
-      els.text.scrollTop = els.text.scrollHeight;
-    }
-    if (msg?.type==='response.delta' && msg?.delta){
-      els.text.value += msg.delta;
-      els.text.scrollTop = els.text.scrollHeight;
-    }
-    if (msg?.type==='response.completed'){
-      els.text.value += '\n';
-      parentPost({ type:'clarity.avatar', data:{ state:'listening' } });
-    }
-    if (msg?.type==='response.done'){
+    if (msg?.type === 'output_audio_buffer.started') log('[rt] output_audio_buffer.started');
+    if (msg?.type === 'output_audio_buffer.stopped') log('[rt] output_audio_buffer.stopped');
+
+    if (msg?.type === 'response.done') {
+      log('[rt] response.done');
       activeResponseId = null;
       if(queuedResponsePayload){
         const next = queuedResponsePayload; queuedResponsePayload = null;
@@ -343,6 +360,7 @@ function onAgentEvent(ev){
   }
 }
 
+// ====== Stop ======
 async function stopLive(){
   try{
     setState('closing');
@@ -354,12 +372,12 @@ async function stopLive(){
     log('stopLive error:', e.message);
   }finally{
     dc=null; pc=null; stream=null; mediaRecorder=null;
-    activeResponseId=null; queuedResponsePayload=null;
     setState('idle');
     parentPost({ type:'clarity.avatar', data:{ state:'idle' } });
   }
 }
 
+// ====== Mux Upload ======
 async function uploadToMux(){
   try{
     setState('uploading');
