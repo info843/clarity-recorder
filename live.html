@@ -1,305 +1,263 @@
 <!doctype html>
 <html lang="de">
 <head>
-  <meta charset="utf-8" />
-  <title>Interview Live</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Clarity Live (Realtime + Recording → Mux)</title>
   <style>
-    body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;margin:0;padding:16px;background:#0b1020;color:#e9ecf1}
+    :root{--bg:#0b0d12;--fg:#e5e7eb;--muted:#9ca3af;--accent:#60a5fa}
+    body{margin:0;font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--fg)}
+    .wrap{max-width:860px;margin:0 auto;padding:16px}
     h1{font-size:18px;margin:0 0 12px}
-    .row{display:flex;gap:12px;flex-wrap:wrap}
-    .card{background:#121a38;border:1px solid #1c2750;border-radius:10px;padding:12px}
-    .w-100{width:100%}.w-50{width:calc(50% - 6px)}
-    textarea, input, select, button{background:#0e1530;color:#e9ecf1;border:1px solid #273268;border-radius:8px;padding:8px}
-    textarea{width:100%;min-height:140px;resize:vertical;font-family:ui-monospace,Consolas,monospace;font-size:12px;line-height:1.4}
-    button{cursor:pointer}
-    .pill{padding:4px 8px;border-radius:999px;background:#0e1530;border:1px solid #273268}
-    .log{font-family:ui-monospace,Consolas,monospace;font-size:12px;white-space:pre-wrap}
-    .muted{opacity:.7}
-    label{font-size:12px;color:#b8c3ff}
-    .mini{font-size:12px}
+    .card{background:#0f1320;border:1px solid #1f2937;border-radius:14px;padding:14px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    button,input,select{background:#0b1220;color:var(--fg);border:1px solid #303b4a;border-radius:10px;padding:10px 12px}
+    button.primary{background:linear-gradient(135deg,#2563eb,#0ea5e9);border:none}
+    button:disabled{opacity:.6;cursor:not-allowed}
+    video{width:220px;height:140px;background:#000;border-radius:10px;object-fit:cover}
+    .pill{display:inline-block;padding:4px 10px;border-radius:999px;background:#0b1220;border:1px solid #303b4a;font-size:12px}
+    .muted{opacity:.75}
+    .sr{position:absolute;left:-9999px}
+    .log{display:none} /* im UI versteckt, aber wir loggen in console */
   </style>
 </head>
 <body>
-  <h1>Interview – Live</h1>
+  <div class="wrap">
+    <h1>Clarity Live</h1>
 
-  <div class="row">
-    <div class="card w-50">
-      <div class="row" style="align-items:center;gap:8px">
-        <button id="btnStart">Start Live</button>
-        <button id="btnStop" class="muted">Stop</button>
-        <span class="pill mini" id="pillState">idle</span>
-        <label>Voice</label>
-        <select id="selVoice">
-          <option value="alloy">alloy</option>
+    <div class="card">
+      <div class="row">
+        <button id="btnStart" class="primary">Start</button>
+        <button id="btnStop">Stop</button>
+        <span id="pillState" class="pill">state: idle</span>
+        <span id="pillRec" class="pill">record: on</span>
+        <label class="sr" for="selVoice">Voice</label>
+        <select id="selVoice" title="Voice">
           <option value="verse" selected>verse</option>
+          <option value="alloy">alloy</option>
           <option value="ash">ash</option>
           <option value="ballad">ballad</option>
           <option value="coral">coral</option>
           <option value="echo">echo</option>
           <option value="sage">sage</option>
           <option value="shimmer">shimmer</option>
-          <option value="marin">marin</option>
-          <option value="cedar">cedar</option>
         </select>
       </div>
 
-      <div style="margin-top:10px">
-        <label for="txtAgent">Agent-Textausgabe (Streaming)</label>
-        <textarea id="txtAgent" placeholder="Agent streamt hier Text..."></textarea>
-      </div>
-
-      <div style="margin-top:10px">
-        <label for="txtSend">Manual send (debug)</label>
-        <textarea id="txtSend" placeholder='JSON, z.B. {"type":"response.create","response":{"modalities":["text"],"instructions":"Sag Hallo als Text."}}'></textarea>
-        <div class="row" style="margin-top:8px;gap:8px">
-          <button id="btnSend">an DC senden</button>
-          <button id="btnClearTxt">Ausgaben leeren</button>
+      <div class="row" style="margin-top:10px">
+        <div>
+          <div class="muted" style="font-size:12px;margin-bottom:6px">Kamera-Vorschau</div>
+          <video id="preview" autoplay playsinline muted></video>
         </div>
+        <audio id="agentAudio" class="sr" autoplay></audio>
       </div>
     </div>
 
-    <div class="card w-50">
-      <div>
-        <label>Remote-Audio</label>
-        <audio id="remoteAudio" autoplay playsinline></audio>
-      </div>
-      <div style="margin-top:8px">
-        <button id="btnBeep">Test-Ton abspielen</button>
-      </div>
-      <div style="margin-top:10px">
-        <label>Logs</label>
-        <textarea id="txtLog" class="log" placeholder="Logs…"></textarea>
-      </div>
-    </div>
+    <pre id="log" class="log"></pre>
   </div>
 
-  <script>
-  window.addEventListener('DOMContentLoaded', () => {
-    // ------- kleine Helfer -------
-    const els = {
-      btnStart: document.getElementById('btnStart'),
-      btnStop: document.getElementById('btnStop'),
-      selVoice: document.getElementById('selVoice'),
-      txtAgent: document.getElementById('txtAgent'),
-      txtLog: document.getElementById('txtLog'),
-      txtSend: document.getElementById('txtSend'),
-      btnSend: document.getElementById('btnSend'),
-      btnClearTxt: document.getElementById('btnClearTxt'),
-      remoteAudio: document.getElementById('remoteAudio'),
-      pillState: document.getElementById('pillState'),
-    };
-    function log(...a){
-      const line = a.map(v=> typeof v==='string' ? v : JSON.stringify(v)).join(' ');
-      const ts = new Date().toTimeString().slice(0,5);
-      els.txtLog.value += `[${ts}] ${line}\n`;
-      els.txtLog.scrollTop = els.txtLog.scrollHeight;
-      console.log(...a);
-    }
-    function setState(s){ els.pillState.textContent = s; }
+<script>
+(() => {
+/* ---------- Elements ---------- */
+const els = {
+  start: q('#btnStart'),
+  stop: q('#btnStop'),
+  preview: q('#preview'),
+  agentAudio: q('#agentAudio'),
+  pillState: q('#pillState'),
+  pillRec: q('#pillRec'),
+  voice: q('#selVoice'),
+  log: q('#log'),
+};
+function q(s){ return document.querySelector(s); }
+function setState(s){ els.pillState.textContent = 'state: ' + s; }
+function log(...a){
+  const line = a.map(v => typeof v==='string' ? v : JSON.stringify(v)).join(' ');
+  console.log(line);
+}
 
-    // ------- Realtime globals -------
-    let pc = null, dc = null, remoteStream = null, audioCtx = null;
+/* ---------- Config (endpoints) ---------- */
+const TOKEN_URL = '/_functions/realtimeToken';
+const MUX_UPLOAD_URL = '/_functions/muxUpload';
 
-    // einfache Serialisierung der response.create Aufrufe
-    let activeResponseId = null;
-    let queueAfterDone = null; // {modalities, instructions, voice}
+/* ---------- Realtime / Media globals ---------- */
+let pc = null, dc = null, stream = null, mediaRecorder = null, chunks = [];
+let muxUploadUrl = null, muxUploadId = null;
+let modelInUse = 'gpt-4o-realtime-preview';
+let doRecording = true;
 
-    // ------- Buttons -------
-    els.btnStart.onclick = startLive;
-    els.btnStop.onclick = stopLive;
-    els.btnSend.onclick = () => {
-      try{
-        if(!dc) return;
-        const msg = JSON.parse(els.txtSend.value);
-        dc.send(JSON.stringify(msg));
-        log('[dc] sent', msg.type || Object.keys(msg));
-      }catch(e){ log('send parse error', e.message); }
-    };
-    els.btnClearTxt.onclick = () => { els.txtAgent.value=''; els.txtLog.value=''; };
+els.start.onclick = startAll;
+els.stop.onclick = stopAll;
 
-    // Test-Ton
-    els.btnBeep.onclick = async () => {
-      try{
-        if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
-        if(audioCtx.state === 'suspended') await audioCtx.resume();
-        const o = audioCtx.createOscillator();
-        const g = audioCtx.createGain();
-        o.type='sine'; o.frequency.value=880;
-        g.gain.value=0.0001;
-        o.connect(g).connect(audioCtx.destination);
-        o.start();
-        g.gain.exponentialRampToValueAtTime(0.2, audioCtx.currentTime+0.02);
-        setTimeout(()=>g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime+0.02), 300);
-        setTimeout(()=>{ try{o.stop();}catch{} }, 380);
-      }catch(e){ log('[beep] error', e.message); }
-    };
+async function startAll(){
+  els.start.disabled = true;
+  try{
+    setState('init');
 
-    async function startLive(){
-      setState('starting'); log('Start Live');
+    // 1) Token vom Backend
+    const { token, model } = await fetchToken({ voice: els.voice.value });
+    modelInUse = model || modelInUse;
+    log('[token] ok, model:', modelInUse);
 
-      // AudioContext & Autoplay
-      try{
-        if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
-        if(audioCtx.state === 'suspended') await audioCtx.resume();
-      }catch(e){ log('audiocontext error', e?.message||e); }
+    // 2) Mic + Cam (Preview, plus Audio für Realtime)
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation:true, noiseSuppression:true },
+      video: { width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:30} }
+    });
+    els.preview.srcObject = stream;
+    log('[media] mic+cam ready');
 
-      // Token vom Proxy holen
-      const voice = els.selVoice.value || 'verse';
-      const tokenRes = await fetch('/api/wix-token-proxy', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ voice })
-      }).catch(()=>null);
+    // 3) Mux Direct Upload initialisieren
+    await initMuxUpload();
+    // 4) Recorder starten
+    startRecorder(stream);
 
-      if(!tokenRes){ log('token error: fetch failed'); setState('error'); return; }
-      let tokenJson = null; try{ tokenJson = await tokenRes.json(); }catch{}
-      log('Token response (proxy) status:', tokenRes.status, 'body:', tokenJson||{});
-      if(!tokenRes.ok || !tokenJson?.ok){ setState('error'); return; }
+    // 5) Realtime (Audio ↔︎ Model)
+    await startRealtime(token, modelInUse);
 
-      const { token, model } = tokenJson;
+    setState('connected');
+  }catch(e){
+    log('[startAll error]', e.message||e);
+    setState('error');
+  }finally{
+    els.start.disabled = false;
+  }
+}
 
-      // PeerConnection
-      pc = new RTCPeerConnection();
-      remoteStream = new MediaStream();
-      els.remoteAudio.srcObject = remoteStream;
-      els.remoteAudio.muted = false;
+async function stopAll(){
+  setState('stopping');
 
-      pc.onicecandidate = (e) => {
-        if(e.candidate && dc && dc.readyState==='open'){
-          dc.send(JSON.stringify({type:'ice.candidate', candidate:e.candidate}));
-        }
-      };
+  // Stop Recorder → onstop -> uploadToMux()
+  try{ if(mediaRecorder && mediaRecorder.state!=='inactive') mediaRecorder.stop(); }catch{}
 
-      pc.addTransceiver('audio', { direction:'recvonly' });
+  // Realtime
+  try{ dc && dc.close(); }catch{}
+  try{ pc && pc.close(); }catch{}
+  dc = null; pc = null;
 
-      pc.ontrack = (ev) => {
-        const [track] = ev.streams[0].getAudioTracks();
-        remoteStream.addTrack(track);
-        log('[live] remote track flags: muted=', track.muted, 'enabled=', track.enabled, 'state=', track.readyState);
-        const p = els.remoteAudio.play(); if(p?.catch) p.catch(()=>{});
-      };
+  // Media
+  try{ if(stream){ stream.getTracks().forEach(t=>t.stop()); } }catch{}
 
-      // DataChannel
-      dc = pc.createDataChannel('oai-events');
-      dc.onopen = onDataChannelOpen;
-      dc.onmessage = onAgentEvent;
-      dc.onclose = ()=> log('DataChannel closed');
-      dc.onerror = (e)=> log('DataChannel error', e?.message||e);
+  setState('idle');
+}
 
-      // Offer -> OpenAI (WebRTC)
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      const sdpResp = await fetch(`https://api.openai.com/v1/realtime?model=${encodeURIComponent(model || 'gpt-4o-realtime-preview')}`, {
-        method:'POST',
-        headers:{
-          'Authorization': `Bearer ${token}`,
-          'Content-Type':'application/sdp',
-          'OpenAI-Beta':'realtime=v1'
-        },
-        body: offer.sdp
-      });
-
-      if(!sdpResp.ok){
-        const t = await sdpResp.text().catch(()=>null);
-        log('SDP answer error', sdpResp.status, t);
-        setState('error'); return;
-      }
-
-      const answerSdp = await sdpResp.text();
-      await pc.setRemoteDescription({ type:'answer', sdp: answerSdp });
-      log('pc: connected (SDP answer set)');
-      setState('connected');
-    }
-
-    async function stopLive(){
-      setState('stopping');
-      try{ dc && dc.close(); }catch{}
-      try{ pc && pc.close(); }catch{}
-      dc=null; pc=null; remoteStream=null;
-      activeResponseId = null; queueAfterDone = null;
-      setState('stopped'); log('stopped');
-    }
-
-    /* ---------- DataChannel events ---------- */
-    function onDataChannelOpen(){
-      log('DataChannel open');
-      const sess = {
-        voice: els.selVoice.value || 'verse',
-        modalities: ['audio','text']
-      };
-      dc.send(JSON.stringify({ type: 'session.update', session: sess }));
-      log('[rt] session.update sent', JSON.stringify(sess));
-    }
-
-    // Hilfsfunktion: safe response.create (serialisiert)
-    function createResponseSafe(payload){
-      if(!dc || dc.readyState!=='open') return;
-      if(activeResponseId){
-        // Anstellen bis die laufende fertig ist
-        queueAfterDone = payload;
-        log('[rt] queued response.create until current finishes');
-        return;
-      }
-      dc.send(JSON.stringify({ type:'response.create', response: payload }));
-      log('[rt] response.create sent', JSON.stringify(payload));
-    }
-
-    function onAgentEvent(ev){
-      try{
-        const msg = JSON.parse(ev.data);
-        console.log('[rt raw]', msg);
-        log('[rt] event', JSON.stringify(msg));
-
-        // Fehler explizit loggen
-        if (msg?.type === 'error') {
-          log('[rt] ERROR', JSON.stringify(msg.error, null, 2));
-        }
-        if (msg?.type === 'response.done' && msg?.response?.status === 'failed') {
-          log('[rt] RESPONSE FAILED', JSON.stringify(msg.response.status_details, null, 2));
-        }
-
-        // Session gestartet → erste (Audio+Text) Probe
-        if (msg?.type === 'session.created') {
-          activeResponseId = null;
-          queueAfterDone = {
-            modalities:['text'],
-            instructions:'TEXT-ONLY-PROBE: Schreibe genau "TEXT-OK".'
-          };
-          createResponseSafe({
-            modalities:['audio','text'],
-            instructions:'Sag bitte genau: TESTTEST. Danach zähle 1 2 3.',
-            voice: els.selVoice.value || 'verse'
-          });
-        }
-
-        // Track aktive Response-ID
-        if (msg?.type === 'response.created') {
-          activeResponseId = msg?.response?.id || null;
-        }
-
-        // Wenn Audio/Text-Delta → in Ausgabefeld streamen
-        if (msg?.type==='response.output_text.delta' && msg?.delta){
-          els.txtAgent.value += msg.delta; els.txtAgent.scrollTop = els.txtAgent.scrollHeight;
-        }
-        if (msg?.type==='response.delta' && msg?.delta){
-          els.txtAgent.value += msg.delta; els.txtAgent.scrollTop = els.txtAgent.scrollHeight;
-        }
-
-        // Fertig: nächste aus der Queue senden
-        if (msg?.type === 'response.done') {
-          activeResponseId = null;
-          if(queueAfterDone){
-            const next = queueAfterDone; queueAfterDone = null;
-            // kleine Verzögerung, um Kollisionen sicher zu vermeiden
-            setTimeout(()=> createResponseSafe(next), 50);
-          }
-        }
-
-        if(msg?.type==='response.completed'){ els.txtAgent.value += '\n'; }
-      }catch{}
-    }
+/* ---------- Token ---------- */
+async function fetchToken({ voice }){
+  const r = await fetch(TOKEN_URL, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify({ voice })
   });
-  </script>
+  const j = await r.json().catch(()=> ({}));
+  if(!r.ok || !j?.ok || !j?.token) throw new Error('token fetch failed');
+  return { token: j.token, model: j.model };
+}
+
+/* ---------- Mux ---------- */
+async function initMuxUpload(){
+  const r = await fetch(MUX_UPLOAD_URL, { method:'POST' });
+  const j = await r.json().catch(()=> ({}));
+  if(!r.ok || !j?.ok || !j?.uploadUrl || !j?.uploadId) throw new Error('mux init failed');
+  muxUploadUrl = j.uploadUrl; muxUploadId = j.uploadId;
+  log('[mux] direct upload prepared', muxUploadId);
+}
+
+/* ---------- Recorder ---------- */
+function startRecorder(stream){
+  if(!doRecording){ els.pillRec.textContent = 'record: off'; return; }
+  els.pillRec.textContent = 'record: on';
+  const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') ? 'video/webm;codecs=vp9,opus' : 'video/webm';
+  mediaRecorder = new MediaRecorder(stream, {
+    mimeType: mime,
+    videoBitsPerSecond: 3_000_000,
+    audioBitsPerSecond: 128_000
+  });
+  chunks = [];
+  mediaRecorder.ondataavailable = (e)=>{ if(e.data?.size) chunks.push(e.data); };
+  mediaRecorder.onstop = uploadToMux;
+  mediaRecorder.start(2000);
+  setState('recording');
+  log('[recorder] started', mime);
+}
+
+async function uploadToMux(){
+  try{
+    setState('uploading');
+    const blob = new Blob(chunks, { type: chunks[0]?.type || 'video/webm' });
+    const r = await fetch(muxUploadUrl, {
+      method:'PUT',
+      headers:{ 'Content-Type':'application/octet-stream' },
+      body: blob
+    });
+    if(!r.ok) throw new Error('mux direct upload failed');
+    log('[mux] uploaded ok', muxUploadId);
+  }catch(e){
+    log('[mux upload error]', e.message||e);
+  }finally{
+    setState('idle');
+  }
+}
+
+/* ---------- Realtime ---------- */
+async function startRealtime(token, model){
+  setState('webrtc');
+  pc = new RTCPeerConnection();
+
+  // remote agent audio
+  pc.ontrack = (ev) => {
+    els.agentAudio.srcObject = ev.streams[0];
+    const play = els.agentAudio.play();
+    if(play?.catch) play.catch(()=>{ /* ignore autoplay block (hidden) */ });
+    const [track] = ev.streams[0].getAudioTracks();
+    log('[live] remote track flags: muted=', track.muted, 'enabled=', track.enabled, 'state=', track.readyState);
+  };
+
+  // send microphone to model, receive model audio back
+  const mic = stream.getAudioTracks()[0];
+  const tx = pc.addTransceiver(mic, { direction: 'sendrecv' });
+  await tx.sender.replaceTrack(mic);
+
+  // DC
+  const channel = pc.createDataChannel('oai-events');
+  dc = channel;
+  dc.onopen = () => {
+    log('[dc] open');
+    dc.send(JSON.stringify({ type:'session.update', session:{ voice: els.voice.value, modalities:['audio','text'] }}));
+    // kleiner Hörtest (kurz & harmlos)
+    dc.send(JSON.stringify({ type:'response.create', response:{ modalities:['audio','text'], instructions:'Sag bitte genau: TESTTEST. Danach zähle 1 2 3.' }}));
+  };
+  dc.onmessage = (ev) => {
+    try{
+      const msg = JSON.parse(ev.data);
+      if(msg?.type === 'response.done' && msg?.response?.status === 'failed'){
+        log('[rt fail]', JSON.stringify(msg.response.status_details));
+      }
+    }catch{}
+  };
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+
+  const sdpResp = await fetch(`https://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/sdp',
+      'OpenAI-Beta': 'realtime=v1'
+    },
+    body: offer.sdp
+  });
+
+  if(!sdpResp.ok){
+    const t = await sdpResp.text().catch(()=>null);
+    throw new Error('SDP answer error ' + sdpResp.status + ' ' + t);
+  }
+
+  const answer = await sdpResp.text();
+  await pc.setRemoteDescription({ type:'answer', sdp: answer });
+  log('[webrtc] connected');
+}
+})();
+</script>
 </body>
 </html>
