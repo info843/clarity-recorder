@@ -1,275 +1,104 @@
 <!doctype html>
 <html lang="de">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Clarity Live (Realtime + Recording → Mux)</title>
-  <style>
-    :root{--bg:#0b0d12;--fg:#e5e7eb;--muted:#9ca3af}
-    body{margin:0;font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--fg)}
-    .wrap{max-width:860px;margin:0 auto;padding:16px}
-    .card{background:#0f1320;border:1px solid #1f2937;border-radius:14px;padding:14px}
-    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-    button,select{background:#0b1220;color:var(--fg);border:1px solid #303b4a;border-radius:10px;padding:10px 12px;cursor:pointer}
-    button.primary{background:linear-gradient(135deg,#2563eb,#0ea5e9);border:none}
-    button:disabled{opacity:.6;cursor:not-allowed}
-    .pill{padding:4px 10px;border-radius:999px;background:#0b1220;border:1px solid #303b4a;font-size:12px}
-    video{width:220px;height:140px;background:#000;border-radius:10px;object-fit:cover}
-    .sr{position:absolute;left:-9999px}
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Interview Recorder</title>
+<style>
+body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;padding:16px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+video{width:100%;max-width:100%;background:#000;border-radius:12px}
+button{padding:10px 14px;border-radius:8px;border:1px solid #d1d5db;background:#fff;cursor:pointer;margin-right:8px}
+#status{margin:8px 0}
+.ok{color:#15803d}.err{color:#b91c1c}
+</style>
 </head>
 <body>
-<div class="wrap">
-  <div class="card">
-    <div class="row">
-      <button id="btnStart" class="primary">Start</button>
-      <button id="btnStop">Stop</button>
-      <span id="pillState" class="pill">state: idle</span>
-      <span id="pillRec" class="pill">record: on</span>
-      <select id="selVoice" title="Voice">
-        <option value="verse" selected>verse</option>
-        <option value="alloy">alloy</option>
-        <option value="ash">ash</option>
-        <option value="ballad">ballad</option>
-        <option value="coral">coral</option>
-        <option value="echo">echo</option>
-        <option value="sage">sage</option>
-        <option value="shimmer">shimmer</option>
-      </select>
-    </div>
-
-    <div class="row" style="margin-top:10px">
-      <div>
-        <div style="font-size:12px;opacity:.8;margin-bottom:6px">Kamera-Vorschau</div>
-        <video id="preview" autoplay playsinline muted></video>
-      </div>
-      <audio id="agentAudio" class="sr" autoplay></audio>
-    </div>
-  </div>
+<h1>Interview Recorder</h1>
+<div>
+<button id="start">🎙 Aufnahme starten</button>
+<button id="stop" disabled>⏹ Stop</button>
+<button id="upload" disabled>⬆ Upload</button>
 </div>
-
+<div id="status">Bereit.</div>
+<div class="row">
+<video id="preview" autoplay muted playsinline></video>
+<video id="playback" controls style="display:none"></video>
+</div>
 <script>
-(() => {
-const els = {
-  start: sel('#btnStart'),
-  stop: sel('#btnStop'),
-  state: sel('#pillState'),
-  rec: sel('#pillRec'),
-  voice: sel('#selVoice'),
-  preview: sel('#preview'),
-  agentAudio: sel('#agentAudio'),
+let stream, rec, chunks=[], blob, lastUploadId=null;
+const qs = new URLSearchParams(location.search);
+const uid = qs.get('uid') || 'TEST-UID';
+const companyId = qs.get('companyId') || 'TEST-COMPANY';
+function status(t, cls=''){ const el=document.getElementById('status'); el.className=cls; el.textContent=t; }
+
+document.getElementById('start').onclick=async()=>{
+try{
+stream=await navigator.mediaDevices.getUserMedia({video:true,audio:true});
+document.getElementById('preview').srcObject=stream;
+chunks=[]; blob=null;
+rec=new MediaRecorder(stream);
+rec.ondataavailable=e=>e.data?.size&&chunks.push(e.data);
+rec.onstop=()=>{
+blob=new Blob(chunks,{type:rec.mimeType||'video/webm'});
+const url=URL.createObjectURL(blob);
+const pb=document.getElementById('playback');
+pb.src=url; pb.style.display='block';
+status(`Fertig: ${(blob.size/1024/1024).toFixed(1)} MB`);
+document.getElementById('upload').disabled=false;
 };
-function sel(s){ return document.querySelector(s); }
-function setState(s){ els.state.textContent = 'state: ' + s; }
-function log(){ console.log(...arguments); }
+rec.start(1000);
+status('🔴 Aufnahme läuft…');
+document.getElementById('start').disabled=true;
+document.getElementById('stop').disabled=false;
+}catch(e){ status('❌ Start fehlgeschlagen: '+(e.message||e),'err'); }
+};
 
-// ---- endpoints with fallbacks (avoid 404) ----
-const TOKEN_ENDPOINTS = [
-  '/api/wix-token-proxy',
-  '/_functions/realtimeToken',
-  '/_functions-dev/realtimeToken'
-];
-const MUX_ENDPOINTS = [
-  '/api/mux-upload',
-  '/_functions/muxUpload',
-  '/_functions-dev/muxUpload'
-];
+document.getElementById('stop').onclick=()=>{
+try{ if(rec && rec.state!=='inactive') rec.stop(); }catch{}
+try{ if(stream) stream.getTracks().forEach(t=>t.stop()); }catch{}
+document.getElementById('stop').disabled=true;
+};
 
-// ---- globals ----
-let pc=null, dc=null, stream=null, mediaRecorder=null, chunks=[];
-let muxUploadUrl=null, muxUploadId=null;
-let doRecording=true;
-let currentModel='gpt-4o-realtime-preview';
-
-els.start.onclick = startAll;
-els.stop.onclick = stopAll;
-
-async function startAll(){
-  els.start.disabled = true;
-  try{
-    setState('init');
-
-    // Token (try fallbacks)
-    const { token, model } = await fetchToken({ voice: els.voice.value });
-    currentModel = model || currentModel;
-    log('[token] ok', currentModel);
-
-    // getUserMedia
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation:true, noiseSuppression:true },
-      video: { width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:30} }
-    });
-    els.preview.srcObject = stream;
-    log('[media] mic+cam ready');
-
-    // Mux init (fallback list)
-    await initMux();
-
-    // Recorder
-    startRecorder(stream);
-
-    // Realtime
-    await startRealtime(token, currentModel);
-
-    setState('connected');
-  }catch(e){
-    log('[startAll error]', e?.message||e);
-    setState('error');
-  }finally{
-    els.start.disabled = false;
-  }
+async function readJsonSafe(res){
+const ct=res.headers.get('content-type')||'';
+if(ct.includes('application/json')) return await res.json();
+const t=await res.text();
+throw new Error(`Server lieferte kein JSON (${res.status}): ${t.slice(0,200)}…`);
+}
+async function pollAsset(uploadId,maxMs=90000){
+const start=Date.now();
+while(Date.now()-start<maxMs){
+await new Promise(r=>setTimeout(r,2500));
+const r=await fetch(`/api/mux-asset?uploadId=${encodeURIComponent(uploadId)}`);
+const j=await readJsonSafe(r);
+if(j?.assetStatus==='ready'&&j?.playbackId) return j;
+}
+return null;
 }
 
-async function stopAll(){
-  setState('stopping');
-  try{ if(mediaRecorder && mediaRecorder.state!=='inactive') mediaRecorder.stop(); }catch{}
-  try{ dc && dc.close(); }catch{}
-  try{ pc && pc.close(); }catch{}
-  try{ stream && stream.getTracks().forEach(t=>t.stop()); }catch{}
-  pc=null; dc=null; stream=null; mediaRecorder=null;
-  setState('idle');
-}
+document.getElementById('upload').onclick=async()=>{
+try{
+if(!blob){ status('Keine Aufnahme vorhanden.','err'); return; }
+status('Upload vorbereiten…');
+const r1=await fetch('/api/mux-upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uid,companyId})});
+const j1=await readJsonSafe(r1);
+if(j1.error||!j1.uploadUrl) throw new Error(j1.error||'Keine uploadUrl');
+lastUploadId=j1.uploadId||null;
 
-// ---------- helper: try endpoints in order ----------
-async function tryFetchJson(endpoints, init){
-  let lastErr = null;
-  for (const url of endpoints){
-    try{
-      const r = await fetch(url, init);
-      const t = await r.text();
-      let j = {};
-      try{ j = t ? JSON.parse(t) : {}; }catch{}
-      log(`[fetch] ${url} -> ${r.status}`, j);
-      if(r.ok) return { ok:true, json:j };
-      lastErr = new Error(`${url} ${r.status}`);
-    }catch(err){ lastErr = err; }
-  }
-  throw lastErr || new Error('all endpoints failed');
-}
+status('Lade zu Mux hoch…');
+const up=await fetch(j1.uploadUrl,{method:'PUT',body:blob});
+if(!up.ok) throw new Error('Upload fehlgeschlagen');
 
-async function fetchToken({ voice }){
-  const res = await tryFetchJson(TOKEN_ENDPOINTS, {
-    method:'POST',
-    headers:{ 'Content-Type':'application/json' },
-    body: JSON.stringify({ voice })
-  });
-  const j = res.json || {};
-  if(!j?.ok || !j?.token) throw new Error('token fetch failed');
-  return { token: j.token, model: j.model };
-}
+status('Upload abgeschlossen — Status wird abgefragt…');
+const r2=await fetch(`/api/mux-asset?uploadId=${encodeURIComponent(lastUploadId)}`);
+const j2=await readJsonSafe(r2);
+status(`Upload abgeschlossen — Status: ${j2?.assetStatus||j2?.uploadStatus||'unbekannt'}`,'ok');
 
-async function initMux(){
-  const res = await tryFetchJson(MUX_ENDPOINTS, { method:'POST' });
-  const j = res.json || {};
-  if(!j?.ok || !j?.uploadUrl || !j?.uploadId) throw new Error('mux init failed');
-  muxUploadUrl = j.uploadUrl; muxUploadId = j.uploadId;
-  log('[mux] prepared', muxUploadId);
-}
-
-// ---------- recorder ----------
-function startRecorder(stream){
-  if(!doRecording){ els.rec.textContent='record: off'; return; }
-  els.rec.textContent='record: on';
-  const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
-    ? 'video/webm;codecs=vp9,opus' : 'video/webm';
-  mediaRecorder = new MediaRecorder(stream, {
-    mimeType: mime,
-    videoBitsPerSecond: 3_000_000,
-    audioBitsPerSecond: 128_000
-  });
-  chunks = [];
-  mediaRecorder.ondataavailable = e => { if(e.data?.size) chunks.push(e.data); };
-  mediaRecorder.onstop = uploadToMux;
-  mediaRecorder.start(2000);
-  setState('recording');
-  log('[recorder] started', mime);
-}
-
-async function uploadToMux(){
-  try{
-    setState('uploading');
-    const blob = new Blob(chunks, { type: chunks[0]?.type || 'video/webm' });
-    const r = await fetch(muxUploadUrl, {
-      method:'PUT',
-      headers:{ 'Content-Type':'application/octet-stream' },
-      body: blob
-    });
-    if(!r.ok) throw new Error('mux direct upload failed');
-    log('[mux] uploaded', muxUploadId);
-  }catch(e){
-    log('[mux upload error]', e?.message||e);
-  }finally{
-    setState('idle');
-  }
-}
-
-// ---------- realtime ----------
-async function startRealtime(token, model){
-  setState('webrtc');
-  const pcLocal = new RTCPeerConnection();
-  pc = pcLocal;
-
-  pc.onconnectionstatechange = () => log('pc state:', pc.connectionState);
-  pc.oniceconnectionstatechange = () => log('ice state:', pc.iceConnectionState);
-
-  pc.ontrack = (ev) => {
-    els.agentAudio.srcObject = ev.streams[0];
-    const play = els.agentAudio.play();
-    if(play?.catch) play.catch(()=>{});
-    const [t] = ev.streams[0].getAudioTracks();
-    log('[remote track]', 'muted=', t.muted, 'enabled=', t.enabled, 'state=', t.readyState);
-  };
-
-  const mic = stream.getAudioTracks()[0];
-  const tx = pc.addTransceiver(mic, { direction:'sendrecv' });
-  await tx.sender.replaceTrack(mic);
-
-  const channel = pc.createDataChannel('oai-events');
-  dc = channel;
-  dc.onopen = () => {
-    log('[dc] open');
-    dc.send(JSON.stringify({
-      type: 'session.update',
-      session: { voice: els.voice.value, modalities:['audio','text'] }
-    }));
-    // Audio-Probe (hörbar)
-    dc.send(JSON.stringify({
-      type:'response.create',
-      response:{ modalities:['audio','text'], instructions:'Sag bitte genau: TESTTEST. Danach zähle 1 2 3.' }
-    }));
-  };
-  dc.onmessage = (ev) => {
-    try{
-      const msg = JSON.parse(ev.data);
-      if (msg?.type === 'response.done' && msg?.response?.status === 'failed') {
-        console.warn('[rt failed]', msg.response.status_details);
-      }
-    }catch{}
-  };
-
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
-
-  const sdpResp = await fetch(`https://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/sdp',
-      'OpenAI-Beta': 'realtime=v1'
-    },
-    body: offer.sdp
-  });
-
-  if(!sdpResp.ok){
-    const t = await sdpResp.text().catch(()=>null);
-    throw new Error('SDP answer error ' + sdpResp.status + ' ' + t);
-  }
-
-  const answer = await sdpResp.text();
-  await pc.setRemoteDescription({ type:'answer', sdp: answer });
-  log('[webrtc] connected');
-}
-})();
+let ready=j2; if(!(j2?.assetStatus==='ready'&&j2?.playbackId)){ const p=await pollAsset(lastUploadId); if(p) ready=p; }
+if(ready?.playbackId){ const pb=document.getElementById('playback'); pb.src=`https://stream.mux.com/${ready.playbackId}.m3u8`; pb.style.display='block'; status('✅ Asset bereit — Playback gestartet','ok'); }
+}catch(e){ status('❌ '+(e.message||e),'err'); }
+};
 </script>
 </body>
 </html>
