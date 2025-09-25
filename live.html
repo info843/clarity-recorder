@@ -1,123 +1,74 @@
-<!-- pages/User Interview (Live geführtes Gespräch + Audio-Only Fallback) — v2.4 -->
+<!-- /live.html — Vercel A/V iframe (patched to use Wix _functions via ?api=) -->
 <!doctype html>
-<html lang="de">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
+  <title>CLARITY Live Interview</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>CLARITY Interview</title>
   <style>
-    :root { --bg:#0b0f1a; --card:#111729; --muted:#6b7280; --ok:#10b981; --warn:#f59e0b; --err:#ef4444; --txt:#e5e7eb; }
-    html,body{height:100%}
-    body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.4 system-ui,Segoe UI,Roboto,Arial,sans-serif;display:flex;align-items:center;justify-content:center}
-    .wrap{width:min(960px,94vw);padding:20px}
-    .card{background:var(--card);border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:18px 18px 14px}
-    h1{font-size:20px;margin:0 0 8px 0}
-    .row{display:grid;grid-template-columns:1fr 320px;gap:16px}
-    video,.audiobar{width:100%;border-radius:12px;background:#000}
-    .btn{display:inline-flex;gap:8px;align-items:center;border:1px solid #2b3550;background:#16213a;color:#dbeafe;border-radius:10px;padding:10px 14px;cursor:pointer}
-    .btn[disabled]{opacity:.5;cursor:not-allowed}
-    .muted{color:var(--muted)}
-    .status{font-family:ui-monospace,Consolas,monospace;font-size:12px;background:#0e1525;border:1px solid #1b2540;border-radius:10px;padding:10px;min-height:44px;white-space:pre-wrap}
-    .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;border:1px solid #2b3550;background:#0f1a31}
-    .hidden{display:none !important}
-    .success{color:var(--ok)}
-    .warn{color:var(--warn)}
-    .err{color:var(--err)}
-    .sp{height:10px}
+    html,body{margin:0;padding:0;background:#000;color:#9ca3af;font:12px system-ui,Segoe UI,Roboto,Arial,sans-serif}
+    video{width:1px;height:1px;position:absolute;left:-9999px;opacity:0} /* camera preview hidden (iframe only) */
+    audio{display:none}
   </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="card">
-    <h1>CLARITY Interview</h1>
-
-    <div class="row">
-      <div>
-        <video id="preview" playsinline autoplay muted></video>
-        <div class="sp"></div>
-        <audio id="agentAudio" autoplay></audio>
-        <div class="sp"></div>
-        <div class="status" id="log"></div>
-      </div>
-      <div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button id="btnStart" class="btn">▶ Start</button>
-          <button id="btnStop" class="btn" disabled>■ Stop</button>
-          <button id="btnFinish" class="btn" disabled>⏹ Interview abschließen</button>
-          <span id="state" class="pill">idle</span>
-        </div>
-        <div class="sp"></div>
-        <div class="status" id="meta"></div>
-      </div>
-    </div>
-  </div>
-</div>
+  <video id="local" playsinline autoplay muted></video>
+  <audio id="agent" autoplay></audio>
 
 <script>
 (() => {
-  // ======= Query & Globals =======
+  // ===== Query Params =====
   const qp = new URLSearchParams(location.search);
-  const linkId = qp.get('uid') || qp.get('linkId') || '';
-  const companyId = qp.get('companyId') || '';
-  const model = 'gpt-4o-realtime-preview'; // stabiler Name
+  const uid        = qp.get('uid') || qp.get('linkId') || '';
+  const companyId  = qp.get('companyId') || '';
+  const userLang   = (qp.get('lang') || 'de').toLowerCase();
+  const voiceHint  = qp.get('voice') || '';        // optional preferred voice
+  const roleHint   = qp.get('role')  || '';        // optional role/profile
+  const flowHint   = qp.get('flow')  || '7q+2fup'; // interview structure hint
+  // IMPORTANT: all Wix HTTP functions are called through this base (fixes 404 on Vercel)
+  const API_BASE   = qp.get('api') || 'https://www.clarity-nvl.com';
+
+  // ===== DOM =====
   const els = {
-    video: document.getElementById('preview'),
-    agent: document.getElementById('agentAudio'),
-    btnStart: document.getElementById('btnStart'),
-    btnStop: document.getElementById('btnStop'),
-    btnFinish: document.getElementById('btnFinish'),
-    log: document.getElementById('log'),
-    meta: document.getElementById('meta'),
-    state: document.getElementById('state'),
+    video: document.getElementById('local'),
+    agent: document.getElementById('agent')
   };
 
-  // Interview State Machine
-  const State = Object.freeze({
-    Idle:'idle', Greeting:'greeting', Q:'q', Closing:'closing',
-    Finalize:'finalize', Rating:'rating', Done:'done'
-  });
-  let currentState = State.Idle;
-  function setState(s){
-    currentState = s; els.state.textContent = s;
-    log(`STATE → ${s}`);
-  }
-
-  // Media / WebRTC
-  let pc, dc, stream = null;           // local (mic+cam) stream
+  // ===== State =====
+  const MODEL = 'gpt-4o-realtime-preview';
+  let pc = null, dc = null;
+  let localStream = null;
+  let remoteAudioStream = null;
   let mediaRecorder = null, chunks = [];
-  let remoteAudioStream = null;        // agent voice (remote)
+  let uploadUrl = null, uploadId = null;
+  let sessionId = null;
   let audioCtx = null, micSrc = null, agentSrc = null, mixDest = null, mixedStream = null;
+  let recordEnabled = false;
+  let started = false;
 
-  // Session / Server
-  let sessionId = null;                // generated server-side
-  let uploadUrl = null;                // Mux direct upload URL
-  let uploadId = null;                 // Mux upload id
-  let voice = null, userCommLang = null, reportLang = null, roleProfile = null, mode = null;
+  // ===== PostMessage helpers =====
+  function post(type, data){ try{ parent.postMessage(JSON.stringify({ type, data }), '*'); }catch(_){/*noop*/} }
+  function signalError(message){ post('clarity.error', { message }); }
 
-  // ======= Helpers =======
-  const log = (t) => { els.log.textContent = (els.log.textContent + `\n${t}`).trim(); };
-  const setMeta = (obj) => { els.meta.textContent = JSON.stringify(obj, null, 2); };
-  const wait = (ms) => new Promise(r=>setTimeout(r,ms));
-
+  // ===== Media =====
   async function ensureMedia(){
-    if (stream) return stream;
-    // mode from Access (video|audio)
-    const wantVideo = (mode || 'video') === 'video';
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation:true, noiseSuppression:true },
-      video: wantVideo ? { width:{ideal:1280}, height:{ideal:720} } : false
+    if (localStream) return localStream;
+    const withVideo = true; // full live mode; audio-only fallback lives in different iframe (recorder.html)
+    localStream = await navigator.mediaDevices.getUserMedia({
+      audio:{ echoCancellation:true, noiseSuppression:true },
+      video: withVideo ? { width:{ideal:1280}, height:{ideal:720} } : false
     });
-    els.video.srcObject = stream;
+    els.video.srcObject = localStream;
     els.video.muted = true;
-    await els.video.play().catch(()=>{});
-    return stream;
+    try { await els.video.play(); } catch(_){}
+    return localStream;
   }
 
   function buildMixedStream() {
-    if (!stream || !remoteAudioStream) return null;
+    if (!localStream || !remoteAudioStream) return null;
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-    if (!micSrc)   micSrc   = audioCtx.createMediaStreamSource(stream);
+    if (!micSrc)   micSrc   = audioCtx.createMediaStreamSource(localStream);
     if (!agentSrc) agentSrc = audioCtx.createMediaStreamSource(remoteAudioStream);
     mixDest = audioCtx.createMediaStreamDestination();
 
@@ -129,203 +80,219 @@
 
     mixedStream = new MediaStream([
       ...mixDest.stream.getAudioTracks(),
-      ...stream.getVideoTracks()
+      ...localStream.getVideoTracks()
     ]);
     return mixedStream;
   }
 
   function startRecorder(){
-    chunks = [];
-    const ms = buildMixedStream() || stream;
-    const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
-      ? 'video/webm;codecs=vp9,opus'
-      : 'video/webm';
-    mediaRecorder = new MediaRecorder(ms, {
-      mimeType: mime,
-      videoBitsPerSecond: 3_000_000,
-      audioBitsPerSecond: 128_000
-    });
-    mediaRecorder.ondataavailable = (e)=>{ if(e.data?.size) chunks.push(e.data); };
-    mediaRecorder.onstop = async () => {
-      try {
-        const blob = new Blob(chunks, { type: mime });
-        log(`Recorder stopped. Size=${blob.size}`);
-        if (!uploadUrl) {
-          log('No upload URL present, requesting…');
-          await getMuxUploadUrl(); // safety
+    try{
+      if (!recordEnabled) return;
+      chunks = [];
+      const ms = buildMixedStream() || localStream;
+      const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+        ? 'video/webm;codecs=vp9,opus'
+        : 'video/webm';
+      mediaRecorder = new MediaRecorder(ms, {
+        mimeType: mime,
+        videoBitsPerSecond: 3_000_000,
+        audioBitsPerSecond: 128_000
+      });
+      mediaRecorder.ondataavailable = (e)=>{ if(e.data && e.data.size) chunks.push(e.data); };
+      mediaRecorder.onstop = async () => {
+        try{
+          const blob = new Blob(chunks, { type: mime });
+          if (!uploadUrl) await getMuxUploadUrl();
+          await directUploadToMux(uploadUrl, blob);
+          post('mux.upload.done', { uploadId });
+        }catch(e){
+          signalError('Upload error: ' + e.message);
+          post('mux.upload.error', { message: e.message });
         }
-        await directUploadToMux(uploadUrl, blob);
-      } catch (e) {
-        log(`Upload error: ${e.message}`);
-      }
-    };
-    mediaRecorder.start(1000);
-    log('Recorder started.');
+      };
+      mediaRecorder.start(1000);
+    }catch(e){
+      signalError('Recorder start failed: ' + e.message);
+    }
   }
 
   async function stopRecorder(){
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+    try{
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+    }catch(_){}
   }
 
-  // ======= Server Calls =======
+  // ===== Backend calls (Wix HTTP functions via API_BASE) =====
   async function initSession(){
-    const res = await fetch('/_functions/interview/init', {
+    // Prefer your existing page calling startSession; this is fallback if called from here
+    const res = await fetch(`${API_BASE}/_functions/interview/init`, {
       method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ linkId, companyId })
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ linkId: uid, companyId })
     });
-    if (!res.ok) throw new Error('init failed');
-    const data = await res.json();
-    sessionId = data.sessionId;
-    voice = data.voice;
-    userCommLang = data.userCommLang;
-    reportLang = data.reportLang;
-    roleProfile = data.roleProfile;
-    mode = data.mode;
-    setMeta({ sessionId, voice, userCommLang, reportLang, roleProfile, mode });
+    if (!res.ok) throw new Error('init failed ' + res.status);
+    const data = await res.json(); // { ok, sessionId, ... }
+    if (data?.sessionId) sessionId = data.sessionId;
+    return data;
   }
 
   async function getRealtimeToken(){
-    const res = await fetch('/_functions/realtimeToken', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ linkId, companyId, sessionId })
+    const res = await fetch(`${API_BASE}/_functions/realtimeToken`, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ linkId: uid, companyId, sessionId })
     });
-    if (!res.ok) throw new Error('token failed');
+    if (!res.ok) throw new Error('token failed ' + res.status);
     return await res.json(); // {client_secret:{value}, model, voice}
   }
 
   async function getMuxUploadUrl(){
-    const res = await fetch('/_functions/mux/direct-upload', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ sessionId, linkId, companyId })
+    const res = await fetch(`${API_BASE}/_functions/mux/direct-upload`, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ sessionId, linkId: uid, companyId })
     });
-    if (!res.ok) throw new Error('mux url failed');
-    const data = await res.json();
+    if (!res.ok) throw new Error('mux url failed ' + res.status);
+    const data = await res.json(); // { uploadUrl, uploadId }
     uploadUrl = data.uploadUrl;
-    uploadId = data.uploadId;
-    log(`Mux upload ready: ${uploadId}`);
+    uploadId  = data.uploadId;
+  }
+
+  async function notifyUploadComplete(){
+    try{
+      await fetch(`${API_BASE}/_functions/interview/upload-complete`, {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ sessionId, linkId: uid, companyId, uploadId })
+      });
+    }catch(_){}
   }
 
   async function directUploadToMux(url, blob){
-    log('Uploading to Mux…');
     const r = await fetch(url, { method:'PUT', body: blob });
     if (!r.ok) throw new Error(`Mux upload ${r.status}`);
-    log('Mux upload complete.');
-    // notify backend
-    await fetch('/_functions/interview/upload-complete', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ sessionId, linkId, companyId, uploadId })
-    });
+    await notifyUploadComplete();
   }
 
-  async function finalizeReport(){
-    const r = await fetch('/_functions/report/finalize', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ sessionId, linkId, companyId })
-    });
-    if (!r.ok) throw new Error('finalize failed');
-    const data = await r.json();
-    log(`Report ready: ${data.reportPdfUrl || '(pending asset.ready)'}`);
-  }
-
-  // ======= Realtime (WebRTC) =======
+  // ===== WebRTC (OpenAI Realtime) =====
   async function startLive(){
+    if (started) return;
+    started = true;
+
+    // 0) Media
     await ensureMedia();
-    await initSession();
+
+    // 1) Ensure sessionId (either page already created it, or fallback here)
+    if (!sessionId){
+      try { const x = await initSession(); sessionId = x?.sessionId || sessionId; } catch(e){ signalError(e.message); }
+    }
+    if (!sessionId){ signalError('No sessionId'); return; }
+
+    // 2) Token & Mux upload url
     const token = await getRealtimeToken();
     await getMuxUploadUrl();
 
+    // 3) RTCPeerConnection
     pc = new RTCPeerConnection();
     dc = pc.createDataChannel('commands');
 
-    // remote audio (Agent)
+    // remote audio
     pc.ontrack = (ev) => {
       remoteAudioStream = ev.streams[0];
       els.agent.srcObject = remoteAudioStream;
-      els.agent.play().catch(()=>{});
-      log('Remote audio track attached.');
+      els.agent.play?.().catch(()=>{});
+      post('clarity.avatar', { state:'speaking' });
+      setTimeout(()=> post('clarity.avatar', { state:'listening' }), 800);
+      // start recorder when remote audio available & record enabled
+      setTimeout(() => startRecorder(), 400);
     };
 
-    // publish mic+cam
-    stream.getTracks().forEach(t => pc.addTrack(t, stream));
+    // publish local tracks
+    localStream.getTracks().forEach(tr => pc.addTrack(tr, localStream));
 
-    // SDP Offer → Realtime API
+    // 4) Offer → Realtime
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
-    const sdpRes = await fetch('https://api.openai.com/v1/realtime?model=' + encodeURIComponent(model), {
+    const res = await fetch('https://api.openai.com/v1/realtime?model=' + encodeURIComponent(MODEL), {
       method:'POST',
       body: offer.sdp,
       headers:{
-        'Authorization': 'Bearer ' + token.client_secret.value,
+        'Authorization': 'Bearer ' + token?.client_secret?.value,
         'Content-Type':'application/sdp'
       }
     });
-    const answer = { type:'answer', sdp: await sdpRes.text() };
+    if (!res.ok) throw new Error('Realtime SDP failed ' + res.status);
+    const answer = { type:'answer', sdp: await res.text() };
     await pc.setRemoteDescription(answer);
 
-    // start recording after remote track ready
-    setTimeout(()=> startRecorder(), 500);
-
-    // Kickoff Greeting
-    setState(State.Greeting);
+    // 5) DataChannel – optional control
     dc.onopen = () => {
-      dc.send(JSON.stringify({
-        type:'system',
-        op:'start',
-        payload:{
-          sessionId, linkId, companyId,
-          voice: token.voice,
-          userCommLang, reportLang,
-          roleProfile,
-          flow:'interview-7q+2fup'
-        }
-      }));
-      setState(State.Q);
+      // pass hints (role/lang/flow/voice) so your server prompt can adapt
+      try{
+        dc.send(JSON.stringify({
+          type:'system',
+          op:'context',
+          payload:{
+            sessionId, uid, companyId,
+            lang: userLang,
+            role: roleHint,
+            flow: flowHint,
+            voice: voiceHint
+          }
+        }));
+      }catch(_){}
     };
+    dc.onclose = () => { post('clarity.avatar', { state:'idle' }); };
   }
 
   async function stopLive(){
-    await stopRecorder();
-    if (dc && dc.readyState === 'open') dc.close();
-    if (pc) { pc.getSenders().forEach(s=>s.track?.stop()); pc.close(); }
-    log('Live stopped.');
+    try{ await stopRecorder(); }catch(_){}
+    try{ if (dc && dc.readyState === 'open') dc.close(); }catch(_){}
+    try{ if (pc){ pc.getSenders().forEach(s=>s.track?.stop()); pc.close(); } }catch(_){}
+    post('clarity.avatar', { state:'idle' });
   }
 
-  // ======= UI Buttons =======
-  els.btnStart.onclick = async () => {
-    els.btnStart.disabled = true;
-    els.btnStop.disabled = false;
-    els.btnFinish.disabled = false;
-    try {
-      await startLive();
-    } catch (e) {
-      log('Start error: ' + e.message);
-      els.btnStart.disabled = false;
-      els.btnStop.disabled = true;
-      els.btnFinish.disabled = true;
+  // ===== Message bridge (parent → iframe) =====
+  window.addEventListener('message', async (ev) => {
+    let msg = ev?.data;
+    try { if (typeof msg === 'string') msg = JSON.parse(msg); } catch(_){}
+    const type = msg?.type;
+    const data = msg?.data || {};
+
+    if (type === 'clarity.live.context'){
+      // not strictly needed here; context is also sent via DC when open
+      // keep for future local display
+      return;
     }
-  };
+    if (type === 'clarity.live.record'){
+      recordEnabled = !!(data && data.enabled);
+      return;
+    }
+    if (type === 'clarity.live.start'){
+      try{
+        // user gesture unlock for autoplay
+        try { await els.agent.play(); } catch(_){}
+        if (audioCtx && audioCtx.state === 'suspended') { try{ await audioCtx.resume(); }catch(_){} }
+        await startLive();
+      }catch(e){
+        signalError(e.message);
+      }
+      return;
+    }
+    if (type === 'clarity.live.stop'){
+      await stopLive();
+      return;
+    }
+  });
 
-  els.btnStop.onclick = async () => {
-    els.btnStop.disabled = true;
-    await stopLive();
-  };
+  // Announce ready to parent
+  post('clarity.live.ready', { ok:true });
 
-  els.btnFinish.onclick = async () => {
-    els.btnFinish.disabled = true;
-    setState(State.Finalize);
-    await stopLive();
-    await finalizeReport(); // erzeugt/verkettet PDF nach asset.ready
-    setState(State.Rating);
-    // UI: hier Rating einblenden (optional)
-    setState(State.Done);
-  };
-
-  // Autoplay unlock on gesture
+  // Unlock audio on first click (mobile autoplay policies)
   window.addEventListener('click', async () => {
-    try { await els.agent.play(); } catch {}
-    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    try { await els.agent.play(); } catch(_){}
+    if (audioCtx && audioCtx.state === 'suspended') { try{ await audioCtx.resume(); }catch(_){} }
   }, { once:true });
 
 })();
