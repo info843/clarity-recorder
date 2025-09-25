@@ -1,300 +1,375 @@
-<!-- public/live.html -->
-<!-- Realtime-Interview Client: WebRTC + Turn-Taking (Server-VAD) + Willkommensflow + Avatar-Status Events -->
-
 <!doctype html>
 <html lang="de">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Clarity Live</title>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Clarity Live Interview (Realtime + Video Recording → Mux)</title>
   <style>
-    :root { --muted:#e5e7eb; --fg:#111827; --ok:#16a34a; --warn:#d97706; --err:#dc2626; }
-    body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;margin:0;background:#fff;color:var(--fg)}
-    .wrap{padding:12px}
-    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
-    .card{border:1px solid var(--muted); border-radius:12px; padding:12px}
-    textarea{width:100%;height:180px;border:1px solid var(--muted);border-radius:10px;padding:8px;font-family:ui-monospace,Consolas,monaco,monospace}
-    select,button,input{padding:8px 10px;border-radius:10px;border:1px solid var(--muted)}
-    .state{font-size:12px;opacity:.8}
-    audio{width:100%;margin-top:8px}
-    .hidden{display:none}
+    :root { --bg:#0b0d12; --fg:#e5e7eb; --muted:#9ca3af; --accent:#60a5fa; }
+    body{margin:0;font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--fg)}
+    .wrap{max-width:980px;margin:0 auto;padding:16px}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    .card{background:#0f1320;border:1px solid #1f2937;border-radius:14px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+    h1{font-size:20px;margin:0 0 12px}
+    label{display:block;margin:8px 0 6px;color:var(--muted)}
+    input,button,textarea,select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #303b4a;background:#0b1220;color:var(--fg)}
+    button{background:#10182b;cursor:pointer}
+    button.primary{background:linear-gradient(135deg,#2563eb,#0ea5e9);border:none}
+    button:disabled{opacity:.5;cursor:not-allowed}
+    .status{font-family:ui-monospace,Consolas,monospace;font-size:12px;background:#0b1220;border:1px dashed #293243;border-radius:10px;padding:10px;height:170px;overflow:auto;white-space:pre-wrap}
+    audio,video{width:100%}
+    .pill{display:inline-block;background:#111827;border:1px solid #374151;border-radius:999px;padding:4px 10px;font-size:12px;margin-right:6px}
+    .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="row">
-      <div class="card">
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <label>Sprache:
-            <select id="lang">
-              <option value="de">Deutsch</option>
-              <option value="en">English</option>
-            </select>
-          </label>
-          <label>Stimme:
-            <select id="voice">
-              <option value="alloy">alloy</option>
-              <option value="verse">verse</option>
-              <option value="aria">aria</option>
-            </select>
-          </label>
-          <button id="btnStart">Start</button>
-          <span id="pillState" class="state">idle</span>
-        </div>
-        <audio id="audio" autoplay></audio>
+<div class="wrap">
+  <h1>Clarity Live Interview (Realtime + Video Recording → Mux)</h1>
+  <div class="row">
+    <div class="card">
+      <label>Session</label>
+      <div id="pills">
+        <span class="pill" id="pillState">state: idle</span>
+        <span class="pill" id="pillModel">model: —</span>
+        <span class="pill" id="pillRec">record: off</span>
       </div>
-      <div class="card">
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <button id="btnMute">Mute</button>
-          <button id="btnUnmute">Unmute</button>
-          <button id="btnHangup">Hang up</button>
+
+      <label>UID</label><input id="inUid" placeholder="UID (linkId)"/>
+      <label>Company ID</label><input id="inCompany" placeholder="companyId"/>
+      <label>Language</label>
+      <select id="inLang"><option value="de">de</option><option value="en">en</option></select>
+      <label>Voice</label>
+      <select id="inVoice">
+        <!-- WICHTIG: nur erlaubte Voices -->
+        <option value="verse" selected>verse</option>
+        <option value="alloy">alloy</option>
+        <option value="ash">ash</option>
+        <option value="ballad">ballad</option>
+        <option value="coral">coral</option>
+        <option value="echo">echo</option>
+        <option value="sage">sage</option>
+        <option value="shimmer">shimmer</option>
+        <option value="marin">marin</option>
+        <option value="cedar">cedar</option>
+      </select>
+
+      <div class="row2">
+        <div>
+          <label>Token Endpoint</label>
+          <input id="inTokenUrl" value="" placeholder="/api/wix-token-proxy"/>
         </div>
-        <textarea id="txt" placeholder="Live transcript / agent output …" spellcheck="false"></textarea>
+        <div>
+          <label>Mux Upload API</label>
+          <input id="inMuxUpload" value="/api/mux-upload" placeholder="/api/mux-upload"/>
+        </div>
       </div>
+
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button id="btnStart" class="primary">Start Live</button>
+        <button id="btnStop">Stop</button>
+        <button id="btnToggleRec">Record to Mux: On</button>
+      </div>
+
+      <label style="margin-top:14px">Status</label>
+      <div id="log" class="status"></div>
+    </div>
+
+    <div class="card">
+      <label>Agent Audio</label>
+      <audio id="agentAudio" autoplay controls></audio>
+
+      <label>Preview (Your Camera)</label>
+      <video id="preview" autoplay playsinline muted></video>
+
+      <label>Agent Text</label>
+      <textarea id="agentText" rows="6" placeholder="Agent messages…"></textarea>
     </div>
   </div>
+</div>
 
-  <script>
-  // --- Elements ---
-  const els = {
-    lang: document.getElementById('lang'),
-    voice: document.getElementById('voice'),
-    audio: document.getElementById('audio'),
-    btnStart: document.getElementById('btnStart'),
-    btnHangup: document.getElementById('btnHangup'),
-    btnMute: document.getElementById('btnMute'),
-    btnUnmute: document.getElementById('btnUnmute'),
-    text: document.getElementById('txt'),
-    pill: document.getElementById('pillState'),
-  };
+<script>
+/* ===== Utils & UI ===== */
+const els = {
+  uid: q('#inUid'), company: q('#inCompany'), lang: q('#inLang'), voice: q('#inVoice'),
+  tokenUrl: q('#inTokenUrl'), muxUpload: q('#inMuxUpload'),
+  start: q('#btnStart'), stop: q('#btnStop'), toggleRec: q('#btnToggleRec'),
+  audio: q('#agentAudio'), text: q('#agentText'), log: q('#log'),
+  pillState: q('#pillState'), pillModel: q('#pillModel'), pillRec: q('#pillRec'),
+  preview: q('#preview')
+};
+function q(s){ return document.querySelector(s); }
+function log(...a){
+  const t=a.map(x=>typeof x==='object'?JSON.stringify(x):String(x)).join(' ');
+  els.log.textContent+=`[${new Date().toLocaleTimeString()}] ${t}\n`; els.log.scrollTop=els.log.scrollHeight; console.log(...a);
+}
+function setState(s){ els.pillState.textContent=`state: ${s}` }
 
-  // --- State ---
-  let pc, dc, micStream, awaitingSessionCreated = false, activeResponseId = null;
-  let queuedResponsePayload = null;
+/* ===== Realtime/WebRTC ===== */
+let pc=null, dc=null, stream=null, modelInUse=null;
+let dcIsOpen=false, awaitingSessionCreated=false;
+const dcQueue=[];
+function rtSend(obj){
+  const s = JSON.stringify(obj);
+  if(dc && dc.readyState==='open'){ try{ dc.send(s); }catch(e){ log('[rt] send err', e.message); } }
+  else { dcQueue.push(s); }
+}
+let activeResponseId=null, queuedResponsePayload=null;
+let lastContext={companyName:'Your Company', position:'Position', lang:'de'};
+let transcriptBuf='';
 
-  function log(...a){ try{ console.log('[live]', ...a); }catch{} }
-  function parentPost(msg){ try{ window.parent && window.parent.postMessage(msg, '*'); }catch{} }
-  function setState(s){ els.pill.textContent = s; }
-  function avatarState(state){
-    setState(state);
-    parentPost({ type:'clarity.avatar', data:{ state } });
+/* ===== Recorder/Mux ===== */
+let mediaRecorder=null, chunks=[], doRecording=true;
+let muxUploadUrl=null, muxUploadId=null;
+function setRecording(v){
+  doRecording=!!v;
+  els.pillRec.textContent=`record: ${doRecording?'on':'off'}`;
+  els.toggleRec.textContent=`Record to Mux: ${doRecording?'On':'Off'}`;
+}
+els.toggleRec.addEventListener('click', ()=> setRecording(!doRecording));
+
+/* ===== Audio unlock ===== */
+let audioCtx=null;
+async function ensureAudio(){ try{ if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)(); if(audioCtx.state==='suspended') await audioCtx.resume(); }catch(e){ log('AudioContext error:', e?.message||e); } }
+
+/* ===== Defaults from query ===== */
+(()=>{
+  const p = new URLSearchParams(location.search);
+  if(p.get('uid')) els.uid.value=p.get('uid');
+  if(p.get('companyId')) els.company.value=p.get('companyId');
+  if(p.get('lang')) els.lang.value=p.get('lang');
+  if(p.get('voice')) els.voice.value=p.get('voice');
+  const DEFAULT_TOKEN_URL = '/api/wix-token-proxy';
+  els.tokenUrl.value = p.get('tokenUrl') || DEFAULT_TOKEN_URL;
+  log('Token endpoint:', els.tokenUrl.value, 'Mux endpoint:', els.muxUpload.value);
+})();
+
+/* ===== Parent messaging ===== */
+window.addEventListener('message', async (ev)=>{
+  const {type,data}=ev.data||{};
+  if(type==='clarity.live.start'){
+    if(data?.uid) els.uid.value=data.uid;
+    if(data?.companyId) els.company.value=data.companyId;
+    if(data?.lang) els.lang.value=data.lang;
+    await startLive();
   }
-
-  // --- Build system instructions (Company/Role/Language from parent context) ---
-  function buildSystemInstructions(ctx){
-    const companyName = (ctx && ctx.companyName) || 'Ihr Unternehmen';
-    const position    = (ctx && ctx.position) || 'die ausgeschriebene Position';
-    const lang        = ((ctx && ctx.lang) || els.lang.value || 'de').toLowerCase();
-
-    const base = `
-You are "Clarity Interview Agent".
-Context: Company "${companyName}", Role "${position}".
-Goal: Run a structured voice interview in ${lang.toUpperCase()} with strict turn taking.
-Rules:
-- Start with a short warm welcome (1 sentence). Then ask: "Sind Sie bereit?" (localized).
-- Wait and listen (server VAD). When candidate confirms, proceed.
-- Ask concise, job-relevant questions ONE at a time. No multi-part prompts.
-- Keep answers brief. Always return to listening after each question.
-- After ~5 questions, say you’ll hand over to the company and politely close.
-- If asked to repeat/clarify, briefly rephrase and ask again.
-- Voice only; produce spoken output every turn. No meta talk.
-
-Language: ${lang}.
-`.trim();
-
-    return base;
-  }
-
-  // --- Messaging to Realtime over DataChannel JSON ---
-  function rtSend(obj){
-    try{ dc && dc.readyState === 'open' && dc.send(JSON.stringify(obj)); }catch(e){ log('rtSend error', e); }
-  }
-
-  function createResponseSafe(extra){
-    const payload = Object.assign({
-      type: 'response.create',
-      response: {
-        modalities: ['audio','text'],
-        instructions: '',
-        conversation: 'default',
-        voice: els.voice.value || 'alloy'
+  if(type==='clarity.live.stop'){ await stopLive(); }
+  if(type==='clarity.live.record'){ setRecording(!!data?.enabled); }
+  if(type==='clarity.live.context'){
+    lastContext = { companyName:(data?.companyName||'Your Company'), position:(data?.position||'Position'), lang:(data?.lang||els.lang.value||'de') };
+    rtSend({
+      type:'session.update',
+      session:{
+        voice: enforceAllowedVoice(els.voice.value),
+        modalities:['audio','text'],
+        instructions: buildSystemInstructions(lastContext),
+        turn_detection: { type:'server_vad', threshold: 0.45 }
       }
-    }, { response: extra || {} });
-
-    try {
-      rtSend(payload);
-    } catch {
-      queuedResponsePayload = payload;
-    }
-  }
-
-  // --- WebRTC setup to OpenAI Realtime ---
-  async function start() {
-    if (pc) return;
-    els.text.value = '';
-    setState('starting');
-
-    // Token holen
-    const tokenRes = await fetch('/_functions/realtimeToken', {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json' },
-      body: JSON.stringify({ model: 'gpt-4o-realtime-preview-2024-12-17', voice: els.voice.value || 'alloy' })
     });
-    if (!tokenRes.ok) {
-      setState('error');
-      return alert('Konnte Realtime-Token nicht erzeugen.');
+  }
+});
+function parentPost(msg){ try{ window.parent?.postMessage(msg,'*'); }catch{} }
+
+/* ===== System instructions ===== */
+function buildSystemInstructions(ctx){
+  const companyName = ctx?.companyName || 'Your Company';
+  const position = ctx?.position || 'Position';
+  const lang = (ctx?.lang || els.lang.value || 'de').toLowerCase();
+  return [
+    `You are Clarity's interview agent for company "${companyName}" and role "${position}".`,
+    `Keep all questions strictly tied to the job description/company facts.`,
+    `One concise question per turn. If unclear, briefly reformulate once, then proceed.`,
+    `Accept follow-ups naturally, but avoid smalltalk.`,
+    `Language: ${lang}.`,
+    `After greeting ask: "Sind Sie bereit?" / "Are you ready?" (in the selected language). Wait for the user's answer (use VAD).`
+  ].join(' ');
+}
+function enforceAllowedVoice(v){
+  const allowed = new Set(['alloy','ash','ballad','coral','echo','sage','shimmer','verse','marin','cedar']);
+  return allowed.has(String(v||'').toLowerCase()) ? v : 'verse';
+}
+
+/* ===== Token ===== */
+async function getToken(){
+  const payload = {
+    uid: els.uid.value.trim(),
+    companyId: els.company.value.trim(),
+    lang: (els.lang.value||'de'),
+    voice: enforceAllowedVoice(els.voice.value)
+  };
+  log('Fetching token…', els.tokenUrl.value, JSON.stringify(payload));
+  const r = await fetch(els.tokenUrl.value, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+  const raw = await r.text();
+  log('Token response status:', r.status, raw.slice(0,180));
+  let j=null; try{ j=JSON.parse(raw);}catch{ throw new Error(`token endpoint returned non-JSON (status ${r.status})`); }
+  if(!r.ok || !j?.token) throw new Error(`token error (status ${r.status}): ${j?.error || 'no token field'}`);
+  modelInUse = j.model; els.pillModel.textContent=`model: ${modelInUse || '—'}`;
+  return j.token;
+}
+
+/* ===== Start/Stop ===== */
+els.start.addEventListener('click', startLive);
+els.stop.addEventListener('click', stopLive);
+
+async function startLive(){
+  try{
+    await ensureAudio();
+    if(pc) await stopLive();
+    setState('connecting'); els.start.disabled=true;
+
+    const token = await getToken();
+
+    // getUserMedia
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation:true, noiseSuppression:true },
+      video: { width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:30} }
+    });
+    els.preview.srcObject = stream;
+
+    // Recording→Mux
+    if(doRecording){
+      const up = await fetch(els.muxUpload.value, { method:'POST' });
+      const j = await up.json();
+      if(!up.ok || !j?.uploadUrl || !j?.uploadId) throw new Error('mux-upload init failed');
+      muxUploadUrl = j.uploadUrl; muxUploadId = j.uploadId;
+
+      const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') ? 'video/webm;codecs=vp9,opus' : 'video/webm';
+      mediaRecorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 3_000_000, audioBitsPerSecond: 128_000 });
+      chunks = [];
+      mediaRecorder.ondataavailable = e => { if(e.data?.size) chunks.push(e.data); };
+      mediaRecorder.onstop = uploadToMux;
+      mediaRecorder.start(2000);
+      setState('recording');
     }
-    const { client_secret } = await tokenRes.json();
 
-    // PeerConnection
+    // WebRTC
     pc = new RTCPeerConnection();
-    pc.onconnectionstatechange = () => log('pc state:', pc.connectionState);
-    pc.oniceconnectionstatechange = () => log('ice state:', pc.iceConnectionState);
-
-    // Agent Audio abspielen
-    const audioEl = els.audio;
-    const remoteStream = new MediaStream();
-    audioEl.srcObject = remoteStream;
-    pc.ontrack = (e) => {
-      remoteStream.addTrack(e.track);
-    };
-
-    // Mikrofon holen
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    for (const track of micStream.getTracks()) pc.addTrack(track, micStream);
-
-    // DataChannel
+    pc.onconnectionstatechange = ()=>{ setState(pc.connectionState); };
+    pc.addTransceiver('audio', { direction:'recvonly' }); // agent audio
+    pc.ontrack = (ev)=>{ els.audio.srcObject = ev.streams[0]; els.audio.play().catch(()=>{}); };
+    const audioTrack = stream.getAudioTracks()[0];
+    const tx = pc.addTransceiver(audioTrack, { direction:'sendrecv' }); tx.sender.replaceTrack(audioTrack);
     dc = pc.createDataChannel('oai-events');
-    dc.onopen = () => {
-      log('dc open');
-      // Basis-Instruktionen setzen
-      rtSend({ type:'session.update', session:{ instructions: buildSystemInstructions(window.__clarityCtx||{}) } });
+    dc.onopen = ()=>{
+      dcIsOpen = true;
+      while(dcQueue.length) try{ dc.send(dcQueue.shift()); }catch{}
       awaitingSessionCreated = true;
+      rtSend({
+        type:'session.update',
+        session:{
+          voice: enforceAllowedVoice(els.voice.value),
+          modalities:['audio','text'],
+          instructions: buildSystemInstructions(lastContext),
+          turn_detection: { type:'server_vad', threshold: 0.45 }
+        }
+      });
     };
     dc.onmessage = onAgentEvent;
-    dc.onclose = () => log('dc closed');
+    dc.onclose = ()=>{ dcIsOpen=false; };
 
-    // Offer erzeugen
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-
-    // An OpenAI senden (mit Client-Secret als Bearer)
-    const sdpRes = await fetch(`https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${client_secret}`,
-        'Content-Type': 'application/sdp'
-      },
-      body: offer.sdp
+    const model = modelInUse || 'gpt-4o-realtime-preview';
+    const rt = await fetch(`https://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`, {
+      method:'POST', headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/sdp','OpenAI-Beta':'realtime=v1' }, body: offer.sdp
     });
-
-    const answer = { type: 'answer', sdp: await sdpRes.text() };
-    await pc.setRemoteDescription(answer);
+    const answerSdp = await rt.text();
+    await pc.setRemoteDescription({ type:'answer', sdp: answerSdp });
     setState('connected');
-    avatarState('listening');
+  }catch(e){
+    log('startLive error:', e.message);
+    setState('error');
+  }finally{
+    els.start.disabled=false;
   }
+}
 
-  function hangup() {
-    try { dc && dc.close(); } catch {}
-    try { pc && pc.close(); } catch {}
-    try { micStream && micStream.getTracks().forEach(t => t.stop()); } catch {}
-    pc = null; dc = null; micStream = null;
+/* ===== Event handling (turn-taking + transcript) ===== */
+function greetPayload(ctx){
+  const lang = (ctx?.lang||'de').toLowerCase();
+  const companyName = ctx?.companyName || 'Clarity';
+  const pos = ctx?.position || '';
+  const de = `Willkommen! Dieses Interview führen wir im Auftrag von ${companyName}${pos?` für die Position ${pos}`:''}. Sind Sie bereit?`;
+  const en = `Welcome! This interview is conducted on behalf of ${companyName}${pos?` for the ${pos} role`:''}. Are you ready?`;
+  const text = lang.startsWith('de') ? de : en;
+  return { modalities:['audio','text'], instructions: text };
+}
+function createResponseSafe(payload){
+  if(activeResponseId){ queuedResponsePayload = payload; return; }
+  rtSend({ type:'response.create', response: payload });
+}
+function onAgentEvent(ev){
+  try{
+    const msg = JSON.parse(ev.data);
+
+    if(msg?.type==='session.created'){
+      if(awaitingSessionCreated){
+        awaitingSessionCreated=false;
+        createResponseSafe(greetPayload(lastContext)); // Willkommensfrage „Sind Sie bereit?“
+      }
+      return;
+    }
+
+    // Text stream → Transcript puffern & an Parent melden
+    if (msg?.type==='response.output_text.delta' && msg?.delta) {
+      els.text.value += msg.delta;
+      transcriptBuf += msg.delta;
+      if (transcriptBuf.length >= 200) {
+        parentPost({ type:'rt.transcript.partial', data:{ text: transcriptBuf } });
+        transcriptBuf = '';
+      }
+      els.text.scrollTop = els.text.scrollHeight;
+    }
+    if (msg?.type==='response.completed') {
+      els.text.value += '\n';
+    }
+
+    // Lebenszyklus
+    if (msg?.type === 'response.created') {
+      activeResponseId = msg?.response?.id || true;
+    }
+    if (msg?.type === 'output_audio_buffer.started') {}
+    if (msg?.type === 'output_audio_buffer.stopped') {}
+
+    if (msg?.type === 'response.done') {
+      activeResponseId = null;
+      if(queuedResponsePayload){ const next = queuedResponsePayload; queuedResponsePayload = null; setTimeout(()=> createResponseSafe(next), 50); }
+      if (transcriptBuf) { // final flush
+        parentPost({ type:'rt.transcript.partial', data:{ text: transcriptBuf } });
+        transcriptBuf = '';
+      }
+    }
+  }catch{
+    // raw/unknown payload
+  }
+}
+
+/* ===== Stop & Upload ===== */
+async function stopLive(){
+  try{
+    setState('closing');
+    if(mediaRecorder && mediaRecorder.state!=='inactive'){ mediaRecorder.stop(); }
+    if(dc){ try{ dc.close(); }catch{} }
+    if(pc){ try{ pc.close(); }catch{} }
+    if(stream){ stream.getTracks().forEach(t=>t.stop()); }
+  }catch(e){ log('stopLive error:', e.message); }
+  finally{
+    dc=null; pc=null; stream=null; mediaRecorder=null;
     setState('idle');
-    avatarState('idle');
+    parentPost({ type:'clarity.avatar', data:{ state:'idle' } });
+    parentPost({ type:'rt.transcript.final' });
   }
-
-  // --- Events vom Agenten auswerten ---
-  function onAgentEvent(ev){
-    try{
-      const msg = JSON.parse(ev.data);
-
-      // Session
-      if (msg?.type === 'session.created') {
-        log('session.created');
-        if (awaitingSessionCreated) {
-          awaitingSessionCreated = false;
-
-          // System-Instruktionen (redundant) setzen
-          rtSend({ type:'session.update', session:{ instructions: buildSystemInstructions(window.__clarityCtx||{}) } });
-
-          // Willkommensnachricht + "Sind Sie bereit?"
-          avatarState('speaking');
-          createResponseSafe({
-            modalities: ['audio','text'],
-            voice: els.voice.value,
-            instructions:
-`Sage in ${(window.__clarityCtx?.lang||els.lang.value||'de').toUpperCase()} eine kurze Willkommensnachricht im Namen des Unternehmens.
-Dann stelle genau eine Ja/Nein-Frage: "Sind Sie bereit, das Interview zu beginnen?". Sprich freundlich und knapp.`
-          });
-
-          queuedResponsePayload = null;
-        }
-        return;
-      }
-
-      // Agent-Text
-      if (msg?.type === 'response.output_text.delta' && msg?.delta) {
-        els.text.value += msg.delta; els.text.scrollTop = els.text.scrollHeight;
-      }
-      if (msg?.type === 'response.delta' && msg?.delta) {
-        els.text.value += msg.delta; els.text.scrollTop = els.text.scrollHeight;
-      }
-      if (msg?.type === 'response.completed') {
-        els.text.value += '\n';
-      }
-
-      // Lifecycle
-      if (msg?.type === 'response.created') {
-        activeResponseId = msg?.response?.id || true;
-        avatarState('speaking');
-      }
-      if (msg?.type === 'output_audio_buffer.started') {
-        avatarState('speaking');
-      }
-      if (msg?.type === 'output_audio_buffer.stopped') {
-        avatarState('listening');
-      }
-      if (msg?.type === 'response.done') {
-        activeResponseId = null;
-        avatarState('listening');
-      }
-    }catch{
-      // Fallback: Plain text
-      els.text.value += (ev.data||'');
-    }
-  }
-
-  // --- Parent-Kommunikation (Wix-Seite steuert Kontext) ---
-  window.addEventListener('message', (e) => {
-    const { data } = e || {};
-    const type = data && data.type;
-    const payload = data && data.data;
-
-    if (type === 'clarity.live.start') {
-      start();
-    }
-    if (type === 'clarity.live.hangup') {
-      hangup();
-    }
-    if (type === 'clarity.live.mute') {
-      try { micStream && micStream.getAudioTracks().forEach(t => t.enabled = false); }catch{}
-    }
-    if (type === 'clarity.live.unmute') {
-      try { micStream && micStream.getAudioTracks().forEach(t => t.enabled = true); }catch{}
-    }
-    if (type === 'clarity.live.context') {
-      // Kontext übernehmen und Instruktionen live aktualisieren
-      window.__clarityCtx = Object.assign({}, window.__clarityCtx||{}, payload||{});
-      const sys = buildSystemInstructions(window.__clarityCtx);
-      rtSend({ type:'session.update', session:{ instructions: sys }});
-    }
-  });
-
-  // --- UI Buttons (für lokale Tests; im Wix-Flow nutzt du Parent-Buttons) ---
-  els.btnStart.addEventListener('click', start);
-  els.btnHangup.addEventListener('click', hangup);
-  els.btnMute.addEventListener('click', () => window.parent && window.parent.postMessage({ type:'clarity.live.mute' }, '*'));
-  els.btnUnmute.addEventListener('click', () => window.parent && window.parent.postMessage({ type:'clarity.live.unmute' }, '*'));
-  </script>
+}
+async function uploadToMux(){
+  try{
+    setState('uploading');
+    const blob = new Blob(chunks, { type: chunks[0]?.type || 'video/webm' });
+    const r = await fetch(muxUploadUrl, { method:'PUT', headers:{ 'Content-Type':'application/octet-stream' }, body: blob });
+    if(!r.ok) throw new Error('Mux direct upload failed');
+    parentPost({ type:'mux.upload.done', data:{ uploadId: muxUploadId } });
+  }catch(err){
+    parentPost({ type:'mux.upload.error', data:{ message: err.message } });
+  }finally{ setState('connected'); }
+}
+</script>
 </body>
 </html>
