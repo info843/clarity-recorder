@@ -1,6 +1,7 @@
 {
-  "name": "clarity-recorder",
-  "version": "1.0.0",
-  "private": true,
-  "type": "module"
+  "uid": "IV-TEST",
+  "companyId": "NVL-02",
+  "lang": "de",
+  "voice": "verse",
+  "debug": true
 }
