@@ -1,4 +1,3 @@
-<!-- public/live.html -->
 <!doctype html>
 <html lang="de">
 <head>
@@ -43,7 +42,7 @@
   const PREP_TRIGGER_TEXT_DE = 'ich bin bereit';
   const PREP_TRIGGER_TEXT_EN = 'i am ready';
 
-  /* ------------------- State (nur EINMAL deklarieren) ------------------- */
+  /* ------------------- State ------------------- */
   const qs = new URLSearchParams(location.search);
   const PARAMS = {
     uid: qs.get('uid') || '',
@@ -55,13 +54,10 @@
 
   let CTX = { companyName:'', position:'', lang:PARAMS.lang, uid:PARAMS.uid, companyId:PARAMS.companyId, voice:PARAMS.voice, mode:'live-video' };
 
-  let PC = null;             // WebRTC PeerConnection (global)
-  let DC = null;             // DataChannel (global)
-  let REMOTE_AUDIO = null;   // <audio> für Remote (global)
-
-  let mediaStream = null;    // getUserMedia Stream (global)
-  let mediaRecorder = null;  // ← nur HIER deklariert (global)
-  let recChunks = [];        // ← nur HIER deklariert (global)
+  let PC = null, DC = null, REMOTE_AUDIO = null;
+  let mediaStream = null;
+  let mediaRecorder = null;   // global EINMAL
+  let recChunks = [];         // global EINMAL
   let muxUploadUrl = null;
   let started = false;
 
@@ -125,7 +121,7 @@
       await warmBeep();
       setStatus(CTX.lang.startsWith('de') ? 'Sagen Sie „Ich bin bereit“.' : 'Please say “I am ready”.', 'Preflight');
 
-      // einfacher Keyword-Trigger
+      // Keyword-Trigger
       try{
         const rec = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
         rec.lang = CTX.lang.startsWith('de') ? 'de-DE' : 'en-US';
@@ -149,7 +145,25 @@
     }
   }
 
-  /* ------------------- Token holen ------------------- */
+  /* ------------------- Token holen (ROBUST) ------------------- */
+  function extractClientSecret(json){
+    if (!json || typeof json !== 'object') return null;
+
+    // akzeptiere diverse Formen
+    // 1) { ok:true, client_secret:"..." }
+    if (json.client_secret && typeof json.client_secret === 'string') return json.client_secret;
+    // 2) { ok:true, client_secret:{ value:"..." } }
+    if (json.client_secret && typeof json.client_secret === 'object' && typeof json.client_secret.value === 'string') return json.client_secret.value;
+    // 3) { data:{ client_secret:{ value:"..." }}}
+    if (json.data && json.data.client_secret && typeof json.data.client_secret.value === 'string') return json.data.client_secret.value;
+    // 4) { value:"..." }
+    if (typeof json.value === 'string') return json.value;
+    // 5) { secret:"..." }
+    if (typeof json.secret === 'string') return json.secret;
+
+    return null;
+  }
+
   async function getRealtimeToken(payload){
     const body = JSON.stringify(payload);
     for (const url of TOKEN_ENDPOINTS){
@@ -159,7 +173,11 @@
         const txt = await r.text();
         let json=null; try{ json = txt ? JSON.parse(txt) : null; }catch(_){}
         console.log('[Live] Token response:', r.status, json||txt);
-        if (json && json.ok && json.client_secret) return json;
+
+        // Robust: ok-Flag optional; client_secret wird sauber extrahiert
+        const secret = extractClientSecret(json);
+        const model  = json?.model || MODEL_DEFAULT;
+        if (secret) return { ok:true, client_secret: secret, model, raw: json };
       }catch(e){
         console.warn('[Live] token fetch failed', url, e);
       }
@@ -178,6 +196,8 @@
         let json=null; try{ json = txt ? JSON.parse(txt) : null; }catch(_){}
         console.log('[Live] Mux response:', r.status, json||txt);
         if (json && json.ok && json.upload && json.upload.url) return json.upload.url;
+        // Tolerant: akzeptiere auch { url: "..." }
+        if (json && json.url) return json.url;
       }catch(e){
         console.warn('[Live] mux fetch failed', url, e);
       }
@@ -189,7 +209,6 @@
   async function connectRealtime(clientSecret, model){
     if (!mediaStream) throw new Error('no_media');
 
-    // Einmalige globale Instanzen verwenden
     PC = new RTCPeerConnection();
     mediaStream.getTracks().forEach(tr => PC.addTrack(tr, mediaStream));
 
@@ -280,11 +299,22 @@
     setAvatarState('speaking');
     setStatus(CTX.lang.startsWith('de')? 'Starte Interview…':'Starting interview…', 'Live');
 
-    const token = await getRealtimeToken({ uid: CTX.uid, companyId: CTX.companyId, lang: CTX.lang, voice: CTX.voice });
-    if (!token || !token.ok || !token.client_secret) {
+    let token;
+    try{
+      token = await getRealtimeToken({ uid: CTX.uid, companyId: CTX.companyId, lang: CTX.lang, voice: CTX.voice });
+    }catch(e){
+      console.warn('[Live] token error:', e);
       setStatus(CTX.lang.startsWith('de')
         ? 'Verbindungsfehler (Token). Bitte Seite neu laden oder später erneut versuchen.'
         : 'Connection error (token). Please refresh and try again.', 'Error');
+      setAvatarState('idle'); return;
+    }
+
+    if (!token?.client_secret){
+      console.warn('[Live] token missing client_secret. Raw:', token?.raw || token);
+      setStatus(CTX.lang.startsWith('de')
+        ? 'Ungültiger Token-Response (client_secret fehlt).'
+        : 'Invalid token response (client_secret missing).', 'Error');
       setAvatarState('idle'); return;
     }
 
