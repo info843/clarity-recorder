@@ -308,7 +308,14 @@
     setAvatarState('speaking');
     setStatus(CTX.lang.startsWith('de')? 'Starte Interview…':'Starting interview…', 'Live');
 
-    const token = await getRealtimeToken({ uid: CTX.uid, companyId: CTX.companyId, lang: CTX.lang, voice: CTX.voice, debug:true });
+   const token = await getRealtimeToken({
+  uid: CTX.uid,
+  companyId: CTX.companyId,
+  lang: CTX.lang,
+  voice: CTX.voice,
+  debug: true,
+  allowNoInvite: true   // <— nur für Tests! später entfernen
+});
 
     if (!token?.ok && !token?.client_secret){
       const reason =
