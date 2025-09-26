@@ -1,7 +1,7 @@
 {
-  "uid": "IV-TEST",
-  "companyId": "NVL-02",
-  "lang": "de",
+  "ok": true,
+  "model": "gpt-4o-realtime-preview",
+  "client_secret": "<long_token_string>",
   "voice": "verse",
-  "debug": true
+  "lang": "de"
 }
