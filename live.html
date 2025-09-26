@@ -6,29 +6,55 @@
   <title>Clarity Live Interview</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
+    :root{color-scheme:dark}
     html,body{margin:0;padding:0;background:#0b0e12;color:#e5e7eb;font-family:system-ui,ui-sans-serif,Segoe UI,Roboto}
     .wrap{display:flex;flex-direction:column;gap:12px;max-width:920px;margin:0 auto;padding:16px}
-    .row{display:flex;gap:12px;align-items:center}
-    .videoBox{position:relative;width:100%;max-width:720px;aspect-ratio:16/9;background:#111827;border:1px solid #1f2937;border-radius:12px;overflow:hidden}
+    .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    .videoBox{position:relative;width:100%;max-width:720px;aspect-ratio:16/9;background:#0f172a;border:1px solid #1f2937;border-radius:12px;overflow:hidden}
     video{width:100%;height:100%;object-fit:cover;background:#0f172a}
-    .status{font-size:13px;opacity:.9}
+    .status{font-size:13px;opacity:.95}
     .meter{height:6px;background:#1f2937;border-radius:8px;overflow:hidden}
     .bar{height:100%;width:0%;background:#22c55e;transition:width .1s linear}
     .badge{font-size:12px;color:#9ca3af}
+    .btn{appearance:none;border:1px solid #334155;background:#111827;color:#e5e7eb;border-radius:10px;padding:8px 12px;cursor:pointer;font-size:14px}
+    .btn:hover{background:#0b1220}
+    .danger{border-color:#dc2626;color:#fecaca}
+    .overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(2,6,23,.6);backdrop-filter:saturate(120%) blur(2px)}
+    .overlay.show{display:flex}
+    .overlay .card{border:1px solid #334155;background:#0b1220;color:#e5e7eb;border-radius:12px;padding:18px 20px;text-align:center;max-width:420px}
+    .overlay .card .title{font-weight:600;margin-bottom:6px}
+    .overlay .card .txt{font-size:13px;opacity:.9;margin-bottom:12px}
+    .overlay .card .act{display:flex;gap:10px;justify-content:center}
   </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="videoBox"><video id="local" autoplay playsinline muted></video></div>
+  <div class="videoBox">
+    <video id="local" autoplay playsinline muted></video>
+    <div id="audioGate" class="overlay">
+      <div class="card">
+        <div class="title">Audio aktivieren</div>
+        <div class="txt">Bitte einmal klicken, um die Sprachausgabe zu erlauben.</div>
+        <div class="act">
+          <button id="btnEnableAudio" class="btn">Audio einschalten</button>
+          <button id="btnStopFromOverlay" class="btn danger">Abbrechen</button>
+        </div>
+      </div>
+    </div>
+  </div>
   <div class="meter" aria-hidden="true"><div id="meterBar" class="bar"></div></div>
   <div class="row">
     <div id="status" class="status">Initialisiere…</div>
     <div id="badge" class="badge"></div>
   </div>
+  <div class="row">
+    <button id="btnStop" class="btn danger">Interview abbrechen</button>
+  </div>
 </div>
 
 <script>
 (() => {
+  // ---------- Endpoints / Konst ----------
   const TOKEN_ENDPOINTS = [
     'https://www.clarity-nvl.com/_functions/realtimeToken',
     '/api/wix-token-proxy'
@@ -39,8 +65,6 @@
   ];
   const MODEL_DEFAULT = 'gpt-4o-realtime-preview';
   const ALLOWED_VOICES = new Set(['alloy','ash','ballad','coral','echo','sage','shimmer','verse','marin','cedar']);
-  const PREP_TRIGGER_TEXT_DE = 'ich bin bereit';
-  const PREP_TRIGGER_TEXT_EN = 'i am ready';
 
   const qs = new URLSearchParams(location.search);
   const PARAMS = {
@@ -53,18 +77,25 @@
 
   let CTX = { companyName:'', position:'', lang:PARAMS.lang, uid:PARAMS.uid, companyId:PARAMS.companyId, voice:PARAMS.voice, mode:'live-video' };
 
+  // ---------- Refs / State ----------
+  const $video = document.getElementById('local');
+  const $status = document.getElementById('status');
+  const $badge = document.getElementById('badge');
+  const $bar = document.getElementById('meterBar');
+  const $audioGate = document.getElementById('audioGate');
+  const $btnEnableAudio = document.getElementById('btnEnableAudio');
+  const $btnStop = document.getElementById('btnStop');
+  const $btnStopFromOverlay = document.getElementById('btnStopFromOverlay');
+
   let PC = null, DC = null, REMOTE_AUDIO = null;
   let mediaStream = null;
   let mediaRecorder = null;
   let recChunks = [];
   let muxUploadUrl = null;
   let started = false;
+  let stopped = false;
 
-  const $video = document.getElementById('local');
-  const $status = document.getElementById('status');
-  const $badge = document.getElementById('badge');
-  const $bar = document.getElementById('meterBar');
-
+  // ---------- UI / Utils ----------
   function setStatus(text, badge='') { $status.textContent = text; $badge.textContent = badge ? `• ${badge}` : ''; }
   function postToParent(obj){ try{ window.parent.postMessage(obj, '*'); }catch(_){} }
   function setAvatarState(st){ postToParent({ type:'clarity.avatar', data:{ state: st } }); }
@@ -72,7 +103,7 @@
   let audioCtx, analyser, meterRAF;
   async function startLevelMeter(stream) {
     try{
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
       const src = audioCtx.createMediaStreamSource(stream);
       analyser = audioCtx.createAnalyser();
       analyser.fftSize = 2048;
@@ -102,6 +133,44 @@
     }catch(_){}
   }
 
+  function showAudioGate(){ $audioGate.classList.add('show'); }
+  function hideAudioGate(){ $audioGate.classList.remove('show'); }
+
+  async function ensureAudioPlayback() {
+    try { await (audioCtx?.resume?.()); } catch(_){}
+    try {
+      if (!REMOTE_AUDIO) return false;
+      REMOTE_AUDIO.muted = false;
+      REMOTE_AUDIO.volume = 1.0;
+      await REMOTE_AUDIO.play();
+      hideAudioGate();
+      return true;
+    } catch (err) {
+      showAudioGate();
+      return false;
+    }
+  }
+
+  $btnEnableAudio.addEventListener('click', async ()=>{
+    await warmBeep();
+    await ensureAudioPlayback();
+  });
+  $btnStop.addEventListener('click', hangup);
+  $btnStopFromOverlay.addEventListener('click', hangup);
+
+  function hangup(){
+    if (stopped) return;
+    stopped = true;
+    try{ if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop(); }catch(_){}
+    try{ mediaStream?.getTracks()?.forEach(t=>t.stop()); }catch(_){}
+    try{ PC?.getSenders()?.forEach(s=>{ try{s.track?.stop();}catch(_){}}); }catch(_){}
+    try{ PC?.close?.(); }catch(_){}
+    setAvatarState('idle');
+    setStatus(CTX.lang.startsWith('de')? 'Beendet.' : 'Ended.', '');
+    postToParent({ type:'clarity.live.hangup' });
+  }
+
+  // ---------- Preflight (Devices) ----------
   async function preflight(){
     setStatus(CTX.lang.startsWith('de') ? 'Gerätecheck…' : 'Running preflight…');
     try{
@@ -109,35 +178,19 @@
         audio: { echoCancellation:true, noiseSuppression:true, channelCount:1, sampleRate:48000 },
         video: CTX.mode === 'audio' ? false : { width: { ideal: 640 }, height: { ideal: 360 } }
       });
-      $video.srcObject = mediaStream;
+      $video.srcObject = mediaStream; // Nur Preview, Video zu GPT muss nicht zwingend gesendet werden
       await startLevelMeter(mediaStream);
       await warmBeep();
       setStatus(CTX.lang.startsWith('de') ? 'Sagen Sie „Ich bin bereit“.' : 'Please say “I am ready”.', 'Preflight');
 
-      try{
-        const rec = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-        rec.lang = CTX.lang.startsWith('de') ? 'de-DE' : 'en-US';
-        rec.interimResults = true;
-        rec.continuous = true;
-        rec.onresult = (e) => {
-          const t = Array.from(e.results).map(r=>r[0].transcript).join(' ').toLowerCase().trim();
-          if (!t) return;
-          if (t.includes(PREP_TRIGGER_TEXT_DE) || t.includes(PREP_TRIGGER_TEXT_EN)) {
-            rec.stop(); startInterview();
-          }
-        };
-        rec.onerror = () => {};
-        rec.start();
-        setTimeout(()=>{ try{ rec.stop(); }catch(_){} startInterview(); }, 10000);
-      }catch(_){
-        setTimeout(startInterview, 3000);
-      }
+      // Kleines Auto-Start-Timeout, falls keine STT verfügbar ist:
+      setTimeout(startInterview, 1500);
     }catch(e){
       setStatus(CTX.lang.startsWith('de') ? 'Kamera/Mikrofon fehlen.' : 'Camera/Microphone unavailable.', 'Error');
     }
   }
 
-  // ---- A) robuste Secret-Extraktion (inkl. "token")
+  // ---------- Token / Mux ----------
   function extractClientSecret(json){
     if (!json || typeof json !== 'object') return null;
     if (typeof json.client_secret === 'string') return json.client_secret;
@@ -150,7 +203,6 @@
     return null;
   }
 
-  // **Fix:** nicht mehr throwen – bei Fehlschlag { ok:false, status, raw } zurückgeben
   async function getRealtimeToken(payload){
     const body = JSON.stringify(payload);
     let last = { status: 0, json: null };
@@ -192,36 +244,72 @@
     return null;
   }
 
+  // ---------- Realtime / WebRTC ----------
+  function onRealtimeEvent(ev){
+    try{
+      const msg = typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data;
+      const type = msg?.type || msg?.event || '';
+      if (type.includes('delta') && msg?.delta) {
+        postToParent({ type:'rt.transcript.partial', data:{ text: String(msg.delta) } });
+      }
+      if (type.includes('completed')) {
+        postToParent({ type:'rt.transcript.final', data:{} });
+      }
+    }catch(e){}
+  }
+
+  function dcSend(obj){
+    try{ DC && DC.readyState === 'open' && DC.send(JSON.stringify(obj)); }catch(_){}
+  }
+  function primeSession(){
+    // WICHTIG: Stimme + Audio-Ausgabe aktivieren
+    dcSend({
+      type: 'session.update',
+      session: {
+        voice: CTX.voice,                    // << Stimme für Audioausgabe
+        instructions: '',                    // (optional, wir senden Frage separat)
+        turn_detection: { type:'server_vad' },
+        input_audio_format: 'pcm16',
+        output_audio_format: 'wav'           // << Audio kommt als WAV-Track
+      }
+    });
+  }
+  function sendGreeting(ctx){
+    const de = ctx.lang?.startsWith('de');
+    const intro = de
+      ? `Willkommen! Dieses Interview führen wir im Auftrag von ${ctx.companyName||'Clarity'}. Bitte antworten Sie frei ohne Hilfsmittel.`
+      : `Welcome! This interview is conducted on behalf of ${ctx.companyName||'Clarity'}. Please answer freely without external aids.`;
+    const q1 = de
+      ? `Erste Frage: Warum möchten Sie die Position ${ctx.position||''} bei ${ctx.companyName||'uns'}?`
+      : `First question: Why are you interested in the ${ctx.position||''} role at ${ctx.companyName||'our company'}?`;
+    dcSend({ type:'response.create', response:{ modalities:['audio'], instructions:`${intro}\n${q1}` }});
+  }
+
   async function connectRealtime(clientSecret, model){
     if (!mediaStream) throw new Error('no_media');
 
     PC = new RTCPeerConnection();
-    mediaStream.getTracks().forEach(tr => PC.addTrack(tr, mediaStream));
+    // Nur Audio senden (Video ist Preview für den Kandidaten)
+    mediaStream.getAudioTracks().forEach(tr => PC.addTrack(tr, mediaStream));
 
     DC = PC.createDataChannel('oai-events');
     DC.onopen = () => console.log('[RTC] DC open');
     DC.onmessage = onRealtimeEvent;
 
-    PC.ontrack = (e) => {
+    PC.ontrack = async (e) => {
       const [stream] = e.streams;
       if (!REMOTE_AUDIO) {
         REMOTE_AUDIO = new Audio();
         REMOTE_AUDIO.autoplay = true;
         REMOTE_AUDIO.playsInline = true;
+        REMOTE_AUDIO.muted = false;      // << wichtig: unmuted
+        REMOTE_AUDIO.volume = 1.0;
       }
       REMOTE_AUDIO.srcObject = stream;
 
-      const tryPlay = async () => {
-        try { await (audioCtx?.resume?.()); } catch(_) {}
-        try { await REMOTE_AUDIO.play(); }
-        catch (err) {
-          console.warn('[RTC] remote play blocked:', err);
-          setStatus(CTX.lang.startsWith('de') ? 'Bitte einmal klicken, um Audio zu aktivieren.' : 'Please click once to enable audio.', 'Audio');
-          const one = () => { REMOTE_AUDIO.play().catch(()=>{}); document.removeEventListener('click', one); };
-          document.addEventListener('click', one, { once:true });
-        }
-      };
-      tryPlay();
+      // Autoplay-Unblock
+      const ok = await ensureAudioPlayback();
+      if (!ok) showAudioGate();
     };
 
     const offer = await PC.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
@@ -239,55 +327,21 @@
     console.log('[RTC] connected');
   }
 
-  function onRealtimeEvent(ev){
-    try{
-      const msg = typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data;
-      const type = msg?.type || msg?.event || '';
-      if (type.includes('delta') && msg?.delta) {
-        postToParent({ type:'rt.transcript.partial', data:{ text: String(msg.delta) } });
-      }
-      if (type.includes('completed')) {
-        postToParent({ type:'rt.transcript.final', data:{} });
-      }
-    }catch(e){}
-  }
-
-  // ---- B) DataChannel-Helfer + Session-Priming + erste Frage
-  function dcSend(obj){
-    try{ DC && DC.readyState === 'open' && DC.send(JSON.stringify(obj)); }catch(_){}
-  }
-  function primeSession(){
-    dcSend({
-      type: 'session.update',
-      session: {
-        instructions: '',
-        turn_detection: { type: 'server_vad' },
-        input_audio_format: 'pcm16',
-        output_audio_format: 'wav'
-      }
-    });
-  }
-  function sendGreeting(ctx){
-    const de = ctx.lang?.startsWith('de');
-    const intro = de
-      ? `Willkommen! Dieses Interview führen wir im Auftrag von ${ctx.companyName||'Clarity'}. Bitte antworten Sie frei, ohne Pause oder Hilfsmittel.`
-      : `Welcome! This interview is conducted on behalf of ${ctx.companyName||'Clarity'}. Please answer freely, without pausing or using external aids.`;
-    const q1 = de
-      ? `Erste Frage: Warum möchten Sie die Position ${ctx.position||''} bei ${ctx.companyName||'uns'}?`
-      : `First question: Why are you interested in the ${ctx.position||''} role at ${ctx.companyName||'our company'}?`;
-    dcSend({ type:'response.create', response:{ modalities:['audio'], instructions:`${intro}\n${q1}` }});
-  }
-
   function startRecording(){
     if (!mediaStream) return;
     try{
       recChunks = [];
-      mediaRecorder = new MediaRecorder(mediaStream, { mimeType: 'video/webm;codecs=vp9,opus', videoBitsPerSecond: 800_000 });
+      // Video-Preview mitschneiden, falls vorhanden; für Audio-only einfach audio/webm;codecs=opus verwenden.
+      const mime = mediaStream.getVideoTracks().length
+        ? 'video/webm;codecs=vp9,opus'
+        : 'audio/webm;codecs=opus';
+
+      mediaRecorder = new MediaRecorder(mediaStream, { mimeType: mime, videoBitsPerSecond: 800_000 });
       mediaRecorder.ondataavailable = (e)=>{ if (e.data?.size) recChunks.push(e.data); };
       mediaRecorder.onstop = async ()=>{
-        if (!muxUploadUrl) { console.warn('[Mux] No upload URL, skipping.'); return; }
+        if (!muxUploadUrl) return;
         try{
-          const blob = new Blob(recChunks, { type: 'video/webm' });
+          const blob = new Blob(recChunks, { type: mime });
           await fetch(muxUploadUrl, { method:'PUT', body: blob });
           postToParent({ type:'mux.upload.done', data:{ uploadId: muxUploadUrl.split('/').pop() || '' } });
         }catch(e){
@@ -298,24 +352,22 @@
       console.log('[REC] started');
     }catch(e){ console.warn('[REC] cannot start', e); }
   }
-  function stopRecording(){
-    try{ if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop(); }catch(_){}
-  }
 
+  // ---------- Start ----------
   async function startInterview(){
-    if (started) return;
+    if (started || stopped) return;
     started = true;
     setAvatarState('speaking');
     setStatus(CTX.lang.startsWith('de')? 'Starte Interview…':'Starting interview…', 'Live');
 
-   const token = await getRealtimeToken({
-  uid: CTX.uid,
-  companyId: CTX.companyId,
-  lang: CTX.lang,
-  voice: CTX.voice,
-  debug: true,
-  allowNoInvite: true   // <— nur für Tests! später entfernen
-});
+    const token = await getRealtimeToken({
+      uid: CTX.uid,
+      companyId: CTX.companyId,
+      lang: CTX.lang,
+      voice: CTX.voice,
+      debug: true,
+      allowNoInvite: true     // Test-Bypass; für Produktion entfernen
+    });
 
     if (!token?.ok && !token?.client_secret){
       const reason =
@@ -330,18 +382,25 @@
     }
 
     muxUploadUrl = await getMuxUploadUrl({ uid: CTX.uid });
+
     await connectRealtime(token.client_secret, token.model || MODEL_DEFAULT);
     startRecording();
 
-    // ---- C) Session primen + erste Frage senden
+    // Session primen + erste Frage senden (Audio-Ausgabe erfordert voice in session.update)
     primeSession();
     sendGreeting(CTX);
 
     setAvatarState('speaking');
     setStatus(CTX.lang.startsWith('de')? 'Assistent spricht…':'Assistant speaking…','Live');
-    setTimeout(()=>{ setAvatarState('listening'); setStatus(CTX.lang.startsWith('de')? 'Bitte antworten.':'Please respond.','Live'); }, 1200);
+
+    // Falls Browser Audio blockiert → Overlay zeigen bis Click
+    setTimeout(async ()=>{
+      const ok = await ensureAudioPlayback();
+      if (!ok) showAudioGate();
+    }, 400);
   }
 
+  // ---------- Parent-Messaging ----------
   window.addEventListener('message', (ev)=>{
     const data = ev?.data || {};
     const t = data?.type || '';
@@ -359,9 +418,7 @@
       (async () => { if (!mediaStream) await preflight(); else startInterview(); })();
     }
     if (t === 'clarity.live.hangup') {
-      stopRecording();
-      setAvatarState('idle'); setStatus(CTX.lang.startsWith('de')? 'Beendet.':'Ended.','');
-      try { PC?.close?.(); } catch(_){}
+      hangup();
     }
   });
 
