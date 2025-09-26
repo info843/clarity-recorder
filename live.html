@@ -113,10 +113,9 @@
   let remoteStream;
   let audioCtx, remoteSource;
 
-  // ===== DC-Queue + Wait (Patch 1) =====
+  // ===== DC-Queue + Wait =====
   let dcIsOpen = false;
   let dcQueue = [];
-
   function dcSend(obj){
     try{
       if (dcIsOpen && DC && DC.readyState === 'open') {
@@ -142,7 +141,7 @@
     });
   }
 
-  // -------------------- Token (Patch A) --------------------
+  // -------------------- Token --------------------
   async function getRealtimeToken(payload){
     for (const url of TOKENS){
       try{
@@ -171,7 +170,7 @@
     return null;
   }
 
-  // -------------------- Realtime WebRTC (Patch D nutzt model) --------------------
+  // -------------------- Realtime WebRTC --------------------
   async function connectRealtime(clientSecret, model = 'gpt-4o-realtime-preview'){
     pc = new RTCPeerConnection({ iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }] });
 
@@ -205,7 +204,7 @@
         })();
       }catch(_){}
 
-      // Playback Safety (Patch 3)
+      // Playback Safety
       try {
         $remoteA.muted = false;
         $remoteA.volume = 1.0;
@@ -218,7 +217,7 @@
         showAudioGate();
       }
 
-      // Optional: sichtbarer "Audio in"-Ping
+      // Sichtbarer "Audio in"-Ping
       try {
         const levelAnalyser = audioCtx.createAnalyser();
         levelAnalyser.fftSize = 1024;
@@ -242,7 +241,7 @@
       localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
     }
 
-    // DataChannel (Patch 1)
+    // DataChannel (robust)
     DC = pc.createDataChannel('oai-events');
     DC.onopen = () => {
       dcIsOpen = true;
@@ -285,7 +284,7 @@
     }
   }
 
-  // -------------------- Session-Priming + Greeting (Patch B) --------------------
+  // -------------------- Sprache & Prompts --------------------
   function normLang(code){
     const s = String(code||'de').toLowerCase();
     if (s.startsWith('de')) return 'de';
@@ -309,10 +308,9 @@
       ].join(' ');
     }
   }
-
   function primeSession(effectiveLang, voice){
     const L = normLang(effectiveLang);
-    // 1) Haupt-Update
+    // Haupt-Update
     dcSend({
       type:'session.update',
       session:{
@@ -326,25 +324,19 @@
         instructions: makeSystemPrompt(L)
       }
     });
-    // 2) Hartnäckiges Re-Update
-    dcSend({
-      type:'session.update',
-      session:{
-        spoken_language: L,
-        input_audio_transcription:{ model:'whisper-1', language: L },
-      }
-    });
+    // Hartnäckige Re-Updates (redundant gegen Language-Drift)
+    setTimeout(()=>dcSend({ type:'session.update', session:{ spoken_language:L, input_audio_transcription:{model:'whisper-1',language:L} }}), 150);
+    setTimeout(()=>dcSend({ type:'session.update', session:{ spoken_language:L }}), 400);
   }
-
   function sendGreeting(companyName, effectiveLang){
     const L = normLang(effectiveLang);
     const t = (L==='de')
-      ? `Willkommen! Dieses Interview wird im Auftrag von ${companyName||'Clarity'} geführt. Bitte antworte auf Deutsch. Bist du bereit zu starten?`
-      : `Welcome! This interview is conducted on behalf of ${companyName||'Clarity'}. Please respond in English. Are you ready to begin?`;
+      ? `Willkommen! Dieses Interview wird im Auftrag von ${companyName||'Clarity'} geführt. Bitte antworte ausschließlich auf Deutsch. Bist du bereit zu starten?`
+      : `Welcome! This interview is conducted on behalf of ${companyName||'Clarity'}. Please respond strictly in English. Are you ready to begin?`;
     dcSend({ type:'response.create', response:{ conversation:'default', instructions:t, modalities:['audio'] } });
   }
 
-  // -------------------- Media / Recording (Remote + Mic gemischt) --------------------
+  // -------------------- Media / Recording --------------------
   async function setupLocalMedia(){
     localStream = await navigator.mediaDevices.getUserMedia({
       audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true },
@@ -376,7 +368,7 @@
     setStatus('warn','Audio-Autoplay blockiert – bitte den Player anklicken oder Lautstärke öffnen.');
   }
 
-  // -------------------- Recording + reiner Server-Upload (Patch C) --------------------
+  // -------------------- Recording + reiner Server-Upload --------------------
   function startRecording(){
     if (!localStream){
       log('[REC] cannot start – no localStream'); 
@@ -404,8 +396,6 @@
     const chunks = [];
     mediaRecorder.onstart = ()=>{ $recState.textContent='recording'; log('[REC] started'); };
     mediaRecorder.ondataavailable = (e)=>{ if (e.data && e.data.size>0) chunks.push(e.data); };
-
-    // NEU: ausschließlich serverseitiger Upload (multipart → /api/mux-upload)
     mediaRecorder.onstop = async ()=>{
       $recState.textContent='stopped';
       const blob = new Blob(chunks, { type:'video/webm' });
@@ -448,7 +438,7 @@
     try{ mixedStream?.getTracks()?.forEach(t => t.stop()); }catch(_){}
   }
 
-  // -------------------- Start / Stop Flow (Patch D Reihenfolge) --------------------
+  // -------------------- Start / Stop Flow --------------------
   async function startInterview(){
     setStatus('info','Initialisiere…');
     await setupLocalMedia();
@@ -459,6 +449,7 @@
     const EFFECTIVE_LANG = tok.lang;
     const EFFECTIVE_VOICE = tok.voice;
     const MODEL = tok.model;
+    log('[Live] effective', { lang:EFFECTIVE_LANG, voice:EFFECTIVE_VOICE, model:MODEL });
 
     // RTC verbinden
     await connectRealtime(SECRET, MODEL);
@@ -469,7 +460,7 @@
     // Aufnahme starten
     startRecording();
 
-    // Nach DC-Open: Session setzen + Begrüßung/erste Frage (hart auf Sprache)
+    // Nach DC-Open: Sprache setzen + Begrüßung/erste Frage
     await waitDCOpen();
     primeSession(EFFECTIVE_LANG, EFFECTIVE_VOICE);
     sendGreeting('Clarity', EFFECTIVE_LANG);
