@@ -1,3 +1,4 @@
+<!-- public/live.html -->
 <!doctype html>
 <html lang="de">
 <head>
@@ -101,7 +102,7 @@
   async function warmBeep(){
     try{
       const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-      const o = ctx.createOscillator(); const g = ctx.createGain();
+    const o = ctx.createOscillator(); const g = ctx.createGain();
       o.type = 'sine'; o.frequency.value = 880; g.gain.value = 0.001;
       o.connect(g).connect(ctx.destination);
       o.start(); setTimeout(()=>{ o.stop(); }, 150);
@@ -146,21 +147,16 @@
   }
 
   /* ------------------- Token holen (ROBUST) ------------------- */
+  // >>> Änderung A: vollständige, tolerante Extraktion (inkl. "token")
   function extractClientSecret(json){
     if (!json || typeof json !== 'object') return null;
-
-    // akzeptiere diverse Formen
-    // 1) { ok:true, client_secret:"..." }
-    if (json.client_secret && typeof json.client_secret === 'string') return json.client_secret;
-    // 2) { ok:true, client_secret:{ value:"..." } }
-    if (json.client_secret && typeof json.client_secret === 'object' && typeof json.client_secret.value === 'string') return json.client_secret.value;
-    // 3) { data:{ client_secret:{ value:"..." }}}
+    if (typeof json.client_secret === 'string') return json.client_secret;
+    if (json.client_secret && typeof json.client_secret.value === 'string') return json.client_secret.value;
     if (json.data && json.data.client_secret && typeof json.data.client_secret.value === 'string') return json.data.client_secret.value;
-    // 4) { value:"..." }
     if (typeof json.value === 'string') return json.value;
-    // 5) { secret:"..." }
     if (typeof json.secret === 'string') return json.secret;
-
+    if (typeof json.clientSecret === 'string') return json.clientSecret;
+    if (typeof json.token === 'string') return json.token; // neu
     return null;
   }
 
@@ -174,7 +170,6 @@
         let json=null; try{ json = txt ? JSON.parse(txt) : null; }catch(_){}
         console.log('[Live] Token response:', r.status, json||txt);
 
-        // Robust: ok-Flag optional; client_secret wird sauber extrahiert
         const secret = extractClientSecret(json);
         const model  = json?.model || MODEL_DEFAULT;
         if (secret) return { ok:true, client_secret: secret, model, raw: json };
@@ -196,7 +191,6 @@
         let json=null; try{ json = txt ? JSON.parse(txt) : null; }catch(_){}
         console.log('[Live] Mux response:', r.status, json||txt);
         if (json && json.ok && json.upload && json.upload.url) return json.upload.url;
-        // Tolerant: akzeptiere auch { url: "..." }
         if (json && json.url) return json.url;
       }catch(e){
         console.warn('[Live] mux fetch failed', url, e);
@@ -267,6 +261,39 @@
     }catch(e){}
   }
 
+  // >>> Änderung B: DataChannel-Helfer + Session-Priming + erste Frage
+  function dcSend(obj){
+    try{ DC && DC.readyState === 'open' && DC.send(JSON.stringify(obj)); }catch(_){}
+  }
+  function primeSession(){
+    dcSend({
+      type: 'session.update',
+      session: {
+        instructions: '',
+        turn_detection: { type: 'server_vad' },
+        input_audio_format: 'pcm16',
+        output_audio_format: 'wav'
+      }
+    });
+  }
+  function sendGreeting(ctx){
+    const de = ctx.lang?.startsWith('de');
+    const intro = de
+      ? `Willkommen! Dieses Interview führen wir im Auftrag von ${ctx.companyName||'Clarity'}. Bitte antworten Sie frei, ohne Pause oder Hilfsmittel.`
+      : `Welcome! This interview is conducted on behalf of ${ctx.companyName||'Clarity'}. Please answer freely, without pausing or using external aids.`;
+    const q1 = de
+      ? `Erste Frage: Warum möchten Sie die Position ${ctx.position||''} bei ${ctx.companyName||'uns'}?`
+      : `First question: Why are you interested in the ${ctx.position||''} role at ${ctx.companyName||'our company'}?`;
+
+    dcSend({
+      type: 'response.create',
+      response: {
+        modalities: ['audio'],
+        instructions: `${intro}\n${q1}`
+      }
+    });
+  }
+
   /* ------------------- Aufnahme & Upload (Mux) ------------------- */
   function startRecording(){
     if (!mediaStream) return;
@@ -301,26 +328,40 @@
 
     let token;
     try{
-      token = await getRealtimeToken({ uid: CTX.uid, companyId: CTX.companyId, lang: CTX.lang, voice: CTX.voice });
+      token = await getRealtimeToken({ uid: CTX.uid, companyId: CTX.companyId, lang: CTX.lang, voice: CTX.voice, debug:true });
     }catch(e){
-      console.warn('[Live] token error:', e);
-      setStatus(CTX.lang.startsWith('de')
-        ? 'Verbindungsfehler (Token). Bitte Seite neu laden oder später erneut versuchen.'
-        : 'Connection error (token). Please refresh and try again.', 'Error');
+      console.warn('[Live] token error (network):', e);
+      setStatus(
+        CTX.lang.startsWith('de')
+          ? 'Token-Fehler (Netzwerk). Seite neu laden oder später erneut versuchen.'
+          : 'Token error (network). Please refresh and try again.',
+        'Error'
+      );
       setAvatarState('idle'); return;
     }
 
     if (!token?.client_secret){
+      const reason =
+        (token && token.raw && (token.raw.error || token.raw.message)) ||
+        (token && (token.error || token.message)) ||
+        'client_secret_missing';
       console.warn('[Live] token missing client_secret. Raw:', token?.raw || token);
-      setStatus(CTX.lang.startsWith('de')
-        ? 'Ungültiger Token-Response (client_secret fehlt).'
-        : 'Invalid token response (client_secret missing).', 'Error');
+      setStatus(
+        CTX.lang.startsWith('de')
+          ? `Token-Fehler: ${String(reason)}`
+          : `Token error: ${String(reason)}`,
+        'Error'
+      );
       setAvatarState('idle'); return;
     }
 
     muxUploadUrl = await getMuxUploadUrl({ uid: CTX.uid });
     await connectRealtime(token.client_secret, token.model || MODEL_DEFAULT);
     startRecording();
+
+    // >>> Änderung C: Session primen + erste Frage senden
+    primeSession();
+    sendGreeting(CTX);
 
     setAvatarState('speaking');
     setStatus(CTX.lang.startsWith('de')? 'Assistent spricht…':'Assistant speaking…','Live');
