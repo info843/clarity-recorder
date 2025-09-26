@@ -88,19 +88,28 @@
   const $btnStopFromOverlay = document.getElementById('btnStopFromOverlay');
 
   let PC = null, DC = null, REMOTE_AUDIO = null;
-  let mediaStream = null;
-  let mediaRecorder = null;
-  let recChunks = [];
+  let mediaStream = null;         // Original: Mic (+ ggf. Cam)
+  let mixedStream = null;         // Für Recording: Video + (Mic + GPT)
+  let mediaRecorder = null; let recChunks = [];
   let muxUploadUrl = null;
-  let started = false;
-  let stopped = false;
+  let started = false; let stopped = false;
+
+  // WebAudio: Mixing
+  let audioCtx;
+  let micSource, remoteSource;
+  let micGain, remoteGain;
+  let recordDest;                 // MediaStreamDestination for recording
+  const REMOTE_PLAYBACK_GAIN = 1.0;  // Lautstärke für Lautsprecher
+  const REMOTE_RECORD_GAIN  = 1.0;   // Lautstärke im Recording-Mix
+  const MIC_RECORD_GAIN     = 1.0;   // Mic im Recording-Mix
 
   // ---------- UI / Utils ----------
   function setStatus(text, badge='') { $status.textContent = text; $badge.textContent = badge ? `• ${badge}` : ''; }
   function postToParent(obj){ try{ window.parent.postMessage(obj, '*'); }catch(_){} }
   function setAvatarState(st){ postToParent({ type:'clarity.avatar', data:{ state: st } }); }
 
-  let audioCtx, analyser, meterRAF;
+  // Mic Level Meter (Time-Domain Peak)
+  let analyser, meterRAF;
   async function startLevelMeter(stream) {
     try{
       audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
@@ -123,13 +132,14 @@
       meterRAF = requestAnimationFrame(tick);
     }catch(e){}
   }
+
   async function warmBeep(){
     try{
       const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
       const o = ctx.createOscillator(); const g = ctx.createGain();
       o.type = 'sine'; o.frequency.value = 880; g.gain.value = 0.001;
       o.connect(g).connect(ctx.destination);
-      o.start(); setTimeout(()=>{ o.stop(); }, 150);
+      o.start(); setTimeout(()=>{ o.stop(); }, 120);
     }catch(_){}
   }
 
@@ -182,8 +192,9 @@
       await startLevelMeter(mediaStream);
       await warmBeep();
       setStatus(CTX.lang.startsWith('de') ? 'Sagen Sie „Ich bin bereit“.' : 'Please say “I am ready”.', 'Preflight');
-      setTimeout(startInterview, 1500);
+      setTimeout(startInterview, 1200);
     }catch(e){
+      console.error('getUserMedia error', e);
       setStatus(CTX.lang.startsWith('de') ? 'Kamera/Mikrofon fehlen.' : 'Camera/Microphone unavailable.', 'Error');
     }
   }
@@ -301,10 +312,12 @@
     DC.onopen = () => console.log('[RTC] DC open');
     DC.onmessage = onRealtimeEvent;
 
-    // Remote Audio-Track
+    // Remote Audio-Track -> Playback + Mix
     PC.ontrack = async (e) => {
       console.log('[RTC] ontrack kind=', e.track?.kind, 'streams=', e.streams?.length);
-      const [stream] = e.streams;
+      const [remoteStream] = e.streams;
+
+      // Playback via <audio> (für Autoplay-Handling)
       if (!REMOTE_AUDIO) {
         REMOTE_AUDIO = new Audio();
         REMOTE_AUDIO.autoplay = true;
@@ -313,7 +326,43 @@
         REMOTE_AUDIO.volume = 1.0;
         document.body.appendChild(REMOTE_AUDIO);
       }
-      REMOTE_AUDIO.srcObject = stream;
+      REMOTE_AUDIO.srcObject = remoteStream;
+
+      // --- WebAudio Mixing initialisieren ---
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+
+      // Quellen
+      if (!micSource)  micSource  = audioCtx.createMediaStreamSource(mediaStream);
+      if (!remoteSource){
+        const remoteTrack = remoteStream.getAudioTracks()[0];
+        const remoteOnly = new MediaStream([remoteTrack]);
+        remoteSource = audioCtx.createMediaStreamSource(remoteOnly);
+      }
+
+      // Gains
+      if (!micGain){ micGain = audioCtx.createGain(); micGain.gain.value = MIC_RECORD_GAIN; }
+      if (!remoteGain){ remoteGain = audioCtx.createGain(); remoteGain.gain.value = REMOTE_RECORD_GAIN; }
+
+      // Ziel für Recording (nur 1x anlegen)
+      if (!recordDest){ recordDest = audioCtx.createMediaStreamDestination(); }
+
+      // Verkabeln (idempotent ausreichend, Browser schützt doppelte Verbindungen)
+      try{ micSource.connect(micGain).connect(recordDest); }catch(_){}
+      try{ remoteSource.connect(remoteGain).connect(recordDest); }catch(_){}
+
+      // Playback: NUR Assistant zur Ausgabe -> kein Echo
+      try{
+        const playGain = audioCtx.createGain();
+        playGain.gain.value = REMOTE_PLAYBACK_GAIN;
+        remoteSource.connect(playGain).connect(audioCtx.destination);
+      }catch(_){}
+
+      // Recording-Stream aufbauen: Video (falls vorhanden) + Mix-Audio
+      const recAudioTrack = recordDest.stream.getAudioTracks()[0];
+      const tracks = [];
+      mediaStream.getVideoTracks().forEach(v => tracks.push(v));
+      if (recAudioTrack) tracks.push(recAudioTrack);
+      mixedStream = new MediaStream(tracks);
 
       try { await (audioCtx?.resume?.()); } catch {}
       try {
@@ -342,14 +391,17 @@
   }
 
   function startRecording(){
-    if (!mediaStream) return;
+    const src = mixedStream || mediaStream;
+    if (!src) return;
     try{
       recChunks = [];
-      const mime = mediaStream.getVideoTracks().length
+      // Video vorhanden? -> webm (video+audio). Sonst audio-only webm/opus
+      const hasVideo = src.getVideoTracks().length > 0;
+      const mime = hasVideo
         ? 'video/webm;codecs=vp9,opus'
         : 'audio/webm;codecs=opus';
 
-      mediaRecorder = new MediaRecorder(mediaStream, { mimeType: mime, videoBitsPerSecond: 800_000 });
+      mediaRecorder = new MediaRecorder(src, { mimeType: mime, videoBitsPerSecond: 800_000 });
       mediaRecorder.ondataavailable = (e)=>{ if (e.data?.size) recChunks.push(e.data); };
       mediaRecorder.onstop = async ()=>{
         if (!muxUploadUrl) return;
@@ -358,6 +410,7 @@
           await fetch(muxUploadUrl, { method:'PUT', body: blob });
           postToParent({ type:'mux.upload.done', data:{ uploadId: muxUploadUrl.split('/').pop() || '' } });
         }catch(e){
+          console.warn('mux PUT failed', e);
           postToParent({ type:'mux.upload.error', data:{ message: String(e?.message||e) } });
         }
       };
@@ -398,13 +451,13 @@
 
     await connectRealtime(token.client_secret, token.model || MODEL_DEFAULT);
 
-    // Unmittelbar nach Connect: Wiedergabe versuchen / Gate zeigen bei Block
+    // Audio-Ausgabe versuchen / Gate falls blockiert
     const unlocked = await ensureAudioPlayback();
     if (!unlocked) showAudioGate();
 
     startRecording();
 
-    // Session primen + erste Frage senden (Audio-Ausgabe erfordert voice in session.update)
+    // Session primen + erste Frage senden
     primeSession();
     sendGreeting(CTX);
 
@@ -440,3 +493,22 @@
 </script>
 </body>
 </html>
+Was sich konkret ändert / warum du jetzt Ton hörst:
+
+PC.addTransceiver('audio', { direction:'recvonly' }) erzwingt einen Remote-Audiokanal.
+
+ontrack erstellt sowohl Playback (nur Assistant zur Ausgabe → kein Echo) als auch einen Recording-Mix (Mic+Assistant) via WebAudio:
+
+recordDest = audioCtx.createMediaStreamDestination()
+
+micSource → micGain → recordDest
+
+remoteSource → remoteGain → recordDest
+
+remoteSource → (Gain) → audioCtx.destination (nur Assistant auf Lautsprecher)
+
+mixedStream = new MediaStream([...videoTracks, recordDest.audio]) → der MediaRecorder nimmt beides auf.
+
+Wenn der Browser dennoch Autoplay blockt, erscheint das Overlay „Audio einschalten“; ein Klick setzt play() durch.
+
+Hinweis zum Mux-Fehler ERR_NAME_NOT_RESOLVED: das ist unabhängig vom Audio. Wenn dein Direct-Upload-Link echt ist, verschwindet das (es war bei dir schon „200 Object“ – vermutlich test-URL). Lass uns das nac
