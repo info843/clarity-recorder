@@ -15,7 +15,6 @@
     .meter{height:6px;background:#1f2937;border-radius:8px;overflow:hidden}
     .bar{height:100%;width:0%;background:#22c55e;transition:width .1s linear}
     .badge{font-size:12px;color:#9ca3af}
-    .hidden{display:none}
   </style>
 </head>
 <body>
@@ -31,21 +30,20 @@
 <script>
 (() => {
   /* ------------------- Konfiguration ------------------- */
-  // WICHTIG: http-functions leben auf www-Domain → absolute URLs
   const TOKEN_ENDPOINTS = [
-    'https://www.clarity-nvl.com/_functions/realtimeToken', // Variante A (primär)
-    '/api/wix-token-proxy'                                  // optionaler Fallback
+    'https://www.clarity-nvl.com/_functions/realtimeToken',
+    '/api/wix-token-proxy'
   ];
   const MUX_ENDPOINTS = [
-    'https://www.clarity-nvl.com/_functions/muxDirectUpload', // Variante A (primär)
-    '/api/mux-upload'                                         // optionaler Fallback
+    'https://www.clarity-nvl.com/_functions/muxDirectUpload',
+    '/api/mux-upload'
   ];
   const MODEL_DEFAULT = 'gpt-4o-realtime-preview';
   const ALLOWED_VOICES = new Set(['alloy','ash','ballad','coral','echo','sage','shimmer','verse','marin','cedar']);
   const PREP_TRIGGER_TEXT_DE = 'ich bin bereit';
   const PREP_TRIGGER_TEXT_EN = 'i am ready';
 
-  /* ------------------- State ------------------- */
+  /* ------------------- State (nur EINMAL deklarieren) ------------------- */
   const qs = new URLSearchParams(location.search);
   const PARAMS = {
     uid: qs.get('uid') || '',
@@ -55,11 +53,15 @@
   };
   if (!ALLOWED_VOICES.has(PARAMS.voice)) PARAMS.voice = 'verse';
 
-  let CTX = { companyName:'', position:'', lang:PARAMS.lang, uid:PARAMS.uid, companyId:PARAMS.companyId, voice:PARAMS.voice };
-  let PC = null, DC = null, REMOTE_AUDIO = null;
-  let mediaStream = null;          // Kamera+Mic
-  let mediaRecorder = null;        // Aufnahme für Mux
-  let recChunks = [];
+  let CTX = { companyName:'', position:'', lang:PARAMS.lang, uid:PARAMS.uid, companyId:PARAMS.companyId, voice:PARAMS.voice, mode:'live-video' };
+
+  let PC = null;             // WebRTC PeerConnection (global)
+  let DC = null;             // DataChannel (global)
+  let REMOTE_AUDIO = null;   // <audio> für Remote (global)
+
+  let mediaStream = null;    // getUserMedia Stream (global)
+  let mediaRecorder = null;  // ← nur HIER deklariert (global)
+  let recChunks = [];        // ← nur HIER deklariert (global)
   let muxUploadUrl = null;
   let started = false;
 
@@ -123,7 +125,7 @@
       await warmBeep();
       setStatus(CTX.lang.startsWith('de') ? 'Sagen Sie „Ich bin bereit“.' : 'Please say “I am ready”.', 'Preflight');
 
-      // einfacher Keyword-Trigger: “Ich bin bereit”
+      // einfacher Keyword-Trigger
       try{
         const rec = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
         rec.lang = CTX.lang.startsWith('de') ? 'de-DE' : 'en-US';
@@ -186,34 +188,32 @@
   /* ------------------- WebRTC → OpenAI Realtime ------------------- */
   async function connectRealtime(clientSecret, model){
     if (!mediaStream) throw new Error('no_media');
-    const PCcfg = {}; // ggf. STUN/TURN
-    const PC = new RTCPeerConnection(PCcfg);
-    window.__pc = PC; // debug optional
+
+    // Einmalige globale Instanzen verwenden
+    PC = new RTCPeerConnection();
     mediaStream.getTracks().forEach(tr => PC.addTrack(tr, mediaStream));
 
-    // DataChannel (Transkript/Events)
-    const DC = PC.createDataChannel('oai-events');
+    DC = PC.createDataChannel('oai-events');
     DC.onopen = () => console.log('[RTC] DC open');
     DC.onmessage = onRealtimeEvent;
 
-    // Remote-Audio
     PC.ontrack = (e) => {
       const [stream] = e.streams;
-      if (!window.__remote) {
-        window.__remote = new Audio();
-        window.__remote.autoplay = true;
-        window.__remote.playsInline = true;
+      if (!REMOTE_AUDIO) {
+        REMOTE_AUDIO = new Audio();
+        REMOTE_AUDIO.autoplay = true;
+        REMOTE_AUDIO.playsInline = true;
       }
-      window.__remote.srcObject = stream;
+      REMOTE_AUDIO.srcObject = stream;
 
-      // >>> Autoplay-Fix: AudioContext resume + explizites play + One-Click-Fallback
+      // Autoplay-Fix
       const tryPlay = async () => {
         try { await (audioCtx?.resume?.()); } catch(_) {}
-        try { await window.__remote.play(); }
+        try { await REMOTE_AUDIO.play(); }
         catch (err) {
           console.warn('[RTC] remote play blocked:', err);
           setStatus(CTX.lang.startsWith('de') ? 'Bitte einmal klicken, um Audio zu aktivieren.' : 'Please click once to enable audio.', 'Audio');
-          const one = () => { window.__remote.play().catch(()=>{}); document.removeEventListener('click', one); };
+          const one = () => { REMOTE_AUDIO.play().catch(()=>{}); document.removeEventListener('click', one); };
           document.addEventListener('click', one, { once:true });
         }
       };
@@ -249,7 +249,6 @@
   }
 
   /* ------------------- Aufnahme & Upload (Mux) ------------------- */
-  let mediaRecorder, recChunks=[];
   function startRecording(){
     if (!mediaStream) return;
     try{
@@ -318,7 +317,7 @@
     if (t === 'clarity.live.hangup') {
       stopRecording();
       setAvatarState('idle'); setStatus(CTX.lang.startsWith('de')? 'Beendet.':'Ended.','');
-      try { window.__pc?.close?.(); } catch(_){}
+      try { PC?.close?.(); } catch(_){}
     }
   });
 
