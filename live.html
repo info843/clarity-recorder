@@ -493,22 +493,3 @@
 </script>
 </body>
 </html>
-Was sich konkret ändert / warum du jetzt Ton hörst:
-
-PC.addTransceiver('audio', { direction:'recvonly' }) erzwingt einen Remote-Audiokanal.
-
-ontrack erstellt sowohl Playback (nur Assistant zur Ausgabe → kein Echo) als auch einen Recording-Mix (Mic+Assistant) via WebAudio:
-
-recordDest = audioCtx.createMediaStreamDestination()
-
-micSource → micGain → recordDest
-
-remoteSource → remoteGain → recordDest
-
-remoteSource → (Gain) → audioCtx.destination (nur Assistant auf Lautsprecher)
-
-mixedStream = new MediaStream([...videoTracks, recordDest.audio]) → der MediaRecorder nimmt beides auf.
-
-Wenn der Browser dennoch Autoplay blockt, erscheint das Overlay „Audio einschalten“; ein Klick setzt play() durch.
-
-Hinweis zum Mux-Fehler ERR_NAME_NOT_RESOLVED: das ist unabhängig vom Audio. Wenn dein Direct-Upload-Link echt ist, verschwindet das (es war bei dir schon „200 Object“ – vermutlich test-URL). Lass uns das nac
