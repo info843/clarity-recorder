@@ -1,7 +1,6 @@
 {
-  "ok": true,
-  "model": "gpt-4o-realtime-preview",
-  "client_secret": "<long_token_string>",
-  "voice": "verse",
-  "lang": "de"
+name: "clarity-recorder",
+version: "1.0.0",
+private: true,
+type: "module"
 }
