@@ -29,7 +29,6 @@
 
 <script>
 (() => {
-  /* ------------------- Konfiguration ------------------- */
   const TOKEN_ENDPOINTS = [
     'https://www.clarity-nvl.com/_functions/realtimeToken',
     '/api/wix-token-proxy'
@@ -43,7 +42,6 @@
   const PREP_TRIGGER_TEXT_DE = 'ich bin bereit';
   const PREP_TRIGGER_TEXT_EN = 'i am ready';
 
-  /* ------------------- State ------------------- */
   const qs = new URLSearchParams(location.search);
   const PARAMS = {
     uid: qs.get('uid') || '',
@@ -57,25 +55,20 @@
 
   let PC = null, DC = null, REMOTE_AUDIO = null;
   let mediaStream = null;
-  let mediaRecorder = null;   // global EINMAL
-  let recChunks = [];         // global EINMAL
+  let mediaRecorder = null;
+  let recChunks = [];
   let muxUploadUrl = null;
   let started = false;
 
-  /* ------------------- UI ------------------- */
   const $video = document.getElementById('local');
   const $status = document.getElementById('status');
   const $badge = document.getElementById('badge');
   const $bar = document.getElementById('meterBar');
 
-  function setStatus(text, badge='') {
-    $status.textContent = text;
-    $badge.textContent = badge ? `• ${badge}` : '';
-  }
+  function setStatus(text, badge='') { $status.textContent = text; $badge.textContent = badge ? `• ${badge}` : ''; }
   function postToParent(obj){ try{ window.parent.postMessage(obj, '*'); }catch(_){} }
   function setAvatarState(st){ postToParent({ type:'clarity.avatar', data:{ state: st } }); }
 
-  /* ------------------- Audio Meter / Beep ------------------- */
   let audioCtx, analyser, meterRAF;
   async function startLevelMeter(stream) {
     try{
@@ -102,14 +95,13 @@
   async function warmBeep(){
     try{
       const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    const o = ctx.createOscillator(); const g = ctx.createGain();
+      const o = ctx.createOscillator(); const g = ctx.createGain();
       o.type = 'sine'; o.frequency.value = 880; g.gain.value = 0.001;
       o.connect(g).connect(ctx.destination);
       o.start(); setTimeout(()=>{ o.stop(); }, 150);
     }catch(_){}
   }
 
-  /* ------------------- Preflight ------------------- */
   async function preflight(){
     setStatus(CTX.lang.startsWith('de') ? 'Gerätecheck…' : 'Running preflight…');
     try{
@@ -122,7 +114,6 @@
       await warmBeep();
       setStatus(CTX.lang.startsWith('de') ? 'Sagen Sie „Ich bin bereit“.' : 'Please say “I am ready”.', 'Preflight');
 
-      // Keyword-Trigger
       try{
         const rec = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
         rec.lang = CTX.lang.startsWith('de') ? 'de-DE' : 'en-US';
@@ -146,8 +137,7 @@
     }
   }
 
-  /* ------------------- Token holen (ROBUST) ------------------- */
-  // >>> Änderung A: vollständige, tolerante Extraktion (inkl. "token")
+  // ---- A) robuste Secret-Extraktion (inkl. "token")
   function extractClientSecret(json){
     if (!json || typeof json !== 'object') return null;
     if (typeof json.client_secret === 'string') return json.client_secret;
@@ -156,12 +146,14 @@
     if (typeof json.value === 'string') return json.value;
     if (typeof json.secret === 'string') return json.secret;
     if (typeof json.clientSecret === 'string') return json.clientSecret;
-    if (typeof json.token === 'string') return json.token; // neu
+    if (typeof json.token === 'string') return json.token;
     return null;
   }
 
+  // **Fix:** nicht mehr throwen – bei Fehlschlag { ok:false, status, raw } zurückgeben
   async function getRealtimeToken(payload){
     const body = JSON.stringify(payload);
+    let last = { status: 0, json: null };
     for (const url of TOKEN_ENDPOINTS){
       try{
         console.log('[Live] Fetching token…', url, body);
@@ -173,14 +165,15 @@
         const secret = extractClientSecret(json);
         const model  = json?.model || MODEL_DEFAULT;
         if (secret) return { ok:true, client_secret: secret, model, raw: json };
+        last = { status:r.status, json };
       }catch(e){
         console.warn('[Live] token fetch failed', url, e);
+        last = { status: 0, json: { error: String(e?.message||e) } };
       }
     }
-    throw new Error('token_fetch_failed');
+    return { ok:false, status:last.status, raw:last.json };
   }
 
-  /* ------------------- Mux Direct Upload URL ------------------- */
   async function getMuxUploadUrl(payload){
     const body = JSON.stringify(payload);
     for (const url of MUX_ENDPOINTS){
@@ -199,7 +192,6 @@
     return null;
   }
 
-  /* ------------------- WebRTC → OpenAI Realtime ------------------- */
   async function connectRealtime(clientSecret, model){
     if (!mediaStream) throw new Error('no_media');
 
@@ -219,7 +211,6 @@
       }
       REMOTE_AUDIO.srcObject = stream;
 
-      // Autoplay-Fix
       const tryPlay = async () => {
         try { await (audioCtx?.resume?.()); } catch(_) {}
         try { await REMOTE_AUDIO.play(); }
@@ -261,7 +252,7 @@
     }catch(e){}
   }
 
-  // >>> Änderung B: DataChannel-Helfer + Session-Priming + erste Frage
+  // ---- B) DataChannel-Helfer + Session-Priming + erste Frage
   function dcSend(obj){
     try{ DC && DC.readyState === 'open' && DC.send(JSON.stringify(obj)); }catch(_){}
   }
@@ -284,17 +275,9 @@
     const q1 = de
       ? `Erste Frage: Warum möchten Sie die Position ${ctx.position||''} bei ${ctx.companyName||'uns'}?`
       : `First question: Why are you interested in the ${ctx.position||''} role at ${ctx.companyName||'our company'}?`;
-
-    dcSend({
-      type: 'response.create',
-      response: {
-        modalities: ['audio'],
-        instructions: `${intro}\n${q1}`
-      }
-    });
+    dcSend({ type:'response.create', response:{ modalities:['audio'], instructions:`${intro}\n${q1}` }});
   }
 
-  /* ------------------- Aufnahme & Upload (Mux) ------------------- */
   function startRecording(){
     if (!mediaStream) return;
     try{
@@ -319,39 +302,23 @@
     try{ if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop(); }catch(_){}
   }
 
-  /* ------------------- Interview Ablauf ------------------- */
   async function startInterview(){
     if (started) return;
     started = true;
     setAvatarState('speaking');
     setStatus(CTX.lang.startsWith('de')? 'Starte Interview…':'Starting interview…', 'Live');
 
-    let token;
-    try{
-      token = await getRealtimeToken({ uid: CTX.uid, companyId: CTX.companyId, lang: CTX.lang, voice: CTX.voice, debug:true });
-    }catch(e){
-      console.warn('[Live] token error (network):', e);
-      setStatus(
-        CTX.lang.startsWith('de')
-          ? 'Token-Fehler (Netzwerk). Seite neu laden oder später erneut versuchen.'
-          : 'Token error (network). Please refresh and try again.',
-        'Error'
-      );
-      setAvatarState('idle'); return;
-    }
+    const token = await getRealtimeToken({ uid: CTX.uid, companyId: CTX.companyId, lang: CTX.lang, voice: CTX.voice, debug:true });
 
-    if (!token?.client_secret){
+    if (!token?.ok && !token?.client_secret){
       const reason =
         (token && token.raw && (token.raw.error || token.raw.message)) ||
         (token && (token.error || token.message)) ||
-        'client_secret_missing';
-      console.warn('[Live] token missing client_secret. Raw:', token?.raw || token);
-      setStatus(
-        CTX.lang.startsWith('de')
-          ? `Token-Fehler: ${String(reason)}`
-          : `Token error: ${String(reason)}`,
-        'Error'
-      );
+        `status ${token?.status||'?'}`;
+      console.warn('[Live] token missing/invalid. Raw:', token);
+      setStatus(CTX.lang.startsWith('de')
+        ? `Token-Fehler: ${String(reason)}`
+        : `Token error: ${String(reason)}`, 'Error');
       setAvatarState('idle'); return;
     }
 
@@ -359,7 +326,7 @@
     await connectRealtime(token.client_secret, token.model || MODEL_DEFAULT);
     startRecording();
 
-    // >>> Änderung C: Session primen + erste Frage senden
+    // ---- C) Session primen + erste Frage senden
     primeSession();
     sendGreeting(CTX);
 
@@ -368,7 +335,6 @@
     setTimeout(()=>{ setAvatarState('listening'); setStatus(CTX.lang.startsWith('de')? 'Bitte antworten.':'Please respond.','Live'); }, 1200);
   }
 
-  /* ------------------- Parent Messaging ------------------- */
   window.addEventListener('message', (ev)=>{
     const data = ev?.data || {};
     const t = data?.type || '';
@@ -392,7 +358,6 @@
     }
   });
 
-  /* ------------------- Auto-Init ------------------- */
   console.log('Token endpoint(s):', TOKEN_ENDPOINTS.join(', '), 'Mux endpoint(s):', MUX_ENDPOINTS.join(', '));
   setStatus('Bereit.', 'Idle'); setAvatarState('idle');
 })();
