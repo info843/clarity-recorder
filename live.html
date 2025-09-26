@@ -178,12 +178,10 @@
         audio: { echoCancellation:true, noiseSuppression:true, channelCount:1, sampleRate:48000 },
         video: CTX.mode === 'audio' ? false : { width: { ideal: 640 }, height: { ideal: 360 } }
       });
-      $video.srcObject = mediaStream; // Nur Preview, Video zu GPT muss nicht zwingend gesendet werden
+      $video.srcObject = mediaStream; // Preview
       await startLevelMeter(mediaStream);
       await warmBeep();
       setStatus(CTX.lang.startsWith('de') ? 'Sagen Sie „Ich bin bereit“.' : 'Please say “I am ready”.', 'Preflight');
-
-      // Kleines Auto-Start-Timeout, falls keine STT verfügbar ist:
       setTimeout(startInterview, 1500);
     }catch(e){
       setStatus(CTX.lang.startsWith('de') ? 'Kamera/Mikrofon fehlen.' : 'Camera/Microphone unavailable.', 'Error');
@@ -262,15 +260,14 @@
     try{ DC && DC.readyState === 'open' && DC.send(JSON.stringify(obj)); }catch(_){}
   }
   function primeSession(){
-    // WICHTIG: Stimme + Audio-Ausgabe aktivieren
     dcSend({
       type: 'session.update',
       session: {
-        voice: CTX.voice,                    // << Stimme für Audioausgabe
-        instructions: '',                    // (optional, wir senden Frage separat)
+        voice: CTX.voice,
+        modalities: ['audio'],         // default: audio responses
         turn_detection: { type:'server_vad' },
         input_audio_format: 'pcm16',
-        output_audio_format: 'wav'           // << Audio kommt als WAV-Track
+        output_audio_format: 'wav'
       }
     });
   }
@@ -288,28 +285,45 @@
   async function connectRealtime(clientSecret, model){
     if (!mediaStream) throw new Error('no_media');
 
-    PC = new RTCPeerConnection();
-    // Nur Audio senden (Video ist Preview für den Kandidaten)
+    // STUN hilft bei NAT
+    PC = new RTCPeerConnection({
+      iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }]
+    });
+
+    // 1) Mic senden
     mediaStream.getAudioTracks().forEach(tr => PC.addTrack(tr, mediaStream));
 
+    // 2) Assistant-Audio empfangen (entscheidend für hörbare Stimme!)
+    PC.addTransceiver('audio', { direction: 'recvonly' });
+
+    // DataChannel für Events
     DC = PC.createDataChannel('oai-events');
     DC.onopen = () => console.log('[RTC] DC open');
     DC.onmessage = onRealtimeEvent;
 
+    // Remote Audio-Track
     PC.ontrack = async (e) => {
+      console.log('[RTC] ontrack kind=', e.track?.kind, 'streams=', e.streams?.length);
       const [stream] = e.streams;
       if (!REMOTE_AUDIO) {
         REMOTE_AUDIO = new Audio();
         REMOTE_AUDIO.autoplay = true;
         REMOTE_AUDIO.playsInline = true;
-        REMOTE_AUDIO.muted = false;      // << wichtig: unmuted
+        REMOTE_AUDIO.muted = false;
         REMOTE_AUDIO.volume = 1.0;
+        document.body.appendChild(REMOTE_AUDIO);
       }
       REMOTE_AUDIO.srcObject = stream;
 
-      // Autoplay-Unblock
-      const ok = await ensureAudioPlayback();
-      if (!ok) showAudioGate();
+      try { await (audioCtx?.resume?.()); } catch {}
+      try {
+        await REMOTE_AUDIO.play();
+        hideAudioGate();
+        console.log('[RTC] remote audio playing.');
+      } catch (err) {
+        console.warn('[RTC] autoplay blocked, showing gate:', err);
+        showAudioGate();
+      }
     };
 
     const offer = await PC.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
@@ -331,7 +345,6 @@
     if (!mediaStream) return;
     try{
       recChunks = [];
-      // Video-Preview mitschneiden, falls vorhanden; für Audio-only einfach audio/webm;codecs=opus verwenden.
       const mime = mediaStream.getVideoTracks().length
         ? 'video/webm;codecs=vp9,opus'
         : 'audio/webm;codecs=opus';
@@ -366,7 +379,7 @@
       lang: CTX.lang,
       voice: CTX.voice,
       debug: true,
-      allowNoInvite: true     // Test-Bypass; für Produktion entfernen
+      allowNoInvite: true     // Test-Bypass; in Produktion entfernen
     });
 
     if (!token?.ok && !token?.client_secret){
@@ -384,6 +397,11 @@
     muxUploadUrl = await getMuxUploadUrl({ uid: CTX.uid });
 
     await connectRealtime(token.client_secret, token.model || MODEL_DEFAULT);
+
+    // Unmittelbar nach Connect: Wiedergabe versuchen / Gate zeigen bei Block
+    const unlocked = await ensureAudioPlayback();
+    if (!unlocked) showAudioGate();
+
     startRecording();
 
     // Session primen + erste Frage senden (Audio-Ausgabe erfordert voice in session.update)
@@ -392,12 +410,6 @@
 
     setAvatarState('speaking');
     setStatus(CTX.lang.startsWith('de')? 'Assistent spricht…':'Assistant speaking…','Live');
-
-    // Falls Browser Audio blockiert → Overlay zeigen bis Click
-    setTimeout(async ()=>{
-      const ok = await ensureAudioPlayback();
-      if (!ok) showAudioGate();
-    }, 400);
   }
 
   // ---------- Parent-Messaging ----------
