@@ -3,493 +3,512 @@
 <html lang="de">
 <head>
   <meta charset="utf-8" />
-  <title>Clarity Live Interview</title>
+  <title>Live Interview</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root{color-scheme:dark}
-    html,body{margin:0;padding:0;background:#0b0e12;color:#e5e7eb;font-family:system-ui,ui-sans-serif,Segoe UI,Roboto}
-    .wrap{display:flex;flex-direction:column;gap:12px;max-width:920px;margin:0 auto;padding:16px}
-    .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-    .videoBox{position:relative;width:100%;max-width:720px;aspect-ratio:16/9;background:#0f172a;border:1px solid #1f2937;border-radius:12px;overflow:hidden}
-    video{width:100%;height:100%;object-fit:cover;background:#0f172a}
-    .status{font-size:13px;opacity:.95}
-    .meter{height:6px;background:#1f2937;border-radius:8px;overflow:hidden}
-    .bar{height:100%;width:0%;background:#22c55e;transition:width .1s linear}
-    .badge{font-size:12px;color:#9ca3af}
-    .btn{appearance:none;border:1px solid #334155;background:#111827;color:#e5e7eb;border-radius:10px;padding:8px 12px;cursor:pointer;font-size:14px}
-    .btn:hover{background:#0b1220}
-    .danger{border-color:#dc2626;color:#fecaca}
-    .overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(2,6,23,.6);backdrop-filter:saturate(120%) blur(2px)}
-    .overlay.show{display:flex}
-    .overlay .card{border:1px solid #334155;background:#0b1220;color:#e5e7eb;border-radius:12px;padding:18px 20px;text-align:center;max-width:420px}
-    .overlay .card .title{font-weight:600;margin-bottom:6px}
-    .overlay .card .txt{font-size:13px;opacity:.9;margin-bottom:12px}
-    .overlay .card .act{display:flex;gap:10px;justify-content:center}
+    :root { --bg:#0b0c10; --fg:#e5e7eb; --muted:#9ca3af; --ok:#10b981; --warn:#f59e0b; --err:#ef4444; --card:#111217; --line:#1f2330; }
+    html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+    .wrap{display:grid;grid-template-columns:1fr 320px;gap:16px;padding:14px;align-items:start}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+    .row{display:flex;gap:10px;align-items:center}
+    .bar{height:6px;background:#0f172a;border-radius:999px;overflow:hidden}
+    .bar > i{display:block;height:100%;width:0;background:#4f46e5;transition:width 50ms linear}
+    .badge{display:inline-block;padding:2px 6px;border-radius:8px;background:#0f172a;border:1px solid #24314f;color:#cbd5e1;font-size:12px}
+    .muted{color:var(--muted)}
+    .btn{appearance:none;border:1px solid #2b3244;background:#141827;color:#f8fafc;border-radius:8px;padding:8px 10px;cursor:pointer}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+    video{width:100%;max-height:320px;background:#000;border-radius:8px}
+    audio{width:100%}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .log{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#9ca3af;white-space:pre-wrap;max-height:200px;overflow:auto}
+    .ghost{opacity:.65}
   </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="videoBox">
-    <video id="local" autoplay playsinline muted></video>
-    <div id="audioGate" class="overlay">
-      <div class="card">
-        <div class="title">Audio aktivieren</div>
-        <div class="txt">Bitte einmal klicken, um die Sprachausgabe zu erlauben.</div>
-        <div class="act">
-          <button id="btnEnableAudio" class="btn">Audio einschalten</button>
-          <button id="btnStopFromOverlay" class="btn danger">Abbrechen</button>
+  <div class="wrap">
+    <section class="card">
+      <div class="row" style="justify-content:space-between">
+        <div>
+          <div id="status" class="badge">Init…</div>
+          <div id="audioBadge" class="badge" style="margin-left:6px">• (stumm?)</div>
+        </div>
+        <div class="row">
+          <button id="btnStop" class="btn">Interview abbrechen</button>
         </div>
       </div>
-    </div>
-  </div>
-  <div class="meter" aria-hidden="true"><div id="meterBar" class="bar"></div></div>
-  <div class="row">
-    <div id="status" class="status">Initialisiere…</div>
-    <div id="badge" class="badge"></div>
-  </div>
-  <div class="row">
-    <button id="btnStop" class="btn danger">Interview abbrechen</button>
-  </div>
-</div>
 
-<script>
-(() => {
-  // ---------- Endpoints / Konst ----------
-  const TOKEN_ENDPOINTS = [
+      <div class="grid2" style="margin-top:12px">
+        <div>
+          <div class="muted" style="margin-bottom:6px">Kamera-Vorschau</div>
+          <video id="localVideo" autoplay playsinline muted></video>
+          <div class="muted" style="margin:8px 0 4px">Mic-Level</div>
+          <div class="bar"><i id="micLevel"></i></div>
+        </div>
+        <div>
+          <div class="muted" style="margin-bottom:6px">Assistent-Audio</div>
+          <audio id="remoteAudio" controls></audio>
+          <div class="muted" style="margin:8px 0 4px">System</div>
+          <div class="bar"><i id="sysLevel"></i></div>
+          <div class="muted" style="margin-top:10px">Hinweis: Bei blockiertem Autoplay ggf. einmal in den Player klicken.</div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="card">
+      <div style="font-weight:600;margin-bottom:8px">Recorder / Upload</div>
+      <div class="row">
+        <div class="badge ghost" id="recState">idle</div>
+        <div class="badge ghost" id="muxState" style="margin-left:6px">no upload</div>
+      </div>
+      <div class="muted" style="margin:8px 0 4px">Fortschritt</div>
+      <div class="bar"><i id="recProgress"></i></div>
+      <div class="muted" style="margin:10px 0 4px">Logs</div>
+      <div id="log" class="log"></div>
+    </aside>
+  </div>
+
+  <script>
+  // -------------------- Query / Kontext --------------------
+  const Q = new URLSearchParams(location.search);
+  const UID = (Q.get('uid')||'').trim();
+  const COMPANY_ID = (Q.get('companyId')||'').trim();
+  const LANG = (Q.get('lang')||'de').toLowerCase();
+  const VOICE = (Q.get('voice')||'verse').toLowerCase(); // nur erlaubte Voices verwenden
+
+  // -------------------- UI Els --------------------
+  const $status = document.getElementById('status');
+  const $badge  = document.getElementById('audioBadge');
+  const $mic    = document.getElementById('micLevel');
+  const $sys    = document.getElementById('sysLevel');
+  const $log    = document.getElementById('log');
+  const $localV = document.getElementById('localVideo');
+  const $remoteA= document.getElementById('remoteAudio');
+  const $btnStop= document.getElementById('btnStop');
+  const $recState = document.getElementById('recState');
+  const $muxState = document.getElementById('muxState');
+  const $recProg  = document.getElementById('recProgress');
+
+  function log(...a){
+    console.log(...a);
+    const s = a.map(x => typeof x==='object' ? JSON.stringify(x) : String(x)).join(' ');
+    $log.textContent += s + "\n";
+    $log.scrollTop = $log.scrollHeight;
+  }
+  function setStatus(kind, text){
+    $status.textContent = text || kind || '';
+    $status.style.background = kind==='err' ? '#3b0d0d' : (kind==='ok' ? '#0d3b2a' : '#0f172a');
+    $status.style.borderColor = kind==='err' ? '#7f1d1d' : (kind==='ok' ? '#14532d' : '#24314f');
+  }
+
+  // -------------------- Endpunkte --------------------
+  const TOKENS = [
     'https://www.clarity-nvl.com/_functions/realtimeToken',
     '/api/wix-token-proxy'
   ];
-  const MUX_ENDPOINTS = [
+  const MUXES = [
     'https://www.clarity-nvl.com/_functions/muxDirectUpload',
     '/api/mux-upload'
   ];
-  const MODEL_DEFAULT = 'gpt-4o-realtime-preview';
-  const ALLOWED_VOICES = new Set(['alloy','ash','ballad','coral','echo','sage','shimmer','verse','marin','cedar']);
 
-  const qs = new URLSearchParams(location.search);
-  const PARAMS = {
-    uid: qs.get('uid') || '',
-    companyId: qs.get('companyId') || '',
-    lang: (qs.get('lang') || 'de').toLowerCase(),
-    voice: (qs.get('voice') || 'verse').toLowerCase()
-  };
-  if (!ALLOWED_VOICES.has(PARAMS.voice)) PARAMS.voice = 'verse';
+  // -------------------- Global State --------------------
+  let pc, DC;
+  let localStream, mixedStream, mediaRecorder;
+  let remoteStream;
+  let uploadUrl = null;
+  let audioCtx, remoteSource;
 
-  let CTX = { companyName:'', position:'', lang:PARAMS.lang, uid:PARAMS.uid, companyId:PARAMS.companyId, voice:PARAMS.voice, mode:'live-video' };
-
-  // ---------- Refs / State ----------
-  const $video = document.getElementById('local');
-  const $status = document.getElementById('status');
-  const $badge = document.getElementById('badge');
-  const $bar = document.getElementById('meterBar');
-  const $audioGate = document.getElementById('audioGate');
-  const $btnEnableAudio = document.getElementById('btnEnableAudio');
-  const $btnStop = document.getElementById('btnStop');
-  const $btnStopFromOverlay = document.getElementById('btnStopFromOverlay');
-
-  let PC = null, DC = null, REMOTE_AUDIO = null;
-  let mediaStream = null;         // Original: Mic (+ ggf. Cam)
-  let mixedStream = null;         // Für Recording: Video + (Mic + GPT)
-  let mediaRecorder = null; let recChunks = [];
-  let muxUploadUrl = null;
-  let started = false; let stopped = false;
-
-  // WebAudio: Mixing
-  let audioCtx;
-  let micSource, remoteSource;
-  let micGain, remoteGain;
-  let recordDest;                 // MediaStreamDestination for recording
-  const REMOTE_PLAYBACK_GAIN = 1.0;  // Lautstärke für Lautsprecher
-  const REMOTE_RECORD_GAIN  = 1.0;   // Lautstärke im Recording-Mix
-  const MIC_RECORD_GAIN     = 1.0;   // Mic im Recording-Mix
-
-  // ---------- UI / Utils ----------
-  function setStatus(text, badge='') { $status.textContent = text; $badge.textContent = badge ? `• ${badge}` : ''; }
-  function postToParent(obj){ try{ window.parent.postMessage(obj, '*'); }catch(_){} }
-  function setAvatarState(st){ postToParent({ type:'clarity.avatar', data:{ state: st } }); }
-
-  // Mic Level Meter (Time-Domain Peak)
-  let analyser, meterRAF;
-  async function startLevelMeter(stream) {
-    try{
-      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-      const src = audioCtx.createMediaStreamSource(stream);
-      analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 2048;
-      src.connect(analyser);
-      const data = new Uint8Array(analyser.frequencyBinCount);
-      const tick = () => {
-        analyser.getByteTimeDomainData(data);
-        let maxDev = 0;
-        for (let i=0;i<data.length;i++){
-          const v = (data[i]-128)/128;
-          maxDev = Math.max(maxDev, Math.abs(v));
-        }
-        const pct = Math.min(100, Math.round(maxDev * 180));
-        $bar.style.width = pct + '%';
-        meterRAF = requestAnimationFrame(tick);
-      };
-      meterRAF = requestAnimationFrame(tick);
-    }catch(e){}
-  }
-
-  async function warmBeep(){
-    try{
-      const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-      const o = ctx.createOscillator(); const g = ctx.createGain();
-      o.type = 'sine'; o.frequency.value = 880; g.gain.value = 0.001;
-      o.connect(g).connect(ctx.destination);
-      o.start(); setTimeout(()=>{ o.stop(); }, 120);
-    }catch(_){}
-  }
-
-  function showAudioGate(){ $audioGate.classList.add('show'); }
-  function hideAudioGate(){ $audioGate.classList.remove('show'); }
-
-  async function ensureAudioPlayback() {
-    try { await (audioCtx?.resume?.()); } catch(_){}
-    try {
-      if (!REMOTE_AUDIO) return false;
-      REMOTE_AUDIO.muted = false;
-      REMOTE_AUDIO.volume = 1.0;
-      await REMOTE_AUDIO.play();
-      hideAudioGate();
-      return true;
-    } catch (err) {
-      showAudioGate();
-      return false;
-    }
-  }
-
-  $btnEnableAudio.addEventListener('click', async ()=>{
-    await warmBeep();
-    await ensureAudioPlayback();
-  });
-  $btnStop.addEventListener('click', hangup);
-  $btnStopFromOverlay.addEventListener('click', hangup);
-
-  function hangup(){
-    if (stopped) return;
-    stopped = true;
-    try{ if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop(); }catch(_){}
-    try{ mediaStream?.getTracks()?.forEach(t=>t.stop()); }catch(_){}
-    try{ PC?.getSenders()?.forEach(s=>{ try{s.track?.stop();}catch(_){}}); }catch(_){}
-    try{ PC?.close?.(); }catch(_){}
-    setAvatarState('idle');
-    setStatus(CTX.lang.startsWith('de')? 'Beendet.' : 'Ended.', '');
-    postToParent({ type:'clarity.live.hangup' });
-  }
-
-  // ---------- Preflight (Devices) ----------
-  async function preflight(){
-    setStatus(CTX.lang.startsWith('de') ? 'Gerätecheck…' : 'Running preflight…');
-    try{
-      mediaStream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation:true, noiseSuppression:true, channelCount:1, sampleRate:48000 },
-        video: CTX.mode === 'audio' ? false : { width: { ideal: 640 }, height: { ideal: 360 } }
-      });
-      $video.srcObject = mediaStream; // Preview
-      await startLevelMeter(mediaStream);
-      await warmBeep();
-      setStatus(CTX.lang.startsWith('de') ? 'Sagen Sie „Ich bin bereit“.' : 'Please say “I am ready”.', 'Preflight');
-      setTimeout(startInterview, 1200);
-    }catch(e){
-      console.error('getUserMedia error', e);
-      setStatus(CTX.lang.startsWith('de') ? 'Kamera/Mikrofon fehlen.' : 'Camera/Microphone unavailable.', 'Error');
-    }
-  }
-
-  // ---------- Token / Mux ----------
-  function extractClientSecret(json){
-    if (!json || typeof json !== 'object') return null;
-    if (typeof json.client_secret === 'string') return json.client_secret;
-    if (json.client_secret && typeof json.client_secret.value === 'string') return json.client_secret.value;
-    if (json.data && json.data.client_secret && typeof json.data.client_secret.value === 'string') return json.data.client_secret.value;
-    if (typeof json.value === 'string') return json.value;
-    if (typeof json.secret === 'string') return json.secret;
-    if (typeof json.clientSecret === 'string') return json.clientSecret;
-    if (typeof json.token === 'string') return json.token;
-    return null;
-  }
-
-  async function getRealtimeToken(payload){
-    const body = JSON.stringify(payload);
-    let last = { status: 0, json: null };
-    for (const url of TOKEN_ENDPOINTS){
-      try{
-        console.log('[Live] Fetching token…', url, body);
-        const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body });
-        const txt = await r.text();
-        let json=null; try{ json = txt ? JSON.parse(txt) : null; }catch(_){}
-        console.log('[Live] Token response:', r.status, json||txt);
-
-        const secret = extractClientSecret(json);
-        const model  = json?.model || MODEL_DEFAULT;
-        if (secret) return { ok:true, client_secret: secret, model, raw: json };
-        last = { status:r.status, json };
-      }catch(e){
-        console.warn('[Live] token fetch failed', url, e);
-        last = { status: 0, json: { error: String(e?.message||e) } };
-      }
-    }
-    return { ok:false, status:last.status, raw:last.json };
-  }
-
-  async function getMuxUploadUrl(payload){
-    const body = JSON.stringify(payload);
-    for (const url of MUX_ENDPOINTS){
-      try{
-        console.log('[Live] Request Mux upload…', url, body);
-        const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body });
-        const txt = await r.text();
-        let json=null; try{ json = txt ? JSON.parse(txt) : null; }catch(_){}
-        console.log('[Live] Mux response:', r.status, json||txt);
-        if (json && json.ok && json.upload && json.upload.url) return json.upload.url;
-        if (json && json.url) return json.url;
-      }catch(e){
-        console.warn('[Live] mux fetch failed', url, e);
-      }
-    }
-    return null;
-  }
-
-  // ---------- Realtime / WebRTC ----------
-  function onRealtimeEvent(ev){
-    try{
-      const msg = typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data;
-      const type = msg?.type || msg?.event || '';
-      if (type.includes('delta') && msg?.delta) {
-        postToParent({ type:'rt.transcript.partial', data:{ text: String(msg.delta) } });
-      }
-      if (type.includes('completed')) {
-        postToParent({ type:'rt.transcript.final', data:{} });
-      }
-    }catch(e){}
-  }
+  // ===== Patch 1: DC-Queue + Wait =====
+  let dcIsOpen = false;
+  let dcQueue = [];
 
   function dcSend(obj){
-    try{ DC && DC.readyState === 'open' && DC.send(JSON.stringify(obj)); }catch(_){}
-  }
-  function primeSession(){
-    dcSend({
-      type: 'session.update',
-      session: {
-        voice: CTX.voice,
-        modalities: ['audio'],         // default: audio responses
-        turn_detection: { type:'server_vad' },
-        input_audio_format: 'pcm16',
-        output_audio_format: 'wav'
+    try{
+      if (dcIsOpen && DC && DC.readyState === 'open') {
+        DC.send(JSON.stringify(obj));
+      } else {
+        dcQueue.push(obj);
       }
+    }catch(e){ console.warn('[RTC] dcSend fail', e); }
+  }
+
+  function waitDCOpen(timeoutMs = 5000){
+    if (dcIsOpen && DC?.readyState === 'open') return Promise.resolve();
+    return new Promise(resolve => {
+      const t0 = Date.now();
+      const iv = setInterval(() => {
+        if (dcIsOpen && DC?.readyState === 'open') {
+          clearInterval(iv);
+          resolve();
+        } else if (Date.now() - t0 > timeoutMs) {
+          clearInterval(iv);
+          resolve(); // best effort
+        }
+      }, 50);
     });
   }
-  function sendGreeting(ctx){
-    const de = ctx.lang?.startsWith('de');
-    const intro = de
-      ? `Willkommen! Dieses Interview führen wir im Auftrag von ${ctx.companyName||'Clarity'}. Bitte antworten Sie frei ohne Hilfsmittel.`
-      : `Welcome! This interview is conducted on behalf of ${ctx.companyName||'Clarity'}. Please answer freely without external aids.`;
-    const q1 = de
-      ? `Erste Frage: Warum möchten Sie die Position ${ctx.position||''} bei ${ctx.companyName||'uns'}?`
-      : `First question: Why are you interested in the ${ctx.position||''} role at ${ctx.companyName||'our company'}?`;
-    dcSend({ type:'response.create', response:{ modalities:['audio'], instructions:`${intro}\n${q1}` }});
-  }
 
-  async function connectRealtime(clientSecret, model){
-    if (!mediaStream) throw new Error('no_media');
-
-    // STUN hilft bei NAT
-    PC = new RTCPeerConnection({
-      iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }]
-    });
-
-    // 1) Mic senden
-    mediaStream.getAudioTracks().forEach(tr => PC.addTrack(tr, mediaStream));
-
-    // 2) Assistant-Audio empfangen (entscheidend für hörbare Stimme!)
-    PC.addTransceiver('audio', { direction: 'recvonly' });
-
-    // DataChannel für Events
-    DC = PC.createDataChannel('oai-events');
-    DC.onopen = () => console.log('[RTC] DC open');
-    DC.onmessage = onRealtimeEvent;
-
-    // Remote Audio-Track -> Playback + Mix
-    PC.ontrack = async (e) => {
-      console.log('[RTC] ontrack kind=', e.track?.kind, 'streams=', e.streams?.length);
-      const [remoteStream] = e.streams;
-
-      // Playback via <audio> (für Autoplay-Handling)
-      if (!REMOTE_AUDIO) {
-        REMOTE_AUDIO = new Audio();
-        REMOTE_AUDIO.autoplay = true;
-        REMOTE_AUDIO.playsInline = true;
-        REMOTE_AUDIO.muted = false;
-        REMOTE_AUDIO.volume = 1.0;
-        document.body.appendChild(REMOTE_AUDIO);
-      }
-      REMOTE_AUDIO.srcObject = remoteStream;
-
-      // --- WebAudio Mixing initialisieren ---
-      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-
-      // Quellen
-      if (!micSource)  micSource  = audioCtx.createMediaStreamSource(mediaStream);
-      if (!remoteSource){
-        const remoteTrack = remoteStream.getAudioTracks()[0];
-        const remoteOnly = new MediaStream([remoteTrack]);
-        remoteSource = audioCtx.createMediaStreamSource(remoteOnly);
-      }
-
-      // Gains
-      if (!micGain){ micGain = audioCtx.createGain(); micGain.gain.value = MIC_RECORD_GAIN; }
-      if (!remoteGain){ remoteGain = audioCtx.createGain(); remoteGain.gain.value = REMOTE_RECORD_GAIN; }
-
-      // Ziel für Recording (nur 1x anlegen)
-      if (!recordDest){ recordDest = audioCtx.createMediaStreamDestination(); }
-
-      // Verkabeln (idempotent ausreichend, Browser schützt doppelte Verbindungen)
-      try{ micSource.connect(micGain).connect(recordDest); }catch(_){}
-      try{ remoteSource.connect(remoteGain).connect(recordDest); }catch(_){}
-
-      // Playback: NUR Assistant zur Ausgabe -> kein Echo
+  // -------------------- Token + Mux --------------------
+  async function getRealtimeToken(payload){
+    for (const url of TOKENS){
       try{
-        const playGain = audioCtx.createGain();
-        playGain.gain.value = REMOTE_PLAYBACK_GAIN;
-        remoteSource.connect(playGain).connect(audioCtx.destination);
-      }catch(_){}
+        log('[Live] Fetching token…', url, JSON.stringify(payload));
+        const r = await fetch(url,{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+        if (!r.ok){ const t = await r.text(); log('[Live] Token response:', r.status, t); continue; }
+        const data = await r.json().catch(()=> ({}));
+        log('[Live] Token response:', r.status, data);
+        const sec = extractClientSecret(data);
+        if (sec) return sec;
+      }catch(e){ log('[Live] token fetch failed', url, e); }
+    }
+    throw new Error('token_fetch_failed');
+  }
 
-      // Recording-Stream aufbauen: Video (falls vorhanden) + Mix-Audio
-      const recAudioTrack = recordDest.stream.getAudioTracks()[0];
-      const tracks = [];
-      mediaStream.getVideoTracks().forEach(v => tracks.push(v));
-      if (recAudioTrack) tracks.push(recAudioTrack);
-      mixedStream = new MediaStream(tracks);
+  // Patch A: ersetze extractClientSecret
+  function extractClientSecret(obj){
+    // Akzeptiere verschiedene Hüllen/Keys
+    if (!obj || typeof obj !== 'object') return null;
+    if (typeof obj.client_secret === 'string') return obj.client_secret;
+    if (obj.data && typeof obj.data.client_secret === 'string') return obj.data.client_secret;
+    if (obj.secret && typeof obj.secret === 'string') return obj.secret;
+    if (obj.token && typeof obj.token === 'string') return obj.token;
+    if (obj.clientSecret && typeof obj.clientSecret === 'string') return obj.clientSecret;
+    return null;
+  }
 
-      try { await (audioCtx?.resume?.()); } catch {}
-      try {
-        await REMOTE_AUDIO.play();
-        hideAudioGate();
-        console.log('[RTC] remote audio playing.');
-      } catch (err) {
-        console.warn('[RTC] autoplay blocked, showing gate:', err);
-        showAudioGate();
+  async function requestMuxUpload(uid){
+    for (const url of MUXES){
+      try{
+        log('[Live] Request Mux upload…', url, JSON.stringify({ uid }));
+        const r = await fetch(url,{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ uid }) });
+        if (!r.ok){ const t = await r.text(); log('[Live] Mux response:', r.status, t); continue; }
+        const data = await r.json().catch(()=> ({}));
+        log('[Live] Mux response:', r.status, data);
+        if (data?.ok && data?.upload?.url) return data.upload.url;
+      }catch(e){ log('[Live] mux fetch failed', url, e); }
+    }
+    return null;
+  }
+
+  // -------------------- Realtime WebRTC --------------------
+  async function connectRealtime(clientSecret){
+    // PeerConnection
+    pc = new RTCPeerConnection({ iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }] });
+
+    pc.onconnectionstatechange = () => {
+      log('[RTC] connected');
+      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected'){
+        setStatus('err','Verbindung unterbrochen');
       }
     };
 
-    const offer = await PC.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
-    await PC.setLocalDescription(offer);
+    pc.ontrack = async (ev) => {
+      log('[RTC] ontrack kind=', ev.track.kind, 'streams=', ev.streams.length);
+      if (!remoteStream) remoteStream = new MediaStream();
+      remoteStream.addTrack(ev.track);
+      $remoteA.srcObject = remoteStream;
 
-    const url = `https://api.openai.com/v1/realtime?model=${encodeURIComponent(model||MODEL_DEFAULT)}`;
-    const ansResp = await fetch(url, {
+      // WebAudio Analyser für "System-Level"
+      try{
+        audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+        await audioCtx.resume().catch(()=>{});
+        remoteSource = audioCtx.createMediaStreamSource(remoteStream);
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 512;
+        const buf = new Uint8Array(analyser.frequencyBinCount);
+        remoteSource.connect(analyser);
+        (function tick(){
+          analyser.getByteTimeDomainData(buf);
+          let dev=0; for(let i=0;i<buf.length;i++) dev=Math.max(dev, Math.abs(buf[i]-128));
+          $sys.style.width = Math.min(100, dev*2) + '%';
+          requestAnimationFrame(tick);
+        })();
+      }catch(_){}
+
+      // Playback versuchen (Patch 3: Safety Nets)
+      try {
+        $remoteA.muted = false;
+        $remoteA.volume = 1.0;
+        await $remoteA.play();
+        log('[RTC] remote audio playing.');
+      } catch(e) {
+        log('[RTC] play() blocked', e);
+        showAudioGate();
+      }
+
+      // Optionaler Audio-In-Badge (Patch 3 – Optional)
+      try {
+        const levelAnalyser = audioCtx.createAnalyser();
+        levelAnalyser.fftSize = 1024;
+        remoteSource.connect(levelAnalyser);
+        const tbuf = new Uint8Array(levelAnalyser.frequencyBinCount);
+        let lastNZ = 0;
+        (function ping(){
+          levelAnalyser.getByteTimeDomainData(tbuf);
+          let dev = 0;
+          for (let i=0;i<tbuf.length;i++) dev = Math.max(dev, Math.abs(tbuf[i]-128));
+          if (dev>2) lastNZ = performance.now();
+          if (performance.now()-lastNZ < 2000) $badge.textContent='• Audio in';
+          else $badge.textContent='• (stumm?)';
+          requestAnimationFrame(ping);
+        })();
+      }catch(_){}
+    };
+
+    // Lokale Tracks anhängen
+    if (localStream){
+      localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+    }
+
+    // ===== Patch 1: DataChannel Initialisierung mit Queue-Flush =====
+    DC = pc.createDataChannel('oai-events');
+    DC.onopen = () => {
+      dcIsOpen = true;
+      console.log('[RTC] DC open');
+      try {
+        const pending = dcQueue.splice(0);
+        for (const msg of pending) DC.send(JSON.stringify(msg));
+      } catch(e){ console.warn('[RTC] flush queue fail', e); }
+    };
+    DC.onmessage = onRealtimeEvent;
+
+    // SDP Offer/Answer gegen OpenAI Realtime
+    const offer = await pc.createOffer({ offerToReceiveAudio:true, offerToReceiveVideo:false });
+    await pc.setLocalDescription(offer);
+
+    const r = await fetch('https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${clientSecret}`, 'Content-Type': 'application/sdp' },
+      headers: {
+        'Authorization': `Bearer ${clientSecret}`,
+        'Content-Type': 'application/sdp'
+      },
       body: offer.sdp
     });
-    const answerSdp = await ansResp.text();
-    await PC.setRemoteDescription({ type:'answer', sdp: answerSdp });
 
-    console.log('[RTC] connected');
+    if (!r.ok){
+      const t = await r.text().catch(()=>r.statusText);
+      throw new Error('realtime_handshake_failed: ' + t);
+    }
+
+    const answer = { type: 'answer', sdp: await r.text() };
+    await pc.setRemoteDescription(answer);
+  }
+
+  function onRealtimeEvent(ev){
+    let data = ev && ev.data;
+    try{ if (typeof data === 'string') data = JSON.parse(data); }catch(_){}
+    if (!data) return;
+
+    // Minimal: Avatar-State spiegeln
+    if (data.type === 'response.state' && data.state){
+      parent?.postMessage?.({ type:'clarity.avatar', data:{ state:data.state } }, '*');
+    }
+  }
+
+  // -------------------- Session-Priming + Greeting --------------------
+  function primeSession(){
+    // Basiskonfiguration der Realtime-Session
+    dcSend({
+      type:'session.update',
+      session:{
+        voice: VOICE,
+        input_audio_format:'pcm16',
+        output_audio_format:'pcm16',
+        turn_detection:{ type:'server_vad', threshold:0.9, prefix_padding_ms:200, silence_duration_ms:700 },
+        modalities:['audio'], // nur Audio ausgeben
+        instructions: makeSystemPrompt()
+      }
+    });
+  }
+
+  function sendGreeting(ctx){
+    const welcome = (LANG.startsWith('de')
+      ? `Willkommen! Dieses Interview wird im Auftrag von ${ctx.companyName||'Clarity'} geführt. Sind Sie bereit zu starten?`
+      : `Welcome! This interview is conducted on behalf of ${ctx.companyName||'Clarity'}. Are you ready to begin?`);
+
+    dcSend({
+      type:'response.create',
+      response:{
+        conversation:'default',
+        instructions: welcome,
+        modalities:['audio']
+      }
+    });
+  }
+
+  function makeSystemPrompt(){
+    const langLine = LANG.startsWith('de')
+      ? 'Sprich bitte klar und präzise auf Deutsch.'
+      : 'Speak clearly and concisely in English.';
+    return [
+      'You are Clarity’s interview assistant.',
+      'Keep answers short and ask one question at a time.',
+      langLine,
+      'If the candidate asks to repeat, briefly rephrase the last question.'
+    ].join(' ');
+  }
+
+  // -------------------- Media / Recording (Remote + Mic gemischt) --------------------
+  async function setupLocalMedia(){
+    localStream = await navigator.mediaDevices.getUserMedia({
+      audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true },
+      video:true
+    });
+    $localV.srcObject = localStream;
+
+    // Mic-Level anzeigen
+    try{
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const src = ctx.createMediaStreamSource(localStream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      const buf = new Uint8Array(analyser.frequencyBinCount);
+      src.connect(analyser);
+      (function tick(){
+        analyser.getByteTimeDomainData(buf);
+        let dev=0; for(let i=0;i<buf.length;i++) dev=Math.max(dev, Math.abs(buf[i]-128));
+        $mic.style.width = Math.min(100, dev*2) + '%';
+        requestAnimationFrame(tick);
+      })();
+    }catch(_){}
+  }
+
+  function ensureAudioPlayback(){
+    // Sicherheit: extra play-Versuch per Gesture
+    return $remoteA.play().then(()=>true).catch(()=>false);
+  }
+  function showAudioGate(){
+    setStatus('warn','Audio-Autoplay blockiert – bitte den Player anklicken oder Lautstärke öffnen.');
   }
 
   function startRecording(){
-    const src = mixedStream || mediaStream;
-    if (!src) return;
-    try{
-      recChunks = [];
-      // Video vorhanden? -> webm (video+audio). Sonst audio-only webm/opus
-      const hasVideo = src.getVideoTracks().length > 0;
-      const mime = hasVideo
-        ? 'video/webm;codecs=vp9,opus'
-        : 'audio/webm;codecs=opus';
+    if (!localStream){
+      log('[REC] cannot start – no localStream'); 
+      return;
+    }
+    // Mix aus lokalem Mic + Remote-Audio
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const dest = ctx.createMediaStreamDestination();
 
-      mediaRecorder = new MediaRecorder(src, { mimeType: mime, videoBitsPerSecond: 800_000 });
-      mediaRecorder.ondataavailable = (e)=>{ if (e.data?.size) recChunks.push(e.data); };
-      mediaRecorder.onstop = async ()=>{
-        if (!muxUploadUrl) return;
-        try{
-          const blob = new Blob(recChunks, { type: mime });
-          await fetch(muxUploadUrl, { method:'PUT', body: blob });
-          postToParent({ type:'mux.upload.done', data:{ uploadId: muxUploadUrl.split('/').pop() || '' } });
-        }catch(e){
-          console.warn('mux PUT failed', e);
-          postToParent({ type:'mux.upload.error', data:{ message: String(e?.message||e) } });
-        }
-      };
-      mediaRecorder.start(1000);
-      console.log('[REC] started');
-    }catch(e){ console.warn('[REC] cannot start', e); }
-  }
+    const micSrc = ctx.createMediaStreamSource(localStream);
+    micSrc.connect(dest);
 
-  // ---------- Start ----------
-  async function startInterview(){
-    if (started || stopped) return;
-    started = true;
-    setAvatarState('speaking');
-    setStatus(CTX.lang.startsWith('de')? 'Starte Interview…':'Starting interview…', 'Live');
-
-    const token = await getRealtimeToken({
-      uid: CTX.uid,
-      companyId: CTX.companyId,
-      lang: CTX.lang,
-      voice: CTX.voice,
-      debug: true,
-      allowNoInvite: true     // Test-Bypass; in Produktion entfernen
-    });
-
-    if (!token?.ok && !token?.client_secret){
-      const reason =
-        (token && token.raw && (token.raw.error || token.raw.message)) ||
-        (token && (token.error || token.message)) ||
-        `status ${token?.status||'?'}`;
-      console.warn('[Live] token missing/invalid. Raw:', token);
-      setStatus(CTX.lang.startsWith('de')
-        ? `Token-Fehler: ${String(reason)}`
-        : `Token error: ${String(reason)}`, 'Error');
-      setAvatarState('idle'); return;
+    if (remoteStream){
+      try{
+        const remSrc = ctx.createMediaStreamSource(remoteStream);
+        remSrc.connect(dest);
+      }catch(e){ log('[REC] remote mix fail', e); }
     }
 
-    muxUploadUrl = await getMuxUploadUrl({ uid: CTX.uid });
+    mixedStream = new MediaStream();
+    // Audio
+    dest.stream.getAudioTracks().forEach(t => mixedStream.addTrack(t));
+    // Video (lokales Video)
+    const cam = localStream.getVideoTracks()[0];
+    if (cam) mixedStream.addTrack(cam);
 
-    await connectRealtime(token.client_secret, token.model || MODEL_DEFAULT);
+    // Recorder
+    mediaRecorder = new MediaRecorder(mixedStream, { mimeType:'video/webm;codecs=vp8,opus', videoBitsPerSecond: 1_200_000, audioBitsPerSecond: 128_000 });
+    const chunks = [];
+    mediaRecorder.onstart = ()=>{ $recState.textContent='recording'; log('[REC] started'); };
+    mediaRecorder.ondataavailable = (e)=>{ if (e.data && e.data.size>0) chunks.push(e.data); };
+    mediaRecorder.onstop = async ()=>{
+      $recState.textContent='stopped';
+      const blob = new Blob(chunks, { type:'video/webm' });
+      log('[REC] stop, size=', blob.size);
 
-    // Audio-Ausgabe versuchen / Gate falls blockiert
+      if (!uploadUrl){
+        $muxState.textContent='no upload url';
+        parent?.postMessage?.({ type:'mux.upload.error', data:{ message:'no_upload_url' } }, '*');
+        return;
+      }
+
+      try{
+        // Fortschritt schätzen (ein einfacher 1-Schuss Upload ohne echte Progress-API)
+        $recProg.style.width = '10%';
+        const res = await fetch(uploadUrl, { method:'PUT', headers:{'Content-Type':'video/webm'}, body: blob });
+        if (!res.ok) throw new Error('mux_put_failed_'+res.status);
+        $recProg.style.width = '100%';
+        $muxState.textContent='uploaded';
+        parent?.postMessage?.({ type:'mux.upload.done', data:{ uploadId: makeUploadId() } }, '*');
+        log('[REC] mux PUT ok');
+      }catch(e){
+        $muxState.textContent='upload failed';
+        parent?.postMessage?.({ type:'mux.upload.error', data:{ message:String(e) } }, '*');
+        log(' mux PUT failed', e);
+      }
+    };
+
+    mediaRecorder.start(); // sofort starten – Flow entscheidet über Ende
+  }
+
+  function stopRecording(){
+    try{ if (mediaRecorder && mediaRecorder.state!=='inactive') mediaRecorder.stop(); }catch(_){}
+    try{ mixedStream?.getTracks()?.forEach(t => t.stop()); }catch(_){}
+  }
+
+  function makeUploadId(){
+    return `${UID}-${Math.random().toString(36).slice(2,12)}`;
+  }
+
+  // -------------------- Start / Stop Flow --------------------
+  async function startInterview(){
+    setStatus('info','Initialisiere…');
+    await setupLocalMedia();
+
+    // Token
+    const secret = await getRealtimeToken({ uid:UID, companyId:COMPANY_ID, lang:LANG, voice:VOICE, debug:true, allowNoInvite:true });
+    if (!secret) throw new Error('token_missing');
+
+    // Mux Upload vorbereiten (best-effort; Upload-URL kann später noch erzeugt werden)
+    uploadUrl = await requestMuxUpload(UID);
+    if (!uploadUrl) { $muxState.textContent='no upload'; }
+
+    // Realtime verbinden
+    await connectRealtime(secret);
+
+    // ===== Patch 2: NACH erfolgreichem connectRealtime:
     const unlocked = await ensureAudioPlayback();
     if (!unlocked) showAudioGate();
 
     startRecording();
 
-    // Session primen + erste Frage senden
-    primeSession();
-    sendGreeting(CTX);
-
-    setAvatarState('speaking');
-    setStatus(CTX.lang.startsWith('de')? 'Assistent spricht…':'Assistant speaking…','Live');
+    await waitDCOpen();        // ← warte auf offenen DataChannel
+    primeSession();            // ← Session-Konfiguration senden
+    const ctx = { companyName:'Clarity', position:'', lang:LANG };
+    sendGreeting(ctx);         // ← Erste Frage / Begrüßung
+    setStatus('ok','Verbunden • Interview läuft');
   }
 
-  // ---------- Parent-Messaging ----------
-  window.addEventListener('message', (ev)=>{
-    const data = ev?.data || {};
-    const t = data?.type || '';
-    const pl = data?.data || {};
+  function hangup(){
+    stopRecording();
+    try{ pc?.close(); }catch(_){}
+    try{ localStream?.getTracks()?.forEach(t => t.stop()); }catch(_){}
+    try{ remoteStream?.getTracks()?.forEach(t => t.stop()); }catch(_){}
+    setStatus('warn','Beendet');
+  }
 
-    if (t === 'clarity.live.context') {
-      CTX = { ...CTX, ...pl };
-      if (CTX.voice && !ALLOWED_VOICES.has(CTX.voice)) CTX.voice = 'verse';
-    }
-    if (t === 'clarity.live.start') {
-      if (pl?.uid) CTX.uid = pl.uid;
-      if (pl?.companyId) CTX.companyId = pl.companyId;
-      if (pl?.lang) CTX.lang = (pl.lang||'de').toLowerCase();
-      if (pl?.voice) CTX.voice = ALLOWED_VOICES.has(pl.voice) ? pl.voice : 'verse';
-      (async () => { if (!mediaStream) await preflight(); else startInterview(); })();
-    }
-    if (t === 'clarity.live.hangup') {
+  // -------------------- Parent-Messaging --------------------
+  window.addEventListener('message', (ev)=>{
+    const msg = ev.data || {};
+    if (msg.type === 'clarity.live.start') {
+      startInterview().catch(e => {
+        setStatus('err', 'Startfehler: ' + (e?.message||e));
+        log(e);
+      });
+    } else if (msg.type === 'clarity.live.record') {
+      // optional: enable/disable recording
+    } else if (msg.type === 'clarity.live.context') {
+      // optional: später in sendGreeting verwenden
+    } else if (msg.type === 'clarity.live.hangup') {
       hangup();
     }
   });
 
-  console.log('Token endpoint(s):', TOKEN_ENDPOINTS.join(', '), 'Mux endpoint(s):', MUX_ENDPOINTS.join(', '));
-  setStatus('Bereit.', 'Idle'); setAvatarState('idle');
-})();
-</script>
+  $btnStop.addEventListener('click', hangup);
+
+  // -------------------- Auto-Start (optional für Standalone-Tests) --------------------
+  // Für echte Einbindung startet die Host-Seite über postMessage (clarity.live.start)
+  // startInterview().catch(()=>{});
+  </script>
 </body>
 </html>
