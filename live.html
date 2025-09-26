@@ -71,8 +71,8 @@
   const Q = new URLSearchParams(location.search);
   const UID = (Q.get('uid')||'').trim();
   const COMPANY_ID = (Q.get('companyId')||'').trim();
-  const LANG = (Q.get('lang')||'de').toLowerCase();               // fallback
-  const VOICE = (Q.get('voice')||'verse').toLowerCase();          // fallback
+  const LANG = (Q.get('lang')||'de').toLowerCase();    // fallback
+  const VOICE = (Q.get('voice')||'verse').toLowerCase(); // fallback
 
   // -------------------- UI Els --------------------
   const $status = document.getElementById('status');
@@ -104,8 +104,7 @@
     'https://www.clarity-nvl.com/_functions/realtimeToken',
     '/api/wix-token-proxy'
   ];
-  // Upload läuft jetzt ausschließlich serverseitig über /api/mux-upload
-  const MUX_FALLBACK = '/api/mux-upload';
+  const MUX_FALLBACK = '/api/mux-upload'; // nur Server
 
   // -------------------- Global State --------------------
   let pc, DC;
@@ -297,43 +296,56 @@
         'Du bist der Interview-Assistent von Clarity.',
         'Stelle eine Frage nach der anderen. Antworte kurz und präzise.',
         'Sprich AUSSCHLIESSLICH Deutsch. Wechsle NIEMALS die Sprache.',
-        'Wenn der Kandidat um Wiederholung bittet, formuliere die letzte Frage kurz um.'
+        'Wenn der Kandidat um Wiederholung bittet, formuliere die letzte Frage kurz um.',
+        '[LANG:DE]'
       ].join(' ');
     } else {
       return [
         "You are Clarity's interview assistant.",
         'Ask one question at a time. Keep answers short and precise.',
         'Speak STRICTLY in English. NEVER switch languages.',
-        'If the candidate asks to repeat, briefly rephrase the last question.'
+        'If the candidate asks to repeat, briefly rephrase the last question.',
+        '[LANG:EN]'
       ].join(' ');
     }
   }
   function primeSession(effectiveLang, voice){
     const L = normLang(effectiveLang);
+    const sess = {
+      voice: voice || 'verse',
+      spoken_language: L,
+      input_audio_format: 'pcm16',
+      output_audio_format:'pcm16',
+      input_audio_transcription:{ model:'whisper-1', language: L, temperature:0 },
+      turn_detection:{ type:'server_vad', threshold:0.9, prefix_padding_ms:200, silence_duration_ms:700 },
+      modalities:['audio'],
+      instructions: makeSystemPrompt(L)
+    };
     // Haupt-Update
-    dcSend({
-      type:'session.update',
-      session:{
-        voice: voice || 'verse',
-        spoken_language: L,
-        input_audio_format: 'pcm16',
-        output_audio_format:'pcm16',
-        input_audio_transcription:{ model:'whisper-1', language: L },
-        turn_detection:{ type:'server_vad', threshold:0.9, prefix_padding_ms:200, silence_duration_ms:700 },
-        modalities:['audio'],
-        instructions: makeSystemPrompt(L)
-      }
-    });
-    // Hartnäckige Re-Updates (redundant gegen Language-Drift)
-    setTimeout(()=>dcSend({ type:'session.update', session:{ spoken_language:L, input_audio_transcription:{model:'whisper-1',language:L} }}), 150);
+    dcSend({ type:'session.update', session: sess });
+    // Sofort redundant
+    setTimeout(()=>dcSend({ type:'session.update', session:{ spoken_language:L, input_audio_transcription:{model:'whisper-1',language:L,temperature:0} }}), 150);
     setTimeout(()=>dcSend({ type:'session.update', session:{ spoken_language:L }}), 400);
+  }
+  // Für die ersten Sekunden Sprache “festklopfen”
+  function forceLangLock(effectiveLang){
+    const L = normLang(effectiveLang);
+    let n = 0;
+    const iv = setInterval(()=>{
+      n++;
+      dcSend({ type:'session.update', session:{ spoken_language:L, input_audio_transcription:{model:'whisper-1',language:L,temperature:0} }});
+      if (n >= 16) clearInterval(iv); // ~8s bei 500ms
+    }, 500);
   }
   function sendGreeting(companyName, effectiveLang){
     const L = normLang(effectiveLang);
     const t = (L==='de')
       ? `Willkommen! Dieses Interview wird im Auftrag von ${companyName||'Clarity'} geführt. Bitte antworte ausschließlich auf Deutsch. Bist du bereit zu starten?`
       : `Welcome! This interview is conducted on behalf of ${companyName||'Clarity'}. Please respond strictly in English. Are you ready to begin?`;
-    dcSend({ type:'response.create', response:{ conversation:'default', instructions:t, modalities:['audio'] } });
+    dcSend({
+      type:'response.create',
+      response:{ conversation:'interview', instructions:t, modalities:['audio'] }
+    });
   }
 
   // -------------------- Media / Recording --------------------
@@ -368,7 +380,7 @@
     setStatus('warn','Audio-Autoplay blockiert – bitte den Player anklicken oder Lautstärke öffnen.');
   }
 
-  // -------------------- Recording + reiner Server-Upload --------------------
+  // -------------------- Recording + Server-Upload --------------------
   function startRecording(){
     if (!localStream){
       log('[REC] cannot start – no localStream'); 
@@ -443,7 +455,7 @@
     setStatus('info','Initialisiere…');
     await setupLocalMedia();
 
-    // Token vom Server (liefert secret, lang, voice, model)
+    // Token vom Server
     const tok = await getRealtimeToken({ uid:UID, companyId:COMPANY_ID, lang:LANG, voice:VOICE, debug:true, allowNoInvite:true });
     const SECRET = tok.secret;
     const EFFECTIVE_LANG = tok.lang;
@@ -460,9 +472,10 @@
     // Aufnahme starten
     startRecording();
 
-    // Nach DC-Open: Sprache setzen + Begrüßung/erste Frage
+    // Nach DC-Open: Sprache setzen + Greeting + Lock
     await waitDCOpen();
     primeSession(EFFECTIVE_LANG, EFFECTIVE_VOICE);
+    forceLangLock(EFFECTIVE_LANG);
     sendGreeting('Clarity', EFFECTIVE_LANG);
 
     setStatus('ok','Verbunden • Interview läuft');
