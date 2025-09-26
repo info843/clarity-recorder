@@ -31,13 +31,14 @@
 <script>
 (() => {
   /* ------------------- Konfiguration ------------------- */
+  // WICHTIG: http-functions leben auf www-Domain → absolute URLs
   const TOKEN_ENDPOINTS = [
-    '/_functions/realtimeToken',      // bevorzugt: Wix http-function (Variante A)
-    '/api/wix-token-proxy'           // Fallback, wenn vorhanden
+    'https://www.clarity-nvl.com/_functions/realtimeToken', // Variante A (primär)
+    '/api/wix-token-proxy'                                  // optionaler Fallback
   ];
   const MUX_ENDPOINTS = [
-    '/_functions/muxDirectUpload',    // bevorzugt: Wix http-function
-    '/api/mux-upload'                 // Fallback
+    'https://www.clarity-nvl.com/_functions/muxDirectUpload', // Variante A (primär)
+    '/api/mux-upload'                                         // optionaler Fallback
   ];
   const MODEL_DEFAULT = 'gpt-4o-realtime-preview';
   const ALLOWED_VOICES = new Set(['alloy','ash','ballad','coral','echo','sage','shimmer','verse','marin','cedar']);
@@ -61,8 +62,6 @@
   let recChunks = [];
   let muxUploadUrl = null;
   let started = false;
-  let state = 'idle';
-  let vadSpeaking = false;
 
   /* ------------------- UI ------------------- */
   const $video = document.getElementById('local');
@@ -75,9 +74,7 @@
     $badge.textContent = badge ? `• ${badge}` : '';
   }
   function postToParent(obj){ try{ window.parent.postMessage(obj, '*'); }catch(_){} }
-  function setAvatarState(st){
-    postToParent({ type:'clarity.avatar', data:{ state: st } });
-  }
+  function setAvatarState(st){ postToParent({ type:'clarity.avatar', data:{ state: st } }); }
 
   /* ------------------- Audio Meter / Beep ------------------- */
   let audioCtx, analyser, meterRAF;
@@ -124,10 +121,9 @@
       $video.srcObject = mediaStream;
       await startLevelMeter(mediaStream);
       await warmBeep();
-      setStatus(CTX.lang.startsWith('de') ? 'Sagen Sie „Ich bin bereit“.': 'Please say “I am ready”.', 'Preflight');
-      state = 'preflight';
+      setStatus(CTX.lang.startsWith('de') ? 'Sagen Sie „Ich bin bereit“.' : 'Please say “I am ready”.', 'Preflight');
 
-      // einfache Keyword-Detektion (lokal) über Web Speech API (Fallback: Timeout)
+      // einfacher Keyword-Trigger: “Ich bin bereit”
       try{
         const rec = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
         rec.lang = CTX.lang.startsWith('de') ? 'de-DE' : 'en-US';
@@ -136,18 +132,14 @@
         rec.onresult = (e) => {
           const t = Array.from(e.results).map(r=>r[0].transcript).join(' ').toLowerCase().trim();
           if (!t) return;
-          // Triggerphrase
           if (t.includes(PREP_TRIGGER_TEXT_DE) || t.includes(PREP_TRIGGER_TEXT_EN)) {
-            rec.stop();
-            startInterview();
+            rec.stop(); startInterview();
           }
         };
-        rec.onerror = () => {}; // still
+        rec.onerror = () => {};
         rec.start();
-        // Timeout als Safety (10s)
         setTimeout(()=>{ try{ rec.stop(); }catch(_){} startInterview(); }, 10000);
       }catch(_){
-        // Kein SpeechRecognition verfügbar → Timeout
         setTimeout(startInterview, 3000);
       }
     }catch(e){
@@ -188,44 +180,53 @@
         console.warn('[Live] mux fetch failed', url, e);
       }
     }
-    return null; // wir können ohne URL starten; Upload dann disabled
+    return null;
   }
 
   /* ------------------- WebRTC → OpenAI Realtime ------------------- */
   async function connectRealtime(clientSecret, model){
     if (!mediaStream) throw new Error('no_media');
-    PC = new RTCPeerConnection();
-    // Lokale Tracks anhängen
+    const PCcfg = {}; // ggf. STUN/TURN
+    const PC = new RTCPeerConnection(PCcfg);
+    window.__pc = PC; // debug optional
     mediaStream.getTracks().forEach(tr => PC.addTrack(tr, mediaStream));
 
-    // DataChannel für Events
-    DC = PC.createDataChannel('oai-events');
+    // DataChannel (Transkript/Events)
+    const DC = PC.createDataChannel('oai-events');
     DC.onopen = () => console.log('[RTC] DC open');
     DC.onmessage = onRealtimeEvent;
 
-    // Remote-Audio empfangen
+    // Remote-Audio
     PC.ontrack = (e) => {
       const [stream] = e.streams;
-      if (!REMOTE_AUDIO) {
-        REMOTE_AUDIO = new Audio();
-        REMOTE_AUDIO.autoplay = true;
-        REMOTE_AUDIO.playsInline = true;
+      if (!window.__remote) {
+        window.__remote = new Audio();
+        window.__remote.autoplay = true;
+        window.__remote.playsInline = true;
       }
-      REMOTE_AUDIO.srcObject = stream;
+      window.__remote.srcObject = stream;
+
+      // >>> Autoplay-Fix: AudioContext resume + explizites play + One-Click-Fallback
+      const tryPlay = async () => {
+        try { await (audioCtx?.resume?.()); } catch(_) {}
+        try { await window.__remote.play(); }
+        catch (err) {
+          console.warn('[RTC] remote play blocked:', err);
+          setStatus(CTX.lang.startsWith('de') ? 'Bitte einmal klicken, um Audio zu aktivieren.' : 'Please click once to enable audio.', 'Audio');
+          const one = () => { window.__remote.play().catch(()=>{}); document.removeEventListener('click', one); };
+          document.addEventListener('click', one, { once:true });
+        }
+      };
+      tryPlay();
     };
 
-    // Offer erzeugen
     const offer = await PC.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
     await PC.setLocalDescription(offer);
 
-    // SDP an OpenAI senden
     const url = `https://api.openai.com/v1/realtime?model=${encodeURIComponent(model||MODEL_DEFAULT)}`;
     const ansResp = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${clientSecret}`,
-        'Content-Type': 'application/sdp'
-      },
+      headers: { 'Authorization': `Bearer ${clientSecret}`, 'Content-Type': 'application/sdp' },
       body: offer.sdp
     });
     const answerSdp = await ansResp.text();
@@ -237,21 +238,18 @@
   function onRealtimeEvent(ev){
     try{
       const msg = typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data;
-      // Beispiele: conversation.item.delta / response.output_text.delta / ...
       const type = msg?.type || msg?.event || '';
-      // einfache Transkript-Durchleitung:
       if (type.includes('delta') && msg?.delta) {
         postToParent({ type:'rt.transcript.partial', data:{ text: String(msg.delta) } });
       }
       if (type.includes('completed')) {
         postToParent({ type:'rt.transcript.final', data:{} });
       }
-    }catch(e){
-      // ignore
-    }
+    }catch(e){}
   }
 
   /* ------------------- Aufnahme & Upload (Mux) ------------------- */
+  let mediaRecorder, recChunks=[];
   function startRecording(){
     if (!mediaStream) return;
     try{
@@ -270,9 +268,7 @@
       };
       mediaRecorder.start(1000);
       console.log('[REC] started');
-    }catch(e){
-      console.warn('[REC] cannot start', e);
-    }
+    }catch(e){ console.warn('[REC] cannot start', e); }
   }
   function stopRecording(){
     try{ if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop(); }catch(_){}
@@ -282,26 +278,21 @@
   async function startInterview(){
     if (started) return;
     started = true;
-    setAvatarState('speaking'); setStatus(CTX.lang.startsWith('de')? 'Starte Interview…':'Starting interview…', 'Live');
+    setAvatarState('speaking');
+    setStatus(CTX.lang.startsWith('de')? 'Starte Interview…':'Starting interview…', 'Live');
 
-    // 1) Token holen
     const token = await getRealtimeToken({ uid: CTX.uid, companyId: CTX.companyId, lang: CTX.lang, voice: CTX.voice });
     if (!token || !token.ok || !token.client_secret) {
-      setStatus(CTX.lang.startsWith('de')? 'Token-Fehler.':'Token error.', 'Error');
-      setAvatarState('idle');
-      return;
+      setStatus(CTX.lang.startsWith('de')
+        ? 'Verbindungsfehler (Token). Bitte Seite neu laden oder später erneut versuchen.'
+        : 'Connection error (token). Please refresh and try again.', 'Error');
+      setAvatarState('idle'); return;
     }
 
-    // 2) (Optional) Mux Direct Upload URL holen
     muxUploadUrl = await getMuxUploadUrl({ uid: CTX.uid });
-
-    // 3) Realtime verbinden
     await connectRealtime(token.client_secret, token.model || MODEL_DEFAULT);
-
-    // 4) Aufnahme starten (kein Pause, kein Resume)
     startRecording();
 
-    // 5) minimaler Gesprächs-Flow (Server macht den Rest per Turn-Taking)
     setAvatarState('speaking');
     setStatus(CTX.lang.startsWith('de')? 'Assistent spricht…':'Assistant speaking…','Live');
     setTimeout(()=>{ setAvatarState('listening'); setStatus(CTX.lang.startsWith('de')? 'Bitte antworten.':'Please respond.','Live'); }, 1200);
@@ -317,33 +308,23 @@
       CTX = { ...CTX, ...pl };
       if (CTX.voice && !ALLOWED_VOICES.has(CTX.voice)) CTX.voice = 'verse';
     }
-    if (t === 'clarity.live.record') {
-      // Nur „enabled: true/false“ wird akzeptiert; Pause nicht vorgesehen → ignorieren
-    }
     if (t === 'clarity.live.start') {
-      // UID/Company/lang/voice können hier nochmal übergeben werden
       if (pl?.uid) CTX.uid = pl.uid;
       if (pl?.companyId) CTX.companyId = pl.companyId;
       if (pl?.lang) CTX.lang = (pl.lang||'de').toLowerCase();
       if (pl?.voice) CTX.voice = ALLOWED_VOICES.has(pl.voice) ? pl.voice : 'verse';
-      // Preflight, dann Start
-      (async () => {
-        if (!mediaStream) await preflight();  // preflight inkl. „Ich bin bereit“-Trigger
-        else startInterview();
-      })();
+      (async () => { if (!mediaStream) await preflight(); else startInterview(); })();
     }
     if (t === 'clarity.live.hangup') {
       stopRecording();
-      setAvatarState('idle');
-      setStatus(CTX.lang.startsWith('de')? 'Beendet.':'Ended.','');
-      try { PC?.close?.(); } catch(_){}
+      setAvatarState('idle'); setStatus(CTX.lang.startsWith('de')? 'Beendet.':'Ended.','');
+      try { window.__pc?.close?.(); } catch(_){}
     }
   });
 
-  /* ------------------- Auto-Init (Badge / Konsolen-Info) ------------------- */
+  /* ------------------- Auto-Init ------------------- */
   console.log('Token endpoint(s):', TOKEN_ENDPOINTS.join(', '), 'Mux endpoint(s):', MUX_ENDPOINTS.join(', '));
-  setStatus('Bereit.', 'Idle');
-  setAvatarState('idle');
+  setStatus('Bereit.', 'Idle'); setAvatarState('idle');
 })();
 </script>
 </body>
