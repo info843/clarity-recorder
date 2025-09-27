@@ -19,7 +19,7 @@
     video{width:100%;max-height:320px;background:#000;border-radius:8px}
     audio{width:100%}
     .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-    .log{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#9ca3af;white-space:pre-wrap;max-height:200px;overflow:auto}
+    .log{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#9ca3af;white-space:pre-wrap;max-height:220px;overflow:auto}
     .ghost{opacity:.65}
   </style>
 </head>
@@ -71,8 +71,8 @@
   const Q = new URLSearchParams(location.search);
   const UID = (Q.get('uid')||'').trim();
   const COMPANY_ID = (Q.get('companyId')||'').trim();
-  const LANG = (Q.get('lang')||'de').toLowerCase();    // fallback
-  const VOICE = (Q.get('voice')||'verse').toLowerCase(); // fallback
+  const LANG = (Q.get('lang')||'de').toLowerCase();    // gewünschte Interview-Sprache
+  const VOICE = (Q.get('voice')||'verse').toLowerCase();
 
   // -------------------- UI Els --------------------
   const $status = document.getElementById('status');
@@ -104,7 +104,8 @@
     'https://www.clarity-nvl.com/_functions/realtimeToken',
     '/api/wix-token-proxy'
   ];
-  const MUX_FALLBACK = '/api/mux-upload'; // nur Server
+  const MUX_WIX = 'https://www.clarity-nvl.com/_functions/muxDirectUpload'; // Client→Mux direct
+  const MUX_FALLBACK = '/api/mux-upload';                                    // Server→Mux
 
   // -------------------- Global State --------------------
   let pc, DC;
@@ -130,11 +131,9 @@
       const t0 = Date.now();
       const iv = setInterval(() => {
         if (dcIsOpen && DC?.readyState === 'open') {
-          clearInterval(iv);
-          resolve();
+          clearInterval(iv); resolve();
         } else if (Date.now() - t0 > timeoutMs) {
-          clearInterval(iv);
-          resolve(); // best effort
+          clearInterval(iv); resolve(); // best effort
         }
       }, 50);
     });
@@ -290,13 +289,15 @@
     if (s.startsWith('en')) return 'en';
     return 'de';
   }
+
   function makeSystemPrompt(lang){
     if (normLang(lang)==='de'){
       return [
         'Du bist der Interview-Assistent von Clarity.',
         'Stelle eine Frage nach der anderen. Antworte kurz und präzise.',
         'Sprich AUSSCHLIESSLICH Deutsch. Wechsle NIEMALS die Sprache.',
-        'Wenn der Kandidat um Wiederholung bittet, formuliere die letzte Frage kurz um.',
+        'Wenn der Kandidat in einer anderen Sprache spricht, antworte trotzdem auf Deutsch und bitte ihn kurz, auf Deutsch fortzufahren.',
+        'Übersetze nicht; halte dich an die Zielsprache.',
         '[LANG:DE]'
       ].join(' ');
     } else {
@@ -304,11 +305,13 @@
         "You are Clarity's interview assistant.",
         'Ask one question at a time. Keep answers short and precise.',
         'Speak STRICTLY in English. NEVER switch languages.',
-        'If the candidate asks to repeat, briefly rephrase the last question.',
+        'If the candidate speaks another language, still reply in English and briefly ask them to continue in English.',
+        'Do not translate; stick to the target language.',
         '[LANG:EN]'
       ].join(' ');
     }
   }
+
   function primeSession(effectiveLang, voice){
     const L = normLang(effectiveLang);
     const sess = {
@@ -319,33 +322,36 @@
       input_audio_transcription:{ model:'whisper-1', language: L, temperature:0 },
       turn_detection:{ type:'server_vad', threshold:0.9, prefix_padding_ms:200, silence_duration_ms:700 },
       modalities:['audio'],
+      // einige Anbieter akzeptieren explizite voice-locale Felder; schaden nicht:
+      voice_language: L,
+      tts_language: L,
       instructions: makeSystemPrompt(L)
     };
-    // Haupt-Update
+    // Haupt-Update + redundante Folge-Updates (hartes Lock)
     dcSend({ type:'session.update', session: sess });
-    // Sofort redundant
     setTimeout(()=>dcSend({ type:'session.update', session:{ spoken_language:L, input_audio_transcription:{model:'whisper-1',language:L,temperature:0} }}), 150);
-    setTimeout(()=>dcSend({ type:'session.update', session:{ spoken_language:L }}), 400);
+    setTimeout(()=>dcSend({ type:'session.update', session:{ spoken_language:L } }), 400);
   }
-  // Für die ersten Sekunden Sprache “festklopfen”
+
+  // Sprache in den ersten Sekunden “festklopfen”
   function forceLangLock(effectiveLang){
     const L = normLang(effectiveLang);
     let n = 0;
     const iv = setInterval(()=>{
       n++;
       dcSend({ type:'session.update', session:{ spoken_language:L, input_audio_transcription:{model:'whisper-1',language:L,temperature:0} }});
-      if (n >= 16) clearInterval(iv); // ~8s bei 500ms
+      if (n >= 16) clearInterval(iv); // ~8s
     }, 500);
   }
+
   function sendGreeting(companyName, effectiveLang){
     const L = normLang(effectiveLang);
     const t = (L==='de')
       ? `Willkommen! Dieses Interview wird im Auftrag von ${companyName||'Clarity'} geführt. Bitte antworte ausschließlich auf Deutsch. Bist du bereit zu starten?`
       : `Welcome! This interview is conducted on behalf of ${companyName||'Clarity'}. Please respond strictly in English. Are you ready to begin?`;
-    dcSend({
-      type:'response.create',
-      response:{ conversation:'interview', instructions:t, modalities:['audio'] }
-    });
+    // Kleine “Cancel”-Bremse, dann Greeting — minimiert Race-Conditions
+    dcSend({ type:'response.cancel', response:{} });
+    dcSend({ type:'response.create', response:{ conversation:'interview', instructions:t, modalities:['audio'] } });
   }
 
   // -------------------- Media / Recording --------------------
@@ -380,7 +386,61 @@
     setStatus('warn','Audio-Autoplay blockiert – bitte den Player anklicken oder Lautstärke öffnen.');
   }
 
-  // -------------------- Recording + Server-Upload --------------------
+  // -------------------- Upload: zuerst Direct PUT zu Mux (Wix), dann Fallback (Vercel) --------------------
+  async function requestMuxDirect(uid){
+    try{
+      log('[Live] Request Mux upload…', MUX_WIX, JSON.stringify({ uid }));
+      const r = await fetch(MUX_WIX, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ uid }) });
+      const j = await r.json().catch(()=> ({}));
+      if (j?.ok && j?.upload?.url) return j.upload.url;
+    }catch(e){ log('[Live] muxDirect error', e); }
+    return null;
+  }
+
+  async function putMux(url, blob, tries=3){
+    for (let i=0;i<tries;i++){
+      try{
+        $recProg.style.width = `${Math.min(90, 10 + i*20)}%`;
+        const res = await fetch(url, {
+          method:'PUT',
+          mode:'cors',
+          cache:'no-store',
+          redirect:'follow',
+          headers:{ 'Content-Type':'application/octet-stream' },
+          body: blob
+        });
+        if (res.ok) return true;
+        log('[REC] mux PUT not ok', res.status);
+      }catch(e){
+        log('[REC] mux PUT error', e);
+      }
+      await new Promise(r=>setTimeout(r, 700*(i+1)));
+    }
+    return false;
+  }
+
+  async function uploadViaServer(blob){
+    try{
+      const fd = new FormData();
+      fd.append('file', blob, `${UID}.webm`);
+      fd.append('uid', UID);
+      fd.append('companyId', COMPANY_ID||'');
+      const r = await fetch(MUX_FALLBACK, { method:'POST', body: fd });
+      if (!r.ok){
+        const tt = await r.text().catch(()=>String(r.status));
+        throw new Error('fallback_not_ok: '+tt);
+      }
+      const j = await r.json().catch(()=> ({}));
+      if (j?.ok){
+        return { ok:true, uploadId: j.uploadId || (UID+'-'+Date.now()) };
+      }
+      throw new Error('fallback_not_ok_json');
+    }catch(e){
+      return { ok:false, error:String(e?.message||e) };
+    }
+  }
+
+  // -------------------- Recording --------------------
   function startRecording(){
     if (!localStream){
       log('[REC] cannot start – no localStream'); 
@@ -416,29 +476,31 @@
       $muxState.textContent='uploading';
       $recProg.style.width='10%';
 
-      try{
-        const fd = new FormData();
-        fd.append('file', blob, `${UID}.webm`);
-        fd.append('uid', UID);
-        fd.append('companyId', COMPANY_ID||'');
-        const r = await fetch(MUX_FALLBACK, { method:'POST', body: fd });
-        if (!r.ok){
-          const tt = await r.text().catch(()=>String(r.status));
-          throw new Error('fallback_not_ok: '+tt);
-        }
-        const j = await r.json().catch(()=> ({}));
-        if (j?.ok){
+      // Weg A: Direct PUT → Mux (Wix function)
+      let directUrl = await requestMuxDirect(UID);
+      if (directUrl){
+        const ok = await putMux(directUrl, blob, 3);
+        if (ok){
           $recProg.style.width='100%';
           $muxState.textContent='uploaded';
-          parent?.postMessage?.({ type:'mux.upload.done', data:{ uploadId: j.uploadId || (UID+'-'+Date.now()) } }, '*');
-          log('[REC] upload ok');
-        } else {
-          throw new Error('fallback_not_ok_json');
+          parent?.postMessage?.({ type:'mux.upload.done', data:{ uploadId: `${UID}-${Date.now()}` } }, '*');
+          log('[REC] upload ok (direct PUT via Wix)');
+          return;
         }
-      }catch(e){
+        log('[REC] direct PUT failed – fallback to server');
+      }
+
+      // Weg B: Fallback → Vercel serverless
+      const up = await uploadViaServer(blob);
+      if (up.ok){
+        $recProg.style.width='100%';
+        $muxState.textContent='uploaded';
+        parent?.postMessage?.({ type:'mux.upload.done', data:{ uploadId: up.uploadId } }, '*');
+        log('[REC] upload ok (server fallback)');
+      } else {
         $muxState.textContent='upload failed';
-        parent?.postMessage?.({ type:'mux.upload.error', data:{ message:String(e?.message||e) } }, '*');
-        log('[REC] upload failed', e);
+        parent?.postMessage?.({ type:'mux.upload.error', data:{ message: up.error || 'upload_failed' } }, '*');
+        log('[REC] upload failed', up.error||'');
       }
     };
 
@@ -472,11 +534,14 @@
     // Aufnahme starten
     startRecording();
 
-    // Nach DC-Open: Sprache setzen + Greeting + Lock
+    // Nach DC-Open: mehrfaches Language-Locking + Greeting
     await waitDCOpen();
+    // Sofort cancel etwaiger Auto-Outputs
+    dcSend({ type:'response.cancel', response:{} });
     primeSession(EFFECTIVE_LANG, EFFECTIVE_VOICE);
     forceLangLock(EFFECTIVE_LANG);
-    sendGreeting('Clarity', EFFECTIVE_LANG);
+    // minimale Verzögerung, dann Greeting in Ziel-Sprache
+    setTimeout(()=> sendGreeting('Clarity', EFFECTIVE_LANG), 120);
 
     setStatus('ok','Verbunden • Interview läuft');
   }
