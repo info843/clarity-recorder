@@ -19,7 +19,7 @@
     video{width:100%;max-height:320px;background:#000;border-radius:8px}
     audio{width:100%}
     .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-    .log{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#9ca3af;white-space:pre-wrap;max-height:220px;overflow:auto}
+    .log{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#9ca3af;white-space:pre-wrap;max-height:240px;overflow:auto}
     .ghost{opacity:.65}
   </style>
 </head>
@@ -48,7 +48,7 @@
           <audio id="remoteAudio" controls></audio>
           <div class="muted" style="margin:8px 0 4px">System</div>
           <div class="bar"><i id="sysLevel"></i></div>
-          <div class="muted" style="margin-top:10px">Hinweis: Bei blockiertem Autoplay ggf. in den Player klicken.</div>
+          <div class="muted" style="margin-top:10px">Hinweis: Bei blockiertem Autoplay ggf. einmal in den Player klicken.</div>
         </div>
       </div>
     </section>
@@ -67,14 +67,14 @@
   </div>
 
   <script>
-  // -------------------- Query --------------------
+  // -------------------- Query / Kontext --------------------
   const Q = new URLSearchParams(location.search);
   const UID = (Q.get('uid')||'').trim();
   const COMPANY_ID = (Q.get('companyId')||'').trim();
   const LANG = (Q.get('lang')||'de').toLowerCase();
   const VOICE = (Q.get('voice')||'verse').toLowerCase();
 
-  // -------------------- UI Els -------------------
+  // -------------------- UI Els --------------------
   const $status = document.getElementById('status');
   const $badge  = document.getElementById('audioBadge');
   const $mic    = document.getElementById('micLevel');
@@ -88,33 +88,30 @@
   const $recProg  = document.getElementById('recProgress');
 
   function log(...a){
-    console.log(...a);
-    const s = a.map(x => typeof x==='object' ? JSON.stringify(x) : String(x)).join(' ');
-    $log.textContent += s + "\n";
-    $log.scrollTop = $log.scrollHeight;
+    try {
+      console.log(...a);
+      const s = a.map(x => typeof x==='object' ? JSON.stringify(x) : String(x)).join(' ');
+      $log.textContent += s + "\n";
+      $log.scrollTop = $log.scrollHeight;
+    } catch(_) {}
   }
   function setStatus(kind, text){
     $status.textContent = text || kind || '';
-    $status.style.background = kind==='err' ? '#3b0d0d' : (kind==='ok' ? '#0d3b2a' : (kind==='warn' ? '#3b2f0d' : '#0f172a'));
-    $status.style.borderColor = kind==='err' ? '#7f1d1d' : (kind==='ok' ? '#14532d' : (kind==='warn' ? '#7f6a1d' : '#24314f'));
+    $status.style.background = kind==='err' ? '#3b0d0d' : (kind==='ok' ? '#0d3b2a' : '#0f172a');
+    $status.style.borderColor = kind==='err' ? '#7f1d1d' : (kind==='ok' ? '#14532d' : '#24314f');
   }
 
-  // -------------------- Endpunkte ----------------
-  const TOKEN_URL = 'https://www.clarity-nvl.com/_functions/realtimeToken';
-  const WIX_UPLOAD_URL = 'https://www.clarity-nvl.com/_functions/wixMediaUpload';
-
-  // -------------------- Global State -------------
+  // -------------------- Globals --------------------
   let pc, DC;
   let localStream, mixedStream, mediaRecorder;
   let remoteStream;
-  let audioCtx, remoteSource;
-  let destroyed = false;
+  let audioCtx, remoteSource, sysAnalyser, micAnalyser;
+  let stopRequested = false;
 
   // ===== DC-Queue + Wait =====
   let dcIsOpen = false;
   let dcQueue = [];
   function dcSend(obj){
-    if (destroyed) return;
     try{
       if (dcIsOpen && DC && DC.readyState === 'open') {
         DC.send(JSON.stringify(obj));
@@ -123,53 +120,62 @@
       }
     }catch(e){ console.warn('[RTC] dcSend fail', e); }
   }
-  function waitDCOpen(timeoutMs = 6000){
+  function waitDCOpen(timeoutMs = 5000){
     if (dcIsOpen && DC?.readyState === 'open') return Promise.resolve();
     return new Promise(resolve => {
       const t0 = Date.now();
       const iv = setInterval(() => {
         if (dcIsOpen && DC?.readyState === 'open') {
-          clearInterval(iv); resolve();
+          clearInterval(iv);
+          resolve();
         } else if (Date.now() - t0 > timeoutMs) {
-          clearInterval(iv); resolve();
+          clearInterval(iv);
+          resolve();
         }
       }, 50);
     });
   }
 
-  // -------------------- Token --------------------
+  // -------------------- HTTP Helpers --------------------
   async function getRealtimeToken(payload){
-    log('[Live] Fetching token…', TOKEN_URL, JSON.stringify(payload));
-    const r = await fetch(TOKEN_URL,{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
-    if (!r.ok){
-      const t = await r.text().catch(()=>r.statusText);
-      throw new Error('token_http_'+r.status+': '+t);
-    }
-    const data = await r.json().catch(e=>{ throw new Error('token_json_parse: '+e); });
-    log('[Live] Token response:', r.status, data);
-    if (!data?.ok) throw new Error('token_error: '+(data?.error||'unknown')+' '+(data?.message||''));
-    const sec = extractClientSecret(data);
-    if (!sec) throw new Error('client_secret_missing');
-    // Debug-Ausgabe der „effektiven“ Parameter
-    log('[Live] effective', { lang:data.reportLang||payload.lang, voice:data.voice, model:data.model });
-    return { secret: sec, ctx: data };
-  }
-  function extractClientSecret(obj){
-    if (!obj || typeof obj !== 'object') return null;
-    if (typeof obj.client_secret === 'string') return obj.client_secret;
-    if (obj.client_secret && typeof obj.client_secret.value === 'string') return obj.client_secret.value;
-    if (obj.data && typeof obj.data.client_secret === 'string') return obj.data.client_secret;
-    if (obj.token && typeof obj.token === 'string') return obj.token;
-    if (obj.clientSecret && typeof obj.clientSecret === 'string') return obj.clientSecret;
-    return null;
+    const url = '/_functions/realtimeToken';
+    const r = await fetch(url,{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+    if (!r.ok) throw new Error('token_fetch_failed');
+    const data = await r.json();
+    log('[Live] Token response:', JSON.stringify(data));
+    return data;
   }
 
-  // -------------------- Realtime WebRTC ----------
+  async function uploadToWixMedia(blob, filename, mimeType){
+    // Blob -> Base64 (kleine util)
+    const base64 = await new Promise((resolve,reject)=>{
+      const fr = new FileReader();
+      fr.onload = () => resolve(fr.result.split(',')[1]);
+      fr.onerror = () => reject(fr.error);
+      fr.readAsDataURL(blob);
+    });
+
+    const r = await fetch('/_functions/wixMediaUpload', {
+      method:'POST',
+      headers:{ 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base64, filename, mimeType })
+    });
+
+    let j = {};
+    try { j = await r.json(); } catch(_){}
+    if (!r.ok || !j?.ok) {
+      log('[REC] wix upload error payload=', JSON.stringify(j||{}));
+      throw new Error('wix_media_upload_failed');
+    }
+    return j.fileUrl;
+  }
+
+  // -------------------- Realtime WebRTC --------------------
   async function connectRealtime(clientSecret){
     pc = new RTCPeerConnection({ iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }] });
 
     pc.onconnectionstatechange = () => {
-      log('[RTC] connected');
+      if (pc.connectionState === 'connected') log('[RTC] connected');
       if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected'){
         setStatus('err','Verbindung unterbrochen');
       }
@@ -186,13 +192,13 @@
         audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
         await audioCtx.resume().catch(()=>{});
         remoteSource = audioCtx.createMediaStreamSource(remoteStream);
-        const analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 512;
-        const buf = new Uint8Array(analyser.frequencyBinCount);
-        remoteSource.connect(analyser);
+        sysAnalyser = audioCtx.createAnalyser();
+        sysAnalyser.fftSize = 512;
+        const buf = new Uint8Array(sysAnalyser.frequencyBinCount);
+        remoteSource.connect(sysAnalyser);
         (function tick(){
-          if (destroyed) return;
-          analyser.getByteTimeDomainData(buf);
+          if (!sysAnalyser) return;
+          sysAnalyser.getByteTimeDomainData(buf);
           let dev=0; for(let i=0;i<buf.length;i++) dev=Math.max(dev, Math.abs(buf[i]-128));
           $sys.style.width = Math.min(100, dev*2) + '%';
           requestAnimationFrame(tick);
@@ -201,16 +207,18 @@
 
       // Playback Safety
       try {
-        $remoteA.muted = false; $remoteA.volume = 1.0;
-        $remoteA.setAttribute('autoplay',''); $remoteA.setAttribute('playsinline','');
+        $remoteA.muted = false;
+        $remoteA.volume = 1.0;
+        $remoteA.setAttribute('autoplay','');
+        $remoteA.setAttribute('playsinline','');
         await $remoteA.play();
         log('[RTC] remote audio playing.');
       } catch(e) {
         log('[RTC] play() blocked', e);
-        showAudioGate();
+        setStatus('warn','Audio-Autoplay blockiert – bitte Player anklicken.');
       }
 
-      // Badge „Audio in“
+      // Audio „alive“ Badge
       try {
         const levelAnalyser = audioCtx.createAnalyser();
         levelAnalyser.fftSize = 1024;
@@ -218,7 +226,7 @@
         const tbuf = new Uint8Array(levelAnalyser.frequencyBinCount);
         let lastNZ = 0;
         (function ping(){
-          if (destroyed) return;
+          if (!levelAnalyser) return;
           levelAnalyser.getByteTimeDomainData(tbuf);
           let dev = 0;
           for (let i=0;i<tbuf.length;i++) dev = Math.max(dev, Math.abs(tbuf[i]-128));
@@ -229,7 +237,7 @@
       }catch(_){}
     };
 
-    // Local Tracks
+    // Lokale Tracks
     if (localStream){
       localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
     }
@@ -271,81 +279,72 @@
     let data = ev && ev.data;
     try{ if (typeof data === 'string') data = JSON.parse(data); }catch(_){}
     if (!data) return;
-
     if (data.type === 'response.state' && data.state){
       parent?.postMessage?.({ type:'clarity.avatar', data:{ state:data.state } }, '*');
     }
   }
 
-  // -------------- Session-Priming (Mehrfach) ----
-  function makeSystemPrompt(ctx){
-    const langLine = ctx.reportLang === 'de'
-      ? 'Sprich ausschließlich Deutsch. Wechsle zu keinem Zeitpunkt die Sprache.'
-      : 'Speak strictly in English. Do not switch languages at any time.';
-    // Mini-Interviewmodus
-    const base = ctx.reportLang === 'de'
-      ? 'Du bist Claritys Interview-Assistent. Stelle kurze Fragen, eine nach der anderen. Warte immer auf die Antwort.'
-      : 'You are Clarity’s interview assistant. Ask short, one-at-a-time questions. Always wait for the answer.';
-    return [base, langLine].join(' ');
-  }
-  function primeSession(reportLang){
-    const spoken = reportLang === 'de' ? 'de' : 'en';
-    dcSend({
-      type:'session.update',
-      session:{
-        voice: VOICE,
-        spoken_language: spoken,
-        input_audio_format:'pcm16',
-        output_audio_format:'pcm16',
-        input_audio_transcription:{ model:'whisper-1', language: spoken },
-        turn_detection:{ type:'server_vad', threshold:0.9, prefix_padding_ms:200, silence_duration_ms:700 },
-        modalities:['audio'],
-      }
-    });
-  }
-  function forceLangAgain(reportLang, delayMs){
-    setTimeout(()=> primeSession(reportLang), delayMs);
-  }
-  function sendWelcome(ctx){
-    const welcome = (ctx.reportLang==='de')
-      ? `Willkommen! Dieses Interview wird im Auftrag von ${ctx.companyName||'Clarity'} geführt. Sind Sie bereit zu starten?`
-      : `Welcome! This interview is conducted on behalf of ${ctx.companyName||'Clarity'}. Are you ready to begin?`;
-    dcSend({ type:'response.create', response:{ conversation:'default', instructions: welcome, modalities:['audio'] }});
-  }
-  function sendFirstQuestion(ctx){
-    const q = ctx.firstQuestion && String(ctx.firstQuestion).trim();
-    if (!q) return;
-    const instr = (ctx.reportLang==='de')
-      ? `Erste Frage: ${q}`
-      : `First question: ${q}`;
-    dcSend({ type:'response.create', response:{ conversation:'default', instructions: instr, modalities:['audio'] }});
+  // -------------------- Session-Priming (Interview) --------------------
+  function makeSystemPrompt(meta){
+    const spoken = meta.lang === 'de' ? 'de' : 'en';
+    const lock = spoken === 'de'
+      ? 'Sprich ausschließlich Deutsch. Wechsle die Sprache NIE.'
+      : 'Speak strictly English. Do not switch languages.';
+    const interviewRulesDe =
+      'Du bist der Interview-Assistent. Stelle Fragen nacheinander. Maximal eine Rückfrage pro Frage. Bleibe beim Thema der Stelle. ' +
+      'Arbeite ein evtl. vorhandenes Firmenskript ab. Sorge für genug Abdeckung für eine Analyse. ' +
+      'Am Ende frage, ob der Bewerber noch Fragen zur Stellenbeschreibung hat (max. 5). Unbekanntes höflich für ein persönliches Gespräch vormerken.';
+    const interviewRulesEn =
+      'You are the interview assistant. Ask one question at a time. At most one follow-up per question. Stay on the job topic. ' +
+      'If the company provided a script, work through it. Ensure enough coverage for an analysis. ' +
+      'At the end, ask if the candidate has questions about the job description (max 5). For unknown details, suggest a follow-up with the company.';
+    return [
+      lock,
+      (spoken==='de'?interviewRulesDe:interviewRulesEn)
+    ].join(' ');
   }
 
-  // -------------------- Media / Recording --------
+  function primeSession(meta){
+    const spoken = meta.lang === 'de' ? 'de' : 'en';
+    const base = {
+      voice: VOICE,
+      spoken_language: spoken,
+      input_audio_format:'pcm16',
+      output_audio_format:'pcm16',
+      input_audio_transcription:{ model:'whisper-1', language: spoken },
+      turn_detection:{ type:'server_vad', threshold:0.9, prefix_padding_ms:200, silence_duration_ms:700 },
+      modalities:['audio'],
+      instructions: makeSystemPrompt(meta)
+    };
+    // Doppelt senden um hart zu „locken“
+    dcSend({ type:'session.update', session: base });
+    dcSend({ type:'session.update', session: base });
+  }
+
+  function say(text){
+    dcSend({
+      type:'response.create',
+      response:{ conversation:'default', instructions:text, modalities:['audio'] }
+    });
+  }
+
+  // -------------------- Media / Recording (Remote + Mic gemischt) --------------------
   async function setupLocalMedia(){
-    try{
-      localStream = await navigator.mediaDevices.getUserMedia({
-        audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true },
-        video:true
-      });
-    } catch(e) {
-      setStatus('err','Mic/Kamera blockiert. In Browser Freigabe erteilen.');
-      log('[Media] getUserMedia error', e);
-      throw e;
-    }
+    const perm = { audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true }, video:true };
+    localStream = await navigator.mediaDevices.getUserMedia(perm);
     $localV.srcObject = localStream;
 
     // Mic-Level
     try{
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
       const src = ctx.createMediaStreamSource(localStream);
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 512;
-      const buf = new Uint8Array(analyser.frequencyBinCount);
-      src.connect(analyser);
+      micAnalyser = ctx.createAnalyser();
+      micAnalyser.fftSize = 512;
+      const buf = new Uint8Array(micAnalyser.frequencyBinCount);
+      src.connect(micAnalyser);
       (function tick(){
-        if (destroyed) return;
-        analyser.getByteTimeDomainData(buf);
+        if (!micAnalyser) return;
+        micAnalyser.getByteTimeDomainData(buf);
         let dev=0; for(let i=0;i<buf.length;i++) dev=Math.max(dev, Math.abs(buf[i]-128));
         $mic.style.width = Math.min(100, dev*2) + '%';
         requestAnimationFrame(tick);
@@ -353,38 +352,11 @@
     }catch(_){}
   }
 
-  function ensureAudioPlayback(){ return $remoteA.play().then(()=>true).catch(()=>false); }
-  function showAudioGate(){ setStatus('warn','Autoplay blockiert – bitte kurz in den Player klicken.'); }
-
-  // ---------- Upload: direkt zu Wix Media --------
-  async function blobToBase64(blob){
-    const buf = await blob.arrayBuffer();
-    let binary = '';
-    const bytes = new Uint8Array(buf);
-    for (let i=0;i<bytes.length;i++) binary += String.fromCharCode(bytes[i]);
-    return btoa(binary); // raw b64 (ohne data: prefix)
-  }
-  async function uploadToWixMedia(blob){
-    const b64 = await blobToBase64(blob);
-    const payload = {
-      base64: 'data:video/webm;base64,' + b64,
-      fileName: `${UID || 'IV'}-${Date.now()}.webm`,
-      uid: UID, companyId: COMPANY_ID
-    };
-    const r = await fetch(WIX_UPLOAD_URL, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-    const text = await r.text();
-    let js = null; try{ js = text ? JSON.parse(text) : null; }catch{}
-    if (!r.ok) throw new Error('wix_upload_http_'+r.status+': '+text);
-    if (!js?.ok) {
-      log('[REC] wix upload error payload=', js);
-      throw new Error(js?.error || 'wix_media_upload_failed');
-    }
-    log('[REC] wix upload ok', js);
-    return js;
-  }
-
   function startRecording(){
-    if (!localStream){ log('[REC] cannot start – no localStream'); return; }
+    if (!localStream){
+      log('[REC] cannot start – no localStream');
+      return;
+    }
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const dest = ctx.createMediaStreamDestination();
 
@@ -412,17 +384,17 @@
       const blob = new Blob(chunks, { type:'video/webm' });
       log('[REC] stop, size=', blob.size);
 
-      try{
-        $muxState.textContent='uploading';
+      try {
         $recProg.style.width = '30%';
-        const res = await uploadToWixMedia(blob);
+        const url = await uploadToWixMedia(blob, `${UID}-${Date.now()}.webm`, 'video/webm');
         $recProg.style.width = '100%';
         $muxState.textContent='uploaded';
-        parent?.postMessage?.({ type:'wix.upload.done', data: res }, '*');
-      } catch(e){
+        parent?.postMessage?.({ type:'wix.upload.done', data:{ fileUrl:url } }, '*');
+        log('[REC] upload ok', url);
+      } catch (e) {
         $muxState.textContent='upload failed';
+        parent?.postMessage?.({ type:'wix.upload.error', data:{ message:String(e && e.message || e) } }, '*');
         log('[REC] upload failed', e);
-        parent?.postMessage?.({ type:'wix.upload.error', data:{ message: String(e) } }, '*');
       }
     };
 
@@ -434,55 +406,83 @@
     try{ mixedStream?.getTracks()?.forEach(t => t.stop()); }catch(_){}
   }
 
-  // -------------------- Start / Stop Flow --------
+  // -------------------- Start / Stop Flow --------------------
   async function startInterview(){
-    destroyed = false;
     setStatus('info','Initialisiere…');
+    try {
+      await setupLocalMedia();
+    } catch (e) {
+      setStatus('err','Mikro/Kamera nicht erlaubt.');
+      log(e);
+      return;
+    }
 
-    // Mic/Camera
-    await setupLocalMedia();
+    // Token + Meta
+    const tokenRes = await getRealtimeToken({ uid:UID, companyId:COMPANY_ID, lang:LANG, voice:VOICE, debug:true, allowNoInvite:true });
+    if (!tokenRes?.client_secret) throw new Error('token_missing');
+    log('[Live] effective', JSON.stringify({ lang:tokenRes.lang, voice:tokenRes.voice, model:tokenRes.model }));
 
-    // Token
-    const { secret, ctx } = await getRealtimeToken({ uid:UID, companyId:COMPANY_ID, lang:LANG, voice:VOICE, debug:true, allowNoInvite:true });
+    await connectRealtime(tokenRes.client_secret);
 
-    // Realtime verbinden
-    await connectRealtime(secret);
-    const unlocked = await ensureAudioPlayback();
-    if (!unlocked) showAudioGate();
-
-    // Recorder starten
     startRecording();
 
-    // Sprache HART setzen: sofort + nach 1s + nach 5s
     await waitDCOpen();
-    primeSession(ctx.reportLang);
-    forceLangAgain(ctx.reportLang, 1000);
-    forceLangAgain(ctx.reportLang, 5000);
+    // Sprache & Interview-Regeln hart setzen
+    const meta = {
+      lang: tokenRes.lang,
+      companyName: tokenRes.companyName || 'Clarity',
+      position: tokenRes.position || '',
+      scriptIntro: tokenRes.scriptIntro || '',
+      firstQuestion: tokenRes.firstQuestion || ''
+    };
+    primeSession(meta);
 
-    // 5s Verzögerung, dann Welcome/„Bereit?“
-    setTimeout(()=>{
-      if (destroyed) return;
-      sendWelcome(ctx);
+    // Begrüßung mit 5s Delay – erst alles steht
+    setTimeout(() => {
+      if (stopRequested) return;
+      const greet = (meta.lang==='de')
+        ? `Willkommen! Dieses Interview wird im Auftrag von ${meta.companyName} geführt. Sobald Sie bereit sind, sagen Sie bitte „Start“.`
+        : `Welcome! This interview is conducted on behalf of ${meta.companyName}. When you're ready, please say "Start".`;
+      say(greet);
     }, 5000);
+
+    // Wenn der Kandidat „Start“ sagt, erste Frage (falls vorhanden) – ansonsten Assistent startet selbst
+    // (leicht, robust – hier nur als einfache Logik)
+    // In echter Umsetzung würdest du per VAD/Transkript prüfen. Wir stoßen hier direkt die erste Frage an:
+    setTimeout(() => {
+      if (stopRequested) return;
+      const q = meta.firstQuestion && meta.firstQuestion.trim()
+        ? meta.firstQuestion.trim()
+        : (meta.lang==='de'
+           ? 'Legen wir los: Bitte stellen Sie sich kurz vor – Name, aktuelle Rolle und was Sie motiviert.'
+           : 'Let’s begin: Please introduce yourself briefly – name, current role, and what motivates you.');
+      say(q);
+    }, 7000);
 
     setStatus('ok','Verbunden • Interview läuft');
   }
 
-  async function hangup(){
-    // Alles stoppen -> keine Kosten
-    destroyed = true;
-    try{ DC?.close(); }catch(_){}
-    try{ pc?.getSenders()?.forEach(s=>s.track && s.track.stop()); }catch(_){}
-    try{ pc?.getReceivers()?.forEach(r=>r.track && r.track.stop()); }catch(_){}
-    try{ pc?.close(); }catch(_){}
+  function hangup(){
+    stopRequested = true;
+
+    // Recorder/Streams stoppen
+    stopRecording();
     try{ localStream?.getTracks()?.forEach(t => t.stop()); }catch(_){}
     try{ remoteStream?.getTracks()?.forEach(t => t.stop()); }catch(_){}
-    stopRecording();
+    try{ pc?.getSenders()?.forEach(s=>s.track && s.track.stop()); }catch(_){}
+    try{ pc?.close(); }catch(_){}
+    pc = null; DC = null; dcIsOpen = false; dcQueue.length = 0;
+
+    // Analyser schließen
+    sysAnalyser = null; micAnalyser = null;
+    try{ audioCtx && audioCtx.close && audioCtx.close(); }catch(_){}
+    audioCtx = null;
+
     setStatus('warn','Beendet');
     log('[Live] hangup done');
   }
 
-  // -------------------- Parent-Messaging ---------
+  // -------------------- Parent-Messaging --------------------
   window.addEventListener('message', (ev)=>{
     const msg = ev.data || {};
     if (msg.type === 'clarity.live.start') {
@@ -495,18 +495,10 @@
     }
   });
 
-  // Direkt im Iframe nutzbar (falls ohne Parent)
-  (async ()=>{
-    // Option: Auto-Start nur wenn explizit gewünscht.
-    // parent postMessage startet normalerweise.
-  })();
-
   document.getElementById('btnStop').addEventListener('click', hangup);
 
-  // -------- Permissions-Policy Hinweis -----------
-  // Falls im Parent-<iframe> läuft, MUSS das iframe-Element folgendes haben:
-  //   allow="microphone; camera; autoplay"
-  // Sonst sieht man "Permissions policy violation: microphone is not allowed".
+  // Optional: auto-start, falls nicht via parent
+  // startInterview().catch(e => { setStatus('err', e?.message||String(e)); log(e); });
   </script>
 </body>
 </html>
