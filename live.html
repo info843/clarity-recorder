@@ -1,4 +1,3 @@
-<!-- live.html (vollständig, mit Vorbereitungs-Phase + harter Sprachbindung + Parent-Export) -->
 <!doctype html>
 <html lang="de">
 <head>
@@ -111,9 +110,9 @@
   let destroyed = false;
 
   // Parent-Handshake / Flags
-  let PARENT_UPLOAD = false;   // ctx.uploadMode === 'parent'
-  let RECORD_ENABLED = true;   // clarity.live.record.enabled
-  let CTX = { uploadMode:'internal', reportLang:'de', roleProfileText:'', docsText:'' };
+  let PARENT_UPLOAD = false;
+  let RECORD_ENABLED = true;
+  let CTX = { uploadMode:'internal', reportLang:'de', roleProfileText:'', docsText:'', interviewMode:'structured', interviewConfig:{maxQuestions:10,followUpsPerQuestion:1,allowCandidateQuestions:5,endWithSummary:true} };
   let ENDED_SENT = false;
 
   // ===== DC-Queue + Wait =====
@@ -186,7 +185,6 @@
       remoteStream.addTrack(ev.track);
       $remoteA.srcObject = remoteStream;
 
-      // WebAudio Analyser (System-Level)
       try{
         audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
         await audioCtx.resume().catch(()=>{});
@@ -204,7 +202,6 @@
         })();
       }catch(_){}
 
-      // Playback Safety
       try {
         $remoteA.muted = false; $remoteA.volume = 1.0;
         $remoteA.setAttribute('autoplay',''); $remoteA.setAttribute('playsinline','');
@@ -215,7 +212,6 @@
         showAudioGate();
       }
 
-      // Badge „Audio in“
       try {
         const levelAnalyser = audioCtx.createAnalyser();
         levelAnalyser.fftSize = 1024;
@@ -234,12 +230,10 @@
       }catch(_){}
     };
 
-    // Local Tracks
     if (localStream){
       localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
     }
 
-    // DataChannel
     DC = pc.createDataChannel('oai-events');
     DC.onopen = () => {
       dcIsOpen = true;
@@ -272,36 +266,111 @@
     await pc.setRemoteDescription(answer);
   }
 
+  // ----------- Mini Debug der DC-Events ----------
   function onRealtimeEvent(ev){
     let data = ev && ev.data;
     try{ if (typeof data === 'string') data = JSON.parse(data); }catch(_){}
     if (!data) return;
 
+    // Avatar-State an Parent
     if (data.type === 'response.state' && data.state){
       parent?.postMessage?.({ type:'clarity.avatar', data:{ state:data.state } }, '*');
     }
+
+    // einfache Sichtbarkeit im Log (optional)
+    if (data.type === 'response.created' || data.type === 'response.completed'){
+      log('[OAI]', data.type);
+    }
   }
 
-  // -------------- Vorbereitungs-Phase / Priming --
+  // ---------------- Interview-Plan ----------------
+  function buildInterviewPlan(ctx){
+    const lang = (String(ctx.reportLang||'de').toLowerCase().startsWith('de')) ? 'de' : 'en';
+    const text = ((ctx.roleProfileText||'') + '\n' + (ctx.docsText||'')).trim();
+    const position = (ctx.position||'').trim();
+
+    const maxQ = Math.max(3, Math.min(12, (ctx.interviewConfig?.maxQuestions ?? 10)));
+
+    // Sehr einfacher Heuristik-Extractor für Schlüsselthemen
+    const kws = [];
+    const lower = text.toLowerCase();
+    [
+      ['typescript','TypeScript'], ['javascript','JavaScript'], ['node','Node.js'],
+      ['react','React'], ['vue','Vue'], ['python','Python'], ['java','Java'],
+      ['aws','AWS'], ['azure','Azure'], ['gcp','GCP'], ['microservice','Microservices'],
+      ['sql','SQL'], ['nosql','NoSQL'], ['docker','Docker'], ['kubernetes','Kubernetes'],
+      ['sales','Sales'], ['crm','CRM'], ['seo','SEO'], ['marketing','Marketing']
+    ].forEach(([needle,label]) => { if (lower.includes(needle)) kws.push(label); });
+
+    const genericDE = [
+      'Bitte stellen Sie sich kurz vor und skizzieren Sie Ihren beruflichen Hintergrund.',
+      position ? `Welche Erfahrung haben Sie in Bezug auf die Position „${position}“?` : 'Welche Ihrer Erfahrungen passt am besten zur ausgeschriebenen Position?',
+      kws.length ? `Wie sicher sind Sie in ${kws.slice(0,3).join(', ')}? Bitte mit kurzen Beispielen.` : 'Nennen Sie zwei fachliche Stärken, die Sie mit Beispielen belegen.',
+      'Beschreiben Sie eine Herausforderung in Ihrem letzten Projekt und wie Sie sie gelöst haben.',
+      'Wie planen Sie Ihre Arbeit, wenn mehrere Aufgaben gleichzeitig anstehen?',
+      'Welche Erwartungen haben Sie an Team, Führung und Arbeitsweise?',
+      'Wie halten Sie Ihr Wissen aktuell?',
+      'Was motiviert Sie besonders an dieser Rolle?',
+      'Welche Gehalts- und Starttermin-Vorstellungen haben Sie?',
+      'Haben Sie noch Fragen an uns?'
+    ];
+
+    const genericEN = [
+      'Please introduce yourself and summarize your professional background.',
+      position ? `What relevant experience do you have for the “${position}” role?` : 'Which parts of your background fit this role best?',
+      kws.length ? `How confident are you with ${kws.slice(0,3).join(', ')}? Give brief examples.` : 'Name two core strengths and back them with examples.',
+      'Describe a challenge in a recent project and how you solved it.',
+      'How do you prioritize when several tasks compete?',
+      'What do you expect from team, leadership, and ways of working?',
+      'How do you keep your knowledge up to date?',
+      'What motivates you most about this role?',
+      'What are your salary expectations and earliest start date?',
+      'Any questions for us?'
+    ];
+
+    const bank = (lang==='de') ? genericDE : genericEN;
+    return bank.slice(0, maxQ);
+  }
+
   function buildSystemInstructions(ctx){
-    const isDE = (ctx.reportLang === 'de');
-    const langLine = isDE
-      ? 'Sprich ausschließlich DEUTSCH. Wechsle zu keinem Zeitpunkt die Sprache.'
-      : 'Speak strictly in ENGLISH. Do not switch languages at any time.';
-    const structure = isDE
-      ? 'Führe ein strukturiertes Job-Interview: Stelle genau EINE Frage zur Zeit, max. 1 Nachfrage, bleibe strikt beim Jobprofil.'
-      : 'Conduct a structured job interview: ask exactly ONE question at a time, max 1 follow-up, stay strictly on the job profile.';
-    const scope = isDE
-      ? 'Antworte nur zu Rolle/Anzeige/Position. Für andere Fragen verweise freundlich auf direkten Kontakt.'
-      : 'Answer only about role/ad/job. For other questions, kindly refer to direct contact.';
-    return [langLine, structure, scope].join(' ');
+    const isDE = (String(ctx.reportLang||'de').toLowerCase().startsWith('de'));
+    const plan = buildInterviewPlan(ctx);
+    const planTxt = plan.map((q,i)=>`${i+1}. ${q}`).join('\n');
+
+    const hardRules = isDE
+      ? [
+          'SPRICHT STRENG DEUTSCH. Keine andere Sprache verwenden.',
+          'Geführtes Interview: Stelle GENAU EINE Frage pro Runde. Maximal 1 Nachfrage.',
+          'Warte nach jeder Frage still, bis die Kandidat:in fertig gesprochen hat (Server-VAD).',
+          'Bleibe strikt bei Rolle/Ausschreibung. Kein Smalltalk, keine Abschweifungen.',
+          'Beginne ERST, nachdem die Kandidat:in „bereit“, „ja“ o. Ä. signalisiert.',
+          'Wenn die Kandidat:in dagegen fragt: Höflich parken („gerne am Ende“).',
+          'Nach Abschluss bedanke dich kurz und kündige „Auswertung folgt“ an.'
+        ]
+      : [
+          'SPEAK STRICTLY ENGLISH. Do not use any other language.',
+          'Structured interview: ask EXACTLY ONE question per round. Max 1 follow-up.',
+          'After each question, wait silently until the candidate finishes (server VAD).',
+          'Stay strictly on the role/ad. No small talk, no digressions.',
+          'Only start once the candidate signals “ready/yes”.',
+          'If the candidate asks you questions, politely park them for the end.',
+          'After finishing, thank them and say the report will follow.'
+        ];
+
+    const header = isDE ? '--- INTERVIEW-PLAN (DE) ---' : '--- INTERVIEW PLAN (EN) ---';
+
+    return [
+      hardRules.join(' '),
+      header,
+      planTxt
+    ].join('\n');
   }
 
   function primeStrictLanguage(reportLang){
     const spoken = (String(reportLang||'de').toLowerCase().startsWith('de')) ? 'de' : 'en';
-    const sys = buildSystemInstructions({ reportLang: spoken==='de' ? 'de' : 'en' });
+    const sys = buildSystemInstructions(CTX);
 
-    // Aufnahme temporär AUS, wir sprechen zuerst
+    // Erst: nur Assistent redet (Turn-Detection aus) → Vorbereitung + Welcome
     dcSend({ type:'session.update', session:{
       voice: VOICE,
       instructions: sys,
@@ -313,7 +382,7 @@
       modalities:['audio']
     }});
 
-    // doppelt sichern (langsamer Netzpfad etc.)
+    // Redundante Nachschärfung (Netz/Jitter)
     setTimeout(()=> dcSend({ type:'session.update', session:{
       spoken_language: spoken,
       input_audio_transcription:{ model:'whisper-1', language: spoken }
@@ -331,10 +400,10 @@
       ? `Willkommen! Dieses Interview wird im Auftrag von ${CTX.companyName||'Clarity'} geführt. Sind Sie bereit zu starten?`
       : `Welcome! This interview is conducted on behalf of ${CTX.companyName||'Clarity'}. Are you ready to begin?`;
 
-    // kurze Vorbereitungsansage
+    // Vorbereitungsansage
     dcSend({ type:'response.create', response:{ instructions: prep, modalities:['audio'] }});
 
-    // danach Welcome + VAD wieder AN
+    // Dann Welcome + VAD wieder AN, damit Kandidat:in antworten kann
     setTimeout(()=>{
       dcSend({ type:'response.create', response:{ instructions: welcome, modalities:['audio'] }});
       dcSend({ type:'session.update', session:{
@@ -357,7 +426,6 @@
     }
     $localV.srcObject = localStream;
 
-    // Mic-Level
     try{
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
       const src = ctx.createMediaStreamSource(localStream);
@@ -432,7 +500,6 @@
           $recProg.style.width = '100%';
           $muxState.textContent='export sent';
         } else {
-          // (Optional: interner Upload – aktuell nicht verwendet)
           $recProg.style.width = '100%';
           $muxState.textContent='no parent upload';
         }
@@ -467,21 +534,16 @@
     ENDED_SENT = false;
     setStatus('info','Initialisiere…');
 
-    // Mic/Camera
     await setupLocalMedia();
 
-    // Token
     const { secret, ctx } = await getRealtimeToken({ uid:UID, companyId:COMPANY_ID, lang:LANG, voice:VOICE, debug:true, allowNoInvite:true });
 
-    // Realtime verbinden
     await connectRealtime(secret);
     const unlocked = await ensureAudioPlayback();
     if (!unlocked) showAudioGate();
 
-    // Recorder
     startRecording();
 
-    // HARTES Sprach-Priming + Vorbereitungs-Ansage → Welcome → VAD an
     await waitDCOpen();
     const usedLang = (CTX.reportLang || ctx.reportLang || LANG);
     CTX = { ...CTX, companyName: ctx.companyName || CTX.companyName, reportLang: usedLang };
@@ -533,16 +595,13 @@
       hangup(); return;
     }
     if (type === 'recorder:export') {
-      // Parent fordert Export an → Recording sauber stoppen (onstop → export)
       stopRecording(); return;
     }
   });
 
   document.getElementById('btnStop').addEventListener('click', hangup);
-
-  // Hinweis: im Parent-<iframe> muss stehen: allow="microphone; camera; autoplay"
-  // Optional: beim Schließen beenden (Token sparen)
   window.addEventListener('beforeunload', hangup);
+  // Parent-iframe braucht: allow="microphone; camera; autoplay"
   </script>
 </body>
 </html>
