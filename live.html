@@ -101,7 +101,6 @@
 
   // -------------------- Endpunkte ----------------
   const TOKEN_URL = 'https://www.clarity-nvl.com/_functions/realtimeToken';
-  const WIX_UPLOAD_URL = 'https://www.clarity-nvl.com/_functions/wixMediaUpload';
 
   // -------------------- Global State -------------
   let pc, DC;
@@ -109,6 +108,11 @@
   let remoteStream;
   let audioCtx, remoteSource;
   let destroyed = false;
+
+  // Parent-upload handshake / record-toggle
+  let PARENT_UPLOAD = false;   // ← aus clarity.live.context.uploadMode === 'parent'
+  let RECORD_ENABLED = true;   // ← aus clarity.live.record.enabled
+  let CTX = {};                // ← clarity.live.context payload
 
   // ===== DC-Queue + Wait =====
   let dcIsOpen = false;
@@ -150,7 +154,6 @@
     if (!data?.ok) throw new Error('token_error: '+(data?.error||'unknown')+' '+(data?.message||''));
     const sec = extractClientSecret(data);
     if (!sec) throw new Error('client_secret_missing');
-    // Debug-Ausgabe der „effektiven“ Parameter
     log('[Live] effective', { lang:data.reportLang||payload.lang, voice:data.voice, model:data.model });
     return { secret: sec, ctx: data };
   }
@@ -278,18 +281,8 @@
   }
 
   // -------------- Session-Priming (Mehrfach) ----
-  function makeSystemPrompt(ctx){
-    const langLine = ctx.reportLang === 'de'
-      ? 'Sprich ausschließlich Deutsch. Wechsle zu keinem Zeitpunkt die Sprache.'
-      : 'Speak strictly in English. Do not switch languages at any time.';
-    // Mini-Interviewmodus
-    const base = ctx.reportLang === 'de'
-      ? 'Du bist Claritys Interview-Assistent. Stelle kurze Fragen, eine nach der anderen. Warte immer auf die Antwort.'
-      : 'You are Clarity’s interview assistant. Ask short, one-at-a-time questions. Always wait for the answer.';
-    return [base, langLine].join(' ');
-  }
   function primeSession(reportLang){
-    const spoken = reportLang === 'de' ? 'de' : 'en';
+    const spoken = (reportLang === 'de') ? 'de' : 'en';
     dcSend({
       type:'session.update',
       session:{
@@ -307,18 +300,11 @@
     setTimeout(()=> primeSession(reportLang), delayMs);
   }
   function sendWelcome(ctx){
+    const company = (ctx.companyName || 'Clarity');
     const welcome = (ctx.reportLang==='de')
-      ? `Willkommen! Dieses Interview wird im Auftrag von ${ctx.companyName||'Clarity'} geführt. Sind Sie bereit zu starten?`
-      : `Welcome! This interview is conducted on behalf of ${ctx.companyName||'Clarity'}. Are you ready to begin?`;
+      ? `Willkommen! Dieses Interview wird im Auftrag von ${company} geführt. Sind Sie bereit zu starten?`
+      : `Welcome! This interview is conducted on behalf of ${company}. Are you ready to begin?`;
     dcSend({ type:'response.create', response:{ conversation:'default', instructions: welcome, modalities:['audio'] }});
-  }
-  function sendFirstQuestion(ctx){
-    const q = ctx.firstQuestion && String(ctx.firstQuestion).trim();
-    if (!q) return;
-    const instr = (ctx.reportLang==='de')
-      ? `Erste Frage: ${q}`
-      : `First question: ${q}`;
-    dcSend({ type:'response.create', response:{ conversation:'default', instructions: instr, modalities:['audio'] }});
   }
 
   // -------------------- Media / Recording --------
@@ -356,31 +342,14 @@
   function ensureAudioPlayback(){ return $remoteA.play().then(()=>true).catch(()=>false); }
   function showAudioGate(){ setStatus('warn','Autoplay blockiert – bitte kurz in den Player klicken.'); }
 
-  // ---------- Upload: direkt zu Wix Media --------
-  async function blobToBase64(blob){
-    const buf = await blob.arrayBuffer();
-    let binary = '';
-    const bytes = new Uint8Array(buf);
-    for (let i=0;i<bytes.length;i++) binary += String.fromCharCode(bytes[i]);
-    return btoa(binary); // raw b64 (ohne data: prefix)
-  }
-  async function uploadToWixMedia(blob){
-    const b64 = await blobToBase64(blob);
-    const payload = {
-      base64: 'data:video/webm;base64,' + b64,
-      fileName: `${UID || 'IV'}-${Date.now()}.webm`,
-      uid: UID, companyId: COMPANY_ID
-    };
-    const r = await fetch(WIX_UPLOAD_URL, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-    const text = await r.text();
-    let js = null; try{ js = text ? JSON.parse(text) : null; }catch{}
-    if (!r.ok) throw new Error('wix_upload_http_'+r.status+': '+text);
-    if (!js?.ok) {
-      log('[REC] wix upload error payload=', js);
-      throw new Error(js?.error || 'wix_media_upload_failed');
-    }
-    log('[REC] wix upload ok', js);
-    return js;
+  // ---------- Export (Parent übernimmt Upload) ---
+  async function blobToDataURL(blob){
+    return new Promise((resolve,reject)=>{
+      const reader = new FileReader();
+      reader.onloadend = ()=> resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
   }
 
   function startRecording(){
@@ -403,26 +372,39 @@
     const cam = localStream.getVideoTracks()[0];
     if (cam) mixedStream.addTrack(cam);
 
-    mediaRecorder = new MediaRecorder(mixedStream, { mimeType:'video/webm;codecs=vp8,opus', videoBitsPerSecond: 1_200_000, audioBitsPerSecond: 128_000 });
+    const hasVideo = !!mixedStream.getVideoTracks().length;
+    mediaRecorder = new MediaRecorder(mixedStream, {
+      mimeType: hasVideo ? 'video/webm;codecs=vp8,opus' : 'audio/webm;codecs=opus',
+      videoBitsPerSecond: hasVideo ? 1_200_000 : undefined,
+      audioBitsPerSecond: 128_000
+    });
     const chunks = [];
     mediaRecorder.onstart = ()=>{ $recState.textContent='recording'; log('[REC] started'); };
     mediaRecorder.ondataavailable = (e)=>{ if (e.data && e.data.size>0) chunks.push(e.data); };
     mediaRecorder.onstop = async ()=>{
       $recState.textContent='stopped';
-      const blob = new Blob(chunks, { type:'video/webm' });
+      const hasVid = !!mixedStream.getVideoTracks().length;
+      const blob = new Blob(chunks, { type: hasVid ? 'video/webm' : 'audio/webm' });
       log('[REC] stop, size=', blob.size);
 
       try{
-        $muxState.textContent='uploading';
-        $recProg.style.width = '30%';
-        const res = await uploadToWixMedia(blob);
+        $muxState.textContent='exporting';
+        $recProg.style.width = '60%';
+
+        // -> Parent upload (statt internem Wix-Upload)
+        const dataUrl = await blobToDataURL(blob);
+        parent?.postMessage?.({ type:'recorder:export', data: { dataUrl, kind: (hasVid?'video':'audio'), bytes: blob.size } }, '*');
         $recProg.style.width = '100%';
-        $muxState.textContent='uploaded';
-        parent?.postMessage?.({ type:'wix.upload.done', data: res }, '*');
+        $muxState.textContent='export sent';
+
+        // Notify end
+        parent?.postMessage?.({ type:'clarity.live.ended', data:{} }, '*');
       } catch(e){
-        $muxState.textContent='upload failed';
-        log('[REC] upload failed', e);
-        parent?.postMessage?.({ type:'wix.upload.error', data:{ message: String(e) } }, '*');
+        $muxState.textContent='export failed';
+        log('[REC] export failed', e);
+        parent?.postMessage?.({ type:'clarity.live.error', data:{ message: String(e?.message||e) } }, '*');
+      } finally {
+        chunks.length = 0;
       }
     };
 
@@ -450,8 +432,8 @@
     const unlocked = await ensureAudioPlayback();
     if (!unlocked) showAudioGate();
 
-    // Recorder starten
-    startRecording();
+    // Recorder nur, wenn erlaubt (default true)
+    if (RECORD_ENABLED !== false) startRecording();
 
     // Sprache HART setzen: sofort + nach 1s + nach 5s
     await waitDCOpen();
@@ -460,10 +442,7 @@
     forceLangAgain(ctx.reportLang, 5000);
 
     // 5s Verzögerung, dann Welcome/„Bereit?“
-    setTimeout(()=>{
-      if (destroyed) return;
-      sendWelcome(ctx);
-    }, 5000);
+    setTimeout(()=>{ if (!destroyed) sendWelcome(ctx); }, 5000);
 
     setStatus('ok','Verbunden • Interview läuft');
   }
@@ -480,33 +459,46 @@
     stopRecording();
     setStatus('warn','Beendet');
     log('[Live] hangup done');
+    parent?.postMessage?.({ type:'clarity.live.ended', data:{} }, '*');
   }
 
   // -------------------- Parent-Messaging ---------
   window.addEventListener('message', (ev)=>{
     const msg = ev.data || {};
-    if (msg.type === 'clarity.live.start') {
+    const type = msg.type;
+
+    if (type === 'clarity.live.context') {
+      CTX = msg.data || {};
+      PARENT_UPLOAD  = (CTX.uploadMode === 'parent');
+      // optional: weitere CTX Felder (position/docs/roleProfile) werden aktuell im Parent genutzt
+      log('[CTX]', CTX);
+    }
+    else if (type === 'clarity.live.record') {
+      RECORD_ENABLED = !!(msg.data && msg.data.enabled);
+      log('[REC] record flag from parent:', RECORD_ENABLED);
+    }
+    else if (type === 'clarity.live.start') {
       startInterview().catch(e => {
         setStatus('err', 'Startfehler: ' + (e?.message||e));
         log(e);
+        parent?.postMessage?.({ type:'clarity.live.error', data:{ message:String(e?.message||e) } }, '*');
       });
-    } else if (msg.type === 'clarity.live.hangup') {
+    }
+    else if (type === 'clarity.live.stop' || type === 'clarity.live.hangup') {
       hangup();
+    }
+    else if (type === 'recorder:export') {
+      // Parent fordert Export an → wir stoppen (triggert onstop → export)
+      stopRecording();
     }
   });
 
   // Direkt im Iframe nutzbar (falls ohne Parent)
-  (async ()=>{
-    // Option: Auto-Start nur wenn explizit gewünscht.
-    // parent postMessage startet normalerweise.
-  })();
-
   document.getElementById('btnStop').addEventListener('click', hangup);
 
   // -------- Permissions-Policy Hinweis -----------
-  // Falls im Parent-<iframe> läuft, MUSS das iframe-Element folgendes haben:
+  // Das <iframe> im Parent benötigt:
   //   allow="microphone; camera; autoplay"
-  // Sonst sieht man "Permissions policy violation: microphone is not allowed".
   </script>
 </body>
 </html>
