@@ -1,3 +1,4 @@
+<!-- live.html (vollständig, mit Vorbereitungs-Phase + harter Sprachbindung + Parent-Export) -->
 <!doctype html>
 <html lang="de">
 <head>
@@ -112,8 +113,8 @@
   // Parent-Handshake / Flags
   let PARENT_UPLOAD = false;   // ctx.uploadMode === 'parent'
   let RECORD_ENABLED = true;   // clarity.live.record.enabled
-  let CTX = {};                // clarity.live.context payload
-  let ENDED_SENT = false;      // einmalige ended-Message
+  let CTX = { uploadMode:'internal', reportLang:'de', roleProfileText:'', docsText:'' };
+  let ENDED_SENT = false;
 
   // ===== DC-Queue + Wait =====
   let dcIsOpen = false;
@@ -152,7 +153,7 @@
     }
     const data = await r.json().catch(e=>{ throw new Error('token_json_parse: '+e); });
     log('[Live] Token response:', r.status, data);
-    if (!data?.ok) throw new Error('token_error: '+(data?.error||'unknown')+' '+(data?.message||''));
+    if (!data?.ok) throw new Error('token_error: '+(data?.error||'unknown')+' '+(data?.message||''));    
     const sec = extractClientSecret(data);
     if (!sec) throw new Error('client_secret_missing');
     log('[Live] effective', { lang:data.reportLang||payload.lang, voice:data.voice, model:data.model });
@@ -281,7 +282,7 @@
     }
   }
 
-  // -------------- System Prompt / Priming --------
+  // -------------- Vorbereitungs-Phase / Priming --
   function buildSystemInstructions(ctx){
     const isDE = (ctx.reportLang === 'de');
     const langLine = isDE
@@ -296,35 +297,50 @@
     return [langLine, structure, scope].join(' ');
   }
 
-  function primeSession(reportLang){
-    const spoken = (reportLang === 'de') ? 'de' : 'en';
-    dcSend({
-      type:'session.update',
-      session:{
-        voice: VOICE,
-        // HARTE Sprachvorgabe:
-        instructions: buildSystemInstructions(CTX.reportLang ? CTX : { reportLang }),
-        spoken_language: spoken,
-        // Transkription → Sprache fest
-        input_audio_transcription:{ model:'whisper-1', language: spoken },
-        // VAD
-        turn_detection:{ type:'server_vad', threshold:0.9, prefix_padding_ms:200, silence_duration_ms:700 },
-        // Nur Audio
-        modalities:['audio'],
-        input_audio_format:'pcm16',
-        output_audio_format:'pcm16'
-      }
-    });
+  function primeStrictLanguage(reportLang){
+    const spoken = (String(reportLang||'de').toLowerCase().startsWith('de')) ? 'de' : 'en';
+    const sys = buildSystemInstructions({ reportLang: spoken==='de' ? 'de' : 'en' });
+
+    // Aufnahme temporär AUS, wir sprechen zuerst
+    dcSend({ type:'session.update', session:{
+      voice: VOICE,
+      instructions: sys,
+      spoken_language: spoken,
+      input_audio_format:'pcm16',
+      output_audio_format:'pcm16',
+      input_audio_transcription:{ model:'whisper-1', language: spoken },
+      turn_detection:{ type:'none' },
+      modalities:['audio']
+    }});
+
+    // doppelt sichern (langsamer Netzpfad etc.)
+    setTimeout(()=> dcSend({ type:'session.update', session:{
+      spoken_language: spoken,
+      input_audio_transcription:{ model:'whisper-1', language: spoken }
+    }}), 700);
+
+    setTimeout(()=> dcSend({ type:'session.update', session:{ spoken_language: spoken }}), 2200);
   }
-  function forceLangAgain(reportLang, delayMs){
-    setTimeout(()=> primeSession(reportLang), delayMs);
-  }
-  function sendWelcome(ctx){
-    const company = (ctx.companyName || 'Clarity');
-    const welcome = (ctx.reportLang==='de')
-      ? `Willkommen! Dieses Interview wird im Auftrag von ${company} geführt. Sind Sie bereit zu starten?`
-      : `Welcome! This interview is conducted on behalf of ${company}. Are you ready to begin?`;
-    dcSend({ type:'response.create', response:{ conversation:'default', instructions: welcome, modalities:['audio'] }});
+
+  function speakPrepThenWelcome(){
+    const comp = (String(CTX.reportLang||'de').toLowerCase().startsWith('de')) ? 'de' : 'en';
+    const prep = (comp==='de')
+      ? 'Einen Moment bitte, ich bereite das Interview vor …'
+      : 'One moment please, I am preparing the interview …';
+    const welcome = (comp==='de')
+      ? `Willkommen! Dieses Interview wird im Auftrag von ${CTX.companyName||'Clarity'} geführt. Sind Sie bereit zu starten?`
+      : `Welcome! This interview is conducted on behalf of ${CTX.companyName||'Clarity'}. Are you ready to begin?`;
+
+    // kurze Vorbereitungsansage
+    dcSend({ type:'response.create', response:{ instructions: prep, modalities:['audio'] }});
+
+    // danach Welcome + VAD wieder AN
+    setTimeout(()=>{
+      dcSend({ type:'response.create', response:{ instructions: welcome, modalities:['audio'] }});
+      dcSend({ type:'session.update', session:{
+        turn_detection:{ type:'server_vad', threshold:0.9, prefix_padding_ms:200, silence_duration_ms:700 }
+      }});
+    }, 1500);
   }
 
   // -------------------- Media / Recording --------
@@ -410,11 +426,16 @@
         $muxState.textContent='exporting';
         $recProg.style.width = '60%';
 
-        // → Parent übernimmt Upload
-        const dataUrl = await blobToDataURL(blob);
-        parent?.postMessage?.({ type:'recorder:export', data: { dataUrl, kind: (hasVid?'video':'audio'), bytes: blob.size } }, '*');
-        $recProg.style.width = '100%';
-        $muxState.textContent='export sent';
+        if (PARENT_UPLOAD) {
+          const dataUrl = await blobToDataURL(blob);
+          parent?.postMessage?.({ type:'recorder:export', data: { dataUrl, kind: (hasVid?'video':'audio'), bytes: blob.size } }, '*');
+          $recProg.style.width = '100%';
+          $muxState.textContent='export sent';
+        } else {
+          // (Optional: interner Upload – aktuell nicht verwendet)
+          $recProg.style.width = '100%';
+          $muxState.textContent='no parent upload';
+        }
 
         sendEndedOnce();
       } catch(e){
@@ -460,22 +481,17 @@
     // Recorder
     startRecording();
 
-    // Sprache HART setzen: sofort + nach 1s + nach 5s
+    // HARTES Sprach-Priming + Vorbereitungs-Ansage → Welcome → VAD an
     await waitDCOpen();
     const usedLang = (CTX.reportLang || ctx.reportLang || LANG);
-    CTX.reportLang = usedLang; // merken für buildSystemInstructions
-    primeSession(usedLang);
-    forceLangAgain(usedLang, 1000);
-    forceLangAgain(usedLang, 5000);
-
-    // 5s Verzögerung, dann Welcome/„Bereit?“
-    setTimeout(()=>{ if (!destroyed) sendWelcome({ reportLang: usedLang, companyName: ctx.companyName }); }, 5000);
+    CTX = { ...CTX, companyName: ctx.companyName || CTX.companyName, reportLang: usedLang };
+    primeStrictLanguage(usedLang);
+    speakPrepThenWelcome();
 
     setStatus('ok','Verbunden • Interview läuft');
   }
 
   async function hangup(){
-    // Alles stoppen -> keine Kosten
     destroyed = true;
     try{ DC?.close(); }catch(_){}
     try{ pc?.getSenders()?.forEach(s=>s.track && s.track.stop()); }catch(_){}
@@ -495,34 +511,38 @@
     const type = msg.type;
 
     if (type === 'clarity.live.context') {
-      CTX = msg.data || {};
+      CTX = { ...CTX, ...(msg.data || {}) };
       PARENT_UPLOAD  = (CTX.uploadMode === 'parent');
-      // RECORD_ENABLED bleibt durch record-Message steuerbar
       log('[CTX]', CTX);
+      return;
     }
-    else if (type === 'clarity.live.record') {
+    if (type === 'clarity.live.record') {
       RECORD_ENABLED = !!(msg.data && msg.data.enabled);
       log('[REC] record flag from parent:', RECORD_ENABLED);
+      return;
     }
-    else if (type === 'clarity.live.start') {
+    if (type === 'clarity.live.start') {
       startInterview().catch(e => {
         setStatus('err', 'Startfehler: ' + (e?.message||e));
         log(e);
         parent?.postMessage?.({ type:'clarity.live.error', data:{ message:String(e?.message||e) } }, '*');
       });
+      return;
     }
-    else if (type === 'clarity.live.stop' || type === 'clarity.live.hangup') {
-      hangup();
+    if (type === 'clarity.live.stop' || type === 'clarity.live.hangup') {
+      hangup(); return;
     }
-    else if (type === 'recorder:export') {
-      // Parent fordert Export an → Recording sauber stoppen (triggert onstop → export)
-      stopRecording();
+    if (type === 'recorder:export') {
+      // Parent fordert Export an → Recording sauber stoppen (onstop → export)
+      stopRecording(); return;
     }
   });
 
   document.getElementById('btnStop').addEventListener('click', hangup);
 
-  // Hinweis: iframe im Parent braucht allow="microphone; camera; autoplay"
+  // Hinweis: im Parent-<iframe> muss stehen: allow="microphone; camera; autoplay"
+  // Optional: beim Schließen beenden (Token sparen)
+  window.addEventListener('beforeunload', hangup);
   </script>
 </body>
 </html>
