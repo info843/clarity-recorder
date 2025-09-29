@@ -99,7 +99,7 @@
     $status.style.borderColor = kind==='err' ? '#7f1d1d' : (kind==='ok' ? '#14532d' : (kind==='warn' ? '#7f6a1d' : '#24314f'));
   }
 
-  // -------------------- Endpunkte ----------------
+  // -------------------- Endpunkt -----------------
   const TOKEN_URL = 'https://www.clarity-nvl.com/_functions/realtimeToken';
 
   // -------------------- Global State -------------
@@ -109,10 +109,11 @@
   let audioCtx, remoteSource;
   let destroyed = false;
 
-  // Parent-upload handshake / record-toggle
-  let PARENT_UPLOAD = false;   // ← aus clarity.live.context.uploadMode === 'parent'
-  let RECORD_ENABLED = true;   // ← aus clarity.live.record.enabled
-  let CTX = {};                // ← clarity.live.context payload
+  // Parent-Handshake / Flags
+  let PARENT_UPLOAD = false;   // ctx.uploadMode === 'parent'
+  let RECORD_ENABLED = true;   // clarity.live.record.enabled
+  let CTX = {};                // clarity.live.context payload
+  let ENDED_SENT = false;      // einmalige ended-Message
 
   // ===== DC-Queue + Wait =====
   let dcIsOpen = false;
@@ -280,19 +281,38 @@
     }
   }
 
-  // -------------- Session-Priming (Mehrfach) ----
+  // -------------- System Prompt / Priming --------
+  function buildSystemInstructions(ctx){
+    const isDE = (ctx.reportLang === 'de');
+    const langLine = isDE
+      ? 'Sprich ausschließlich DEUTSCH. Wechsle zu keinem Zeitpunkt die Sprache.'
+      : 'Speak strictly in ENGLISH. Do not switch languages at any time.';
+    const structure = isDE
+      ? 'Führe ein strukturiertes Job-Interview: Stelle genau EINE Frage zur Zeit, max. 1 Nachfrage, bleibe strikt beim Jobprofil.'
+      : 'Conduct a structured job interview: ask exactly ONE question at a time, max 1 follow-up, stay strictly on the job profile.';
+    const scope = isDE
+      ? 'Antworte nur zu Rolle/Anzeige/Position. Für andere Fragen verweise freundlich auf direkten Kontakt.'
+      : 'Answer only about role/ad/job. For other questions, kindly refer to direct contact.';
+    return [langLine, structure, scope].join(' ');
+  }
+
   function primeSession(reportLang){
     const spoken = (reportLang === 'de') ? 'de' : 'en';
     dcSend({
       type:'session.update',
       session:{
         voice: VOICE,
+        // HARTE Sprachvorgabe:
+        instructions: buildSystemInstructions(CTX.reportLang ? CTX : { reportLang }),
         spoken_language: spoken,
-        input_audio_format:'pcm16',
-        output_audio_format:'pcm16',
+        // Transkription → Sprache fest
         input_audio_transcription:{ model:'whisper-1', language: spoken },
+        // VAD
         turn_detection:{ type:'server_vad', threshold:0.9, prefix_padding_ms:200, silence_duration_ms:700 },
+        // Nur Audio
         modalities:['audio'],
+        input_audio_format:'pcm16',
+        output_audio_format:'pcm16'
       }
     });
   }
@@ -342,7 +362,6 @@
   function ensureAudioPlayback(){ return $remoteA.play().then(()=>true).catch(()=>false); }
   function showAudioGate(){ setStatus('warn','Autoplay blockiert – bitte kurz in den Player klicken.'); }
 
-  // ---------- Export (Parent übernimmt Upload) ---
   async function blobToDataURL(blob){
     return new Promise((resolve,reject)=>{
       const reader = new FileReader();
@@ -391,14 +410,13 @@
         $muxState.textContent='exporting';
         $recProg.style.width = '60%';
 
-        // -> Parent upload (statt internem Wix-Upload)
+        // → Parent übernimmt Upload
         const dataUrl = await blobToDataURL(blob);
         parent?.postMessage?.({ type:'recorder:export', data: { dataUrl, kind: (hasVid?'video':'audio'), bytes: blob.size } }, '*');
         $recProg.style.width = '100%';
         $muxState.textContent='export sent';
 
-        // Notify end
-        parent?.postMessage?.({ type:'clarity.live.ended', data:{} }, '*');
+        sendEndedOnce();
       } catch(e){
         $muxState.textContent='export failed';
         log('[REC] export failed', e);
@@ -408,7 +426,7 @@
       }
     };
 
-    mediaRecorder.start();
+    if (RECORD_ENABLED !== false) mediaRecorder.start();
   }
 
   function stopRecording(){
@@ -416,9 +434,16 @@
     try{ mixedStream?.getTracks()?.forEach(t => t.stop()); }catch(_){}
   }
 
+  function sendEndedOnce(){
+    if (ENDED_SENT) return;
+    ENDED_SENT = true;
+    parent?.postMessage?.({ type:'clarity.live.ended', data:{} }, '*');
+  }
+
   // -------------------- Start / Stop Flow --------
   async function startInterview(){
     destroyed = false;
+    ENDED_SENT = false;
     setStatus('info','Initialisiere…');
 
     // Mic/Camera
@@ -432,17 +457,19 @@
     const unlocked = await ensureAudioPlayback();
     if (!unlocked) showAudioGate();
 
-    // Recorder nur, wenn erlaubt (default true)
-    if (RECORD_ENABLED !== false) startRecording();
+    // Recorder
+    startRecording();
 
     // Sprache HART setzen: sofort + nach 1s + nach 5s
     await waitDCOpen();
-    primeSession(ctx.reportLang);
-    forceLangAgain(ctx.reportLang, 1000);
-    forceLangAgain(ctx.reportLang, 5000);
+    const usedLang = (CTX.reportLang || ctx.reportLang || LANG);
+    CTX.reportLang = usedLang; // merken für buildSystemInstructions
+    primeSession(usedLang);
+    forceLangAgain(usedLang, 1000);
+    forceLangAgain(usedLang, 5000);
 
     // 5s Verzögerung, dann Welcome/„Bereit?“
-    setTimeout(()=>{ if (!destroyed) sendWelcome(ctx); }, 5000);
+    setTimeout(()=>{ if (!destroyed) sendWelcome({ reportLang: usedLang, companyName: ctx.companyName }); }, 5000);
 
     setStatus('ok','Verbunden • Interview läuft');
   }
@@ -459,7 +486,7 @@
     stopRecording();
     setStatus('warn','Beendet');
     log('[Live] hangup done');
-    parent?.postMessage?.({ type:'clarity.live.ended', data:{} }, '*');
+    sendEndedOnce();
   }
 
   // -------------------- Parent-Messaging ---------
@@ -470,7 +497,7 @@
     if (type === 'clarity.live.context') {
       CTX = msg.data || {};
       PARENT_UPLOAD  = (CTX.uploadMode === 'parent');
-      // optional: weitere CTX Felder (position/docs/roleProfile) werden aktuell im Parent genutzt
+      // RECORD_ENABLED bleibt durch record-Message steuerbar
       log('[CTX]', CTX);
     }
     else if (type === 'clarity.live.record') {
@@ -488,17 +515,14 @@
       hangup();
     }
     else if (type === 'recorder:export') {
-      // Parent fordert Export an → wir stoppen (triggert onstop → export)
+      // Parent fordert Export an → Recording sauber stoppen (triggert onstop → export)
       stopRecording();
     }
   });
 
-  // Direkt im Iframe nutzbar (falls ohne Parent)
   document.getElementById('btnStop').addEventListener('click', hangup);
 
-  // -------- Permissions-Policy Hinweis -----------
-  // Das <iframe> im Parent benötigt:
-  //   allow="microphone; camera; autoplay"
+  // Hinweis: iframe im Parent braucht allow="microphone; camera; autoplay"
   </script>
 </body>
 </html>
