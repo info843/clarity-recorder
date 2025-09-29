@@ -110,36 +110,28 @@
   let destroyed = false;
 
   // Parent-Handshake / Flags
-  let PARENT_UPLOAD = false;
-  let RECORD_ENABLED = true;
-  let CTX = { uploadMode:'internal', reportLang:'de', roleProfileText:'', docsText:'', interviewMode:'structured', interviewConfig:{maxQuestions:10,followUpsPerQuestion:1,allowCandidateQuestions:5,endWithSummary:true} };
+  let PARENT_UPLOAD = false;         // Parent übernimmt Upload
+  let RECORD_ENABLED = false;        // Start: AUS, Parent schaltet später AN
+  let CTX = { reportLang:'de', interviewMode:'structured', roleProfileText:'', docsText:'' };
   let ENDED_SENT = false;
+  let DC_OPEN = false;
+  let AUDIO_UNLOCKED = false;
 
   // ===== DC-Queue + Wait =====
-  let dcIsOpen = false;
   let dcQueue = [];
   function dcSend(obj){
     if (destroyed) return;
     try{
-      if (dcIsOpen && DC && DC.readyState === 'open') {
+      if (DC_OPEN && DC && DC.readyState === 'open') {
         DC.send(JSON.stringify(obj));
       } else {
         dcQueue.push(obj);
       }
     }catch(e){ console.warn('[RTC] dcSend fail', e); }
   }
-  function waitDCOpen(timeoutMs = 6000){
-    if (dcIsOpen && DC?.readyState === 'open') return Promise.resolve();
-    return new Promise(resolve => {
-      const t0 = Date.now();
-      const iv = setInterval(() => {
-        if (dcIsOpen && DC?.readyState === 'open') {
-          clearInterval(iv); resolve();
-        } else if (Date.now() - t0 > timeoutMs) {
-          clearInterval(iv); resolve();
-        }
-      }, 50);
-    });
+  function flushDCQueue(){
+    if (!DC_OPEN || !DC || DC.readyState!=='open') return;
+    try { const pending = dcQueue.splice(0); for (const msg of pending) DC.send(JSON.stringify(msg)); } catch(e){}
   }
 
   // -------------------- Token --------------------
@@ -152,7 +144,7 @@
     }
     const data = await r.json().catch(e=>{ throw new Error('token_json_parse: '+e); });
     log('[Live] Token response:', r.status, data);
-    if (!data?.ok) throw new Error('token_error: '+(data?.error||'unknown')+' '+(data?.message||''));    
+    if (!data?.ok) throw new Error('token_error: '+(data?.error||'unknown')+' '+(data?.message||''));
     const sec = extractClientSecret(data);
     if (!sec) throw new Error('client_secret_missing');
     log('[Live] effective', { lang:data.reportLang||payload.lang, voice:data.voice, model:data.model });
@@ -173,7 +165,6 @@
     pc = new RTCPeerConnection({ iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }] });
 
     pc.onconnectionstatechange = () => {
-      log('[RTC] connected');
       if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected'){
         setStatus('err','Verbindung unterbrochen');
       }
@@ -202,16 +193,20 @@
         })();
       }catch(_){}
 
+      // Try to start playback
       try {
         $remoteA.muted = false; $remoteA.volume = 1.0;
         $remoteA.setAttribute('autoplay',''); $remoteA.setAttribute('playsinline','');
         await $remoteA.play();
+        AUDIO_UNLOCKED = true;
+        maybeSignalReady();
         log('[RTC] remote audio playing.');
       } catch(e) {
         log('[RTC] play() blocked', e);
-        showAudioGate();
+        setStatus('warn','Autoplay blockiert – bitte kurz in den Player klicken.');
       }
 
+      // Simple input meter for badge
       try {
         const levelAnalyser = audioCtx.createAnalyser();
         levelAnalyser.fftSize = 1024;
@@ -230,18 +225,18 @@
       }catch(_){}
     };
 
+    // Local tracks
     if (localStream){
       localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
     }
 
+    // DataChannel
     DC = pc.createDataChannel('oai-events');
     DC.onopen = () => {
-      dcIsOpen = true;
+      DC_OPEN = true;
       log('[RTC] DC open');
-      try {
-        const pending = dcQueue.splice(0);
-        for (const msg of pending) DC.send(JSON.stringify(msg));
-      } catch(e){ console.warn('[RTC] flush queue fail', e); }
+      flushDCQueue();
+      maybeSignalReady();
     };
     DC.onmessage = onRealtimeEvent;
 
@@ -266,56 +261,37 @@
     await pc.setRemoteDescription(answer);
   }
 
-  // ----------- Mini Debug der DC-Events ----------
   function onRealtimeEvent(ev){
     let data = ev && ev.data;
     try{ if (typeof data === 'string') data = JSON.parse(data); }catch(_){}
     if (!data) return;
 
-    // Avatar-State an Parent
     if (data.type === 'response.state' && data.state){
       parent?.postMessage?.({ type:'clarity.avatar', data:{ state:data.state } }, '*');
     }
-
-    // einfache Sichtbarkeit im Log (optional)
-    if (data.type === 'response.created' || data.type === 'response.completed'){
-      log('[OAI]', data.type);
-    }
   }
 
-  // ---------------- Interview-Plan ----------------
+  // ---------------- Interview-Plan / Priming -----
   function buildInterviewPlan(ctx){
-    const lang = (String(ctx.reportLang||'de').toLowerCase().startsWith('de')) ? 'de' : 'en';
-    const text = ((ctx.roleProfileText||'') + '\n' + (ctx.docsText||'')).trim();
-    const position = (ctx.position||'').trim();
-
+    const isDE = String(ctx.reportLang||'de').toLowerCase().startsWith('de');
+    const txt = ((ctx.roleProfileText||'') + '\n' + (ctx.docsText||'')).toLowerCase();
+    const position = ctx.position || '';
     const maxQ = Math.max(3, Math.min(12, (ctx.interviewConfig?.maxQuestions ?? 10)));
-
-    // Sehr einfacher Heuristik-Extractor für Schlüsselthemen
     const kws = [];
-    const lower = text.toLowerCase();
-    [
-      ['typescript','TypeScript'], ['javascript','JavaScript'], ['node','Node.js'],
-      ['react','React'], ['vue','Vue'], ['python','Python'], ['java','Java'],
-      ['aws','AWS'], ['azure','Azure'], ['gcp','GCP'], ['microservice','Microservices'],
-      ['sql','SQL'], ['nosql','NoSQL'], ['docker','Docker'], ['kubernetes','Kubernetes'],
-      ['sales','Sales'], ['crm','CRM'], ['seo','SEO'], ['marketing','Marketing']
-    ].forEach(([needle,label]) => { if (lower.includes(needle)) kws.push(label); });
-
-    const genericDE = [
+    [['typescript','TypeScript'],['javascript','JavaScript'],['react','React'],['python','Python'],['java','Java'],['aws','AWS'],['sql','SQL'],['docker','Docker'],['kubernetes','Kubernetes'],['sales','Sales'],['seo','SEO']].forEach(([n,l])=>{ if(txt.includes(n)) kws.push(l); });
+    const bankDE = [
       'Bitte stellen Sie sich kurz vor und skizzieren Sie Ihren beruflichen Hintergrund.',
       position ? `Welche Erfahrung haben Sie in Bezug auf die Position „${position}“?` : 'Welche Ihrer Erfahrungen passt am besten zur ausgeschriebenen Position?',
       kws.length ? `Wie sicher sind Sie in ${kws.slice(0,3).join(', ')}? Bitte mit kurzen Beispielen.` : 'Nennen Sie zwei fachliche Stärken, die Sie mit Beispielen belegen.',
       'Beschreiben Sie eine Herausforderung in Ihrem letzten Projekt und wie Sie sie gelöst haben.',
-      'Wie planen Sie Ihre Arbeit, wenn mehrere Aufgaben gleichzeitig anstehen?',
+      'Wie priorisieren Sie, wenn mehrere Aufgaben gleichzeitig anstehen?',
       'Welche Erwartungen haben Sie an Team, Führung und Arbeitsweise?',
       'Wie halten Sie Ihr Wissen aktuell?',
       'Was motiviert Sie besonders an dieser Rolle?',
       'Welche Gehalts- und Starttermin-Vorstellungen haben Sie?',
       'Haben Sie noch Fragen an uns?'
     ];
-
-    const genericEN = [
+    const bankEN = [
       'Please introduce yourself and summarize your professional background.',
       position ? `What relevant experience do you have for the “${position}” role?` : 'Which parts of your background fit this role best?',
       kws.length ? `How confident are you with ${kws.slice(0,3).join(', ')}? Give brief examples.` : 'Name two core strengths and back them with examples.',
@@ -327,50 +303,37 @@
       'What are your salary expectations and earliest start date?',
       'Any questions for us?'
     ];
-
-    const bank = (lang==='de') ? genericDE : genericEN;
-    return bank.slice(0, maxQ);
+    return (isDE?bankDE:bankEN).slice(0,maxQ);
   }
 
   function buildSystemInstructions(ctx){
-    const isDE = (String(ctx.reportLang||'de').toLowerCase().startsWith('de'));
+    const isDE = String(ctx.reportLang||'de').toLowerCase().startsWith('de');
     const plan = buildInterviewPlan(ctx);
     const planTxt = plan.map((q,i)=>`${i+1}. ${q}`).join('\n');
-
-    const hardRules = isDE
-      ? [
-          'SPRICHT STRENG DEUTSCH. Keine andere Sprache verwenden.',
-          'Geführtes Interview: Stelle GENAU EINE Frage pro Runde. Maximal 1 Nachfrage.',
-          'Warte nach jeder Frage still, bis die Kandidat:in fertig gesprochen hat (Server-VAD).',
-          'Bleibe strikt bei Rolle/Ausschreibung. Kein Smalltalk, keine Abschweifungen.',
-          'Beginne ERST, nachdem die Kandidat:in „bereit“, „ja“ o. Ä. signalisiert.',
-          'Wenn die Kandidat:in dagegen fragt: Höflich parken („gerne am Ende“).',
-          'Nach Abschluss bedanke dich kurz und kündige „Auswertung folgt“ an.'
-        ]
-      : [
-          'SPEAK STRICTLY ENGLISH. Do not use any other language.',
-          'Structured interview: ask EXACTLY ONE question per round. Max 1 follow-up.',
-          'After each question, wait silently until the candidate finishes (server VAD).',
-          'Stay strictly on the role/ad. No small talk, no digressions.',
-          'Only start once the candidate signals “ready/yes”.',
-          'If the candidate asks you questions, politely park them for the end.',
-          'After finishing, thank them and say the report will follow.'
-        ];
-
+    const hard = isDE
+      ? ['SPRICHT STRENG DEUTSCH. Keine andere Sprache verwenden.',
+         'Geführtes Interview: 1 Frage pro Runde, max. 1 Nachfrage.',
+         'Nach jeder Frage still warten (Server-VAD).',
+         'Strikt bei Rolle/Ausschreibung bleiben. Kein Smalltalk.',
+         'Erst starten, wenn Kandidat:in „bereit“ signalisiert.',
+         'Rückfragen der Kandidat:in freundlich für das Ende parken.',
+         'Am Ende kurz bedanken und „Auswertung folgt“ sagen.']
+      : ['SPEAK STRICTLY ENGLISH.',
+         'Structured interview: one question at a time, max one follow-up.',
+         'After each question, wait silently (server VAD).',
+         'Stay on the role/ad. No small talk.',
+         'Start only after candidate signals “ready”.',
+         'Park candidate questions for the end.',
+         'At the end thank them and say the report will follow.'];
     const header = isDE ? '--- INTERVIEW-PLAN (DE) ---' : '--- INTERVIEW PLAN (EN) ---';
-
-    return [
-      hardRules.join(' '),
-      header,
-      planTxt
-    ].join('\n');
+    return [hard.join(' '), header, planTxt].join('\n');
   }
 
   function primeStrictLanguage(reportLang){
-    const spoken = (String(reportLang||'de').toLowerCase().startsWith('de')) ? 'de' : 'en';
+    const spoken = String(reportLang||'de').toLowerCase().startsWith('de') ? 'de' : 'en';
     const sys = buildSystemInstructions(CTX);
 
-    // Erst: nur Assistent redet (Turn-Detection aus) → Vorbereitung + Welcome
+    // Turn detection AUS, damit nur der Assistent spricht
     dcSend({ type:'session.update', session:{
       voice: VOICE,
       instructions: sys,
@@ -382,33 +345,32 @@
       modalities:['audio']
     }});
 
-    // Redundante Nachschärfung (Netz/Jitter)
+    // Reinforcement (Netz/Jitter)
     setTimeout(()=> dcSend({ type:'session.update', session:{
       spoken_language: spoken,
       input_audio_transcription:{ model:'whisper-1', language: spoken }
-    }}), 700);
-
-    setTimeout(()=> dcSend({ type:'session.update', session:{ spoken_language: spoken }}), 2200);
+    }}), 600);
+    setTimeout(()=> dcSend({ type:'session.update', session:{ spoken_language: spoken }}), 2000);
   }
 
   function speakPrepThenWelcome(){
-    const comp = (String(CTX.reportLang||'de').toLowerCase().startsWith('de')) ? 'de' : 'en';
-    const prep = (comp==='de')
-      ? 'Einen Moment bitte, ich bereite das Interview vor …'
-      : 'One moment please, I am preparing the interview …';
-    const welcome = (comp==='de')
+    const isDE = String(CTX.reportLang||'de').toLowerCase().startsWith('de');
+    const prep = isDE ? 'Einen Moment bitte, ich bereite das Interview vor …' : 'One moment please, I am preparing the interview …';
+    const welcome = isDE
       ? `Willkommen! Dieses Interview wird im Auftrag von ${CTX.companyName||'Clarity'} geführt. Sind Sie bereit zu starten?`
       : `Welcome! This interview is conducted on behalf of ${CTX.companyName||'Clarity'}. Are you ready to begin?`;
 
     // Vorbereitungsansage
     dcSend({ type:'response.create', response:{ instructions: prep, modalities:['audio'] }});
 
-    // Dann Welcome + VAD wieder AN, damit Kandidat:in antworten kann
+    // Dann Welcome + VAD wieder AN
     setTimeout(()=>{
       dcSend({ type:'response.create', response:{ instructions: welcome, modalities:['audio'] }});
       dcSend({ type:'session.update', session:{
         turn_detection:{ type:'server_vad', threshold:0.9, prefix_padding_ms:200, silence_duration_ms:700 }
       }});
+      // Parent kann Overlay schließen
+      parent?.postMessage?.({ type:'clarity.live.prepared', data:{} }, '*');
     }, 1500);
   }
 
@@ -443,8 +405,7 @@
     }catch(_){}
   }
 
-  function ensureAudioPlayback(){ return $remoteA.play().then(()=>true).catch(()=>false); }
-  function showAudioGate(){ setStatus('warn','Autoplay blockiert – bitte kurz in den Player klicken.'); }
+  function ensureAudioPlayback(){ return $remoteA.play().then(()=>{AUDIO_UNLOCKED=true; maybeSignalReady(); return true;}).catch(()=>false); }
 
   async function blobToDataURL(blob){
     return new Promise((resolve,reject)=>{
@@ -455,8 +416,10 @@
     });
   }
 
-  function startRecording(){
-    if (!localStream){ log('[REC] cannot start – no localStream'); return; }
+  function maybeStartRecording(){
+    if (!RECORD_ENABLED) return;
+    if (mediaRecorder) return;
+    if (!localStream) return; // need mic/cam
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const dest = ctx.createMediaStreamDestination();
 
@@ -481,6 +444,7 @@
       videoBitsPerSecond: hasVideo ? 1_200_000 : undefined,
       audioBitsPerSecond: 128_000
     });
+
     const chunks = [];
     mediaRecorder.onstart = ()=>{ $recState.textContent='recording'; log('[REC] started'); };
     mediaRecorder.ondataavailable = (e)=>{ if (e.data && e.data.size>0) chunks.push(e.data); };
@@ -514,7 +478,7 @@
       }
     };
 
-    if (RECORD_ENABLED !== false) mediaRecorder.start();
+    mediaRecorder.start();
   }
 
   function stopRecording(){
@@ -528,6 +492,12 @@
     parent?.postMessage?.({ type:'clarity.live.ended', data:{} }, '*');
   }
 
+  function maybeSignalReady(){
+    if (DC_OPEN && AUDIO_UNLOCKED){
+      parent?.postMessage?.({ type:'clarity.live.ready', data:{} }, '*');
+    }
+  }
+
   // -------------------- Start / Stop Flow --------
   async function startInterview(){
     destroyed = false;
@@ -539,18 +509,9 @@
     const { secret, ctx } = await getRealtimeToken({ uid:UID, companyId:COMPANY_ID, lang:LANG, voice:VOICE, debug:true, allowNoInvite:true });
 
     await connectRealtime(secret);
-    const unlocked = await ensureAudioPlayback();
-    if (!unlocked) showAudioGate();
+    await ensureAudioPlayback();
 
-    startRecording();
-
-    await waitDCOpen();
-    const usedLang = (CTX.reportLang || ctx.reportLang || LANG);
-    CTX = { ...CTX, companyName: ctx.companyName || CTX.companyName, reportLang: usedLang };
-    primeStrictLanguage(usedLang);
-    speakPrepThenWelcome();
-
-    setStatus('ok','Verbunden • Interview läuft');
+    setStatus('ok','Verbunden • bereit');
   }
 
   async function hangup(){
@@ -578,11 +539,14 @@
       log('[CTX]', CTX);
       return;
     }
+
     if (type === 'clarity.live.record') {
       RECORD_ENABLED = !!(msg.data && msg.data.enabled);
       log('[REC] record flag from parent:', RECORD_ENABLED);
+      if (RECORD_ENABLED) maybeStartRecording();
       return;
     }
+
     if (type === 'clarity.live.start') {
       startInterview().catch(e => {
         setStatus('err', 'Startfehler: ' + (e?.message||e));
@@ -591,9 +555,20 @@
       });
       return;
     }
+
+    // NEU: Parent primt hart NACH ready
+    if (type === 'clarity.live.prime') {
+      const rl = (msg.data && msg.data.reportLang) || CTX.reportLang || LANG;
+      CTX.reportLang = rl;
+      primeStrictLanguage(rl);
+      speakPrepThenWelcome(); // sendet später prepared
+      return;
+    }
+
     if (type === 'clarity.live.stop' || type === 'clarity.live.hangup') {
       hangup(); return;
     }
+
     if (type === 'recorder:export') {
       stopRecording(); return;
     }
