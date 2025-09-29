@@ -99,40 +99,65 @@
     $status.style.borderColor = kind==='err' ? '#7f1d1d' : (kind==='ok' ? '#14532d' : '#24314f');
   }
 
-  // -------------------- Feste Wix-Backends --------------------
+  // -------------------- Endpunkte (erst Proxy, dann Wix) --------------------
+  const PROXIES = {
+    token: ['/api/wix-token-proxy'],
+    upload: ['/api/wix-media-upload']
+  };
   const WIX_BASES = [
     'https://www.clarity-nvl.com/_functions',
-    'https://clarity-nvl.com/_functions' // Fallback, falls naked domain aktiv
+    'https://clarity-nvl.com/_functions'
   ];
 
-  async function postToWix(path, payload) {
-    let lastErr;
-    for (const base of WIX_BASES) {
-      try {
-        const r = await fetch(`${base}${path}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload ?? {})
-        });
-        let j = {};
-        try { j = await r.json(); } catch(_) {}
-        if (!r.ok || j?.ok === false) {
-          lastErr = new Error(j?.message || `HTTP ${r.status}`);
-          log('[WIX]', path, 'not ok:', j || r.status);
-          continue;
-        }
-        return j;
-      } catch (e) {
-        lastErr = e;
-        log('[WIX]', path, 'fetch error:', e);
-      }
+  async function postJSON(url, payload){
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload ?? {})
+    });
+    let j=null; try{ j = await r.json(); }catch{}
+    return { ok:r.ok, status:r.status, data:j };
+  }
+
+  async function postToken(payload){
+    // 1) eigene Domain -> Proxy (keine CORS)
+    for (const p of PROXIES.token){
+      try{
+        const {ok,data} = await postJSON(p, payload);
+        if (ok && data) return data;
+      }catch(e){ log('[Proxy token] fail', e); }
     }
-    throw lastErr || new Error('wix_request_failed');
+    // 2) direkter Wix-Fallback
+    for (const base of WIX_BASES){
+      try{
+        const {ok,data} = await postJSON(`${base}/realtimeToken`, payload);
+        if (ok && data) return data;
+      }catch(e){ log('[Wix token] fail', e); }
+    }
+    throw new Error('token_fetch_failed');
+  }
+
+  async function postUpload(payload){
+    // 1) eigener Proxy
+    for (const p of PROXIES.upload){
+      try{
+        const {ok,data} = await postJSON(p, payload);
+        if (ok && data && data.ok) return data;
+      }catch(e){ log('[Proxy upload] fail', e); }
+    }
+    // 2) direkter Wix-Fallback
+    for (const base of WIX_BASES){
+      try{
+        const {ok,data} = await postJSON(`${base}/wixMediaUpload`, payload);
+        if (ok && data && data.ok) return data;
+      }catch(e){ log('[Wix upload] fail', e); }
+    }
+    throw new Error('wix_media_upload_failed');
   }
 
   async function getRealtimeToken(payload){
-    log('[Live] Fetching token…', WIX_BASES[0] + '/realtimeToken', JSON.stringify(payload));
-    const data = await postToWix('/realtimeToken', payload);
+    log('[Live] Fetching token…', JSON.stringify(payload));
+    const data = await postToken(payload);
     log('[Live] Token response:', data);
     return data;
   }
@@ -148,7 +173,7 @@
   }
   async function uploadToWixMedia(blob, filename, mimeType){
     const base64 = await blobToBase64(blob);
-    const res = await postToWix('/wixMediaUpload', { base64, filename, mimeType });
+    const res = await postUpload({ base64, filename, mimeType });
     if (!res?.fileUrl) {
       log('[REC] wix upload error payload=', res);
       throw new Error('wix_media_upload_failed');
@@ -160,7 +185,7 @@
   let pc, DC;
   let localStream, mixedStream, mediaRecorder;
   let remoteStream;
-  let stopped = false;           // harter Stop (verhindert Kosten)
+  let stopped = false;
   let audioCtx, remoteSource;
 
   // ===== DC-Queue + Wait =====
@@ -206,7 +231,7 @@
       remoteStream.addTrack(ev.track);
       $remoteA.srcObject = remoteStream;
 
-      // WebAudio Analyser (System-Level)
+      // System-Level meter
       try{
         audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
         await audioCtx.resume().catch(()=>{});
@@ -223,7 +248,7 @@
         })();
       }catch(_){}
 
-      // Playback Safety
+      // Autoplay safety
       try {
         $remoteA.muted = false;
         $remoteA.volume = 1.0;
@@ -236,7 +261,7 @@
         setStatus('warn','Audio-Autoplay blockiert – bitte den Player anklicken oder Lautstärke öffnen.');
       }
 
-      // Debug-Badge „Audio in“
+      // „Audio in“-Badge
       try {
         const levelAnalyser = audioCtx.createAnalyser();
         levelAnalyser.fftSize = 1024;
@@ -254,12 +279,10 @@
       }catch(_){}
     };
 
-    // Lokale Tracks
     if (localStream){
       localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
     }
 
-    // DataChannel
     DC = pc.createDataChannel('oai-events');
     DC.onopen = () => {
       dcIsOpen = true;
@@ -327,25 +350,14 @@
         instructions: makeSystemPrompt()
       }
     };
-    // dreifach nageln (50ms Abstand)
-    dcSend(payload);
-    setTimeout(()=>dcSend(payload), 50);
-    setTimeout(()=>dcSend(payload), 100);
+    dcSend(payload); setTimeout(()=>dcSend(payload), 50); setTimeout(()=>dcSend(payload), 100);
   }
 
   function greetingIntro(ctx){
     const welcome = (LANG.startsWith('de')
       ? `Willkommen! Dieses Interview wird im Auftrag von ${ctx.companyName||'Clarity'} geführt. Wenn Sie bereit sind, sagen Sie bitte "Start".`
       : `Welcome! This interview is conducted on behalf of ${ctx.companyName||'Clarity'}. When you’re ready, please say "Start".`);
-
-    dcSend({
-      type:'response.create',
-      response:{
-        conversation:'default',
-        instructions: welcome,
-        modalities:['audio']
-      }
-    });
+    dcSend({ type:'response.create', response:{ conversation:'default', instructions: welcome, modalities:['audio'] } });
   }
 
   function firstQuestion(ctx){
@@ -361,7 +373,6 @@
     localStream = await navigator.mediaDevices.getUserMedia(constraints);
     $localV.srcObject = localStream;
 
-    // Mic-Level
     try{
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
       const src = ctx.createMediaStreamSource(localStream);
@@ -379,10 +390,7 @@
   }
 
   function startRecording(){
-    if (!localStream){
-      log('[REC] cannot start – no localStream'); 
-      return;
-    }
+    if (!localStream){ log('[REC] cannot start – no localStream'); return; }
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const dest = ctx.createMediaStreamDestination();
 
@@ -409,7 +417,6 @@
       $recState.textContent='stopped';
       const blob = new Blob(chunks, { type:'video/webm' });
       log('[REC] stop, size=', blob.size);
-
       try{
         $upState.textContent='uploading…';
         $recProg.style.width = '40%';
@@ -426,7 +433,6 @@
         parent?.postMessage?.({ type:'wix.upload.error', data:{ message:String(e?.message||e) } }, '*');
       }
     };
-
     mediaRecorder.start();
   }
 
@@ -440,10 +446,8 @@
     if (stopped) return;
     setStatus('info','Initialisiere…');
 
-    // 1) Media
     await setupLocalMedia();
 
-    // 2) Token/Context von Wix
     const tokenRes = await getRealtimeToken({ uid:UID, companyId:COMPANY_ID, lang:LANG, voice:VOICE, debug:true, allowNoInvite:true });
     const clientSecret = tokenRes?.client_secret || tokenRes?.clientSecret || tokenRes?.token;
     if (!clientSecret) throw new Error('token_missing');
@@ -454,30 +458,14 @@
     };
     log('[Live] effective', { lang:LANG, voice:VOICE, model:tokenRes?.model });
 
-    // 3) Realtime verbinden
     await connectRealtime(clientSecret);
-
-    // 4) Recorden
     startRecording();
 
-    // 5) DC offen + Sprache nageln
     await waitDCOpen();
     primeSessionHard();
 
-    // 6) 5s Delay, dann Begrüßung
-    setTimeout(()=>{
-      if (stopped) return;
-      greetingIntro(ctx);
-      setStatus('ok','Verbunden • Interview läuft');
-    }, 5000);
-
-    // 7) Auf „Start“ warten → erste Frage
-    // Einfache Heuristik: wenn Nutzer „start“ sagt, feuert VAD + Antwort kommt; hier könnte man
-    // noch den ASR-Text via events abgreifen. Für jetzt starten wir nach ~10s als Fallback:
-    setTimeout(()=>{
-      if (stopped) return;
-      firstQuestion(ctx);
-    }, 10000);
+    setTimeout(()=>{ if (!stopped){ greetingIntro(ctx); setStatus('ok','Verbunden • Interview läuft'); } }, 5000);
+    setTimeout(()=>{ if (!stopped){ firstQuestion(ctx); } }, 10000);
   }
 
   function hangup(){
@@ -496,23 +484,16 @@
   window.addEventListener('message', (ev)=>{
     const msg = ev.data || {};
     if (msg.type === 'clarity.live.start') {
-      startInterview().catch(e => {
-        setStatus('err', 'Startfehler: ' + (e?.message||e));
-        log(e);
-      });
+      startInterview().catch(e => { setStatus('err', 'Startfehler: ' + (e?.message||e)); log(e); });
     } else if (msg.type === 'clarity.live.hangup') {
       hangup();
     }
   });
-
   document.getElementById('btnStop').addEventListener('click', hangup);
 
   // Optional: Auto-Start wenn standalone
   if (!window.parent || window.parent === window) {
-    startInterview().catch(e => {
-      setStatus('err', 'Startfehler: ' + (e?.message||e));
-      log(e);
-    });
+    startInterview().catch(e => { setStatus('err', 'Startfehler: ' + (e?.message||e)); log(e); });
   }
   </script>
 </body>
