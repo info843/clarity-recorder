@@ -67,13 +67,19 @@
   </div>
 
   <script>
-  (()=>{"use strict";
+  ;(()=>{"use strict";
+
+  // ---- Single-Instance Guard (Wix lädt Scripts gern doppelt) ----
+  if (window.__clarity_live_active) { console.warn('[LIVE] duplicate script ignored'); return; }
+  window.__clarity_live_active = true;
+
   // -------------------- Query --------------------
   const Q = new URLSearchParams(location.search);
   const UID = (Q.get('uid')||'').trim();
   const COMPANY_ID = (Q.get('companyId')||'').trim();
   const LANG = (Q.get('lang')||'de').toLowerCase();
   const VOICE = (Q.get('voice')||'verse').toLowerCase();
+  const AUTOSTART = Q.get('autostart') === '1';
 
   // -------------------- UI Els -------------------
   const $status = document.getElementById('status');
@@ -89,10 +95,12 @@
   const $recProg  = document.getElementById('recProgress');
 
   function log(...a){
-    console.log(...a);
-    const s = a.map(x => typeof x==='object' ? JSON.stringify(x) : String(x)).join(' ');
-    $log.textContent += s + "\n";
-    $log.scrollTop = $log.scrollHeight;
+    try{
+      console.log(...a);
+      const s = a.map(x => typeof x==='object' ? JSON.stringify(x) : String(x)).join(' ');
+      $log.textContent += s + "\n";
+      $log.scrollTop = $log.scrollHeight;
+    }catch(_){}
   }
   function setStatus(kind, text){
     $status.textContent = text || kind || '';
@@ -109,6 +117,7 @@
   let remoteStream;
   let audioCtx, remoteSource;
   let destroyed = false;
+  let started = false;
 
   // Parent-Handshake / Flags
   let PARENT_UPLOAD = false;   // ctx.uploadMode === 'parent'
@@ -117,16 +126,19 @@
   let ENDED_SENT = false;      // einmalige ended-Message
 
   // Welcome/Start Gates
-  const WELCOME_DELAY_MS = 500;
-  const MIC_ENABLE_AFTER_WELCOME_MS = 3600;
+  const WELCOME_DELAY_MS = 300;
+  const MIC_ENABLE_AFTER_WELCOME_MS = 2500;
   let waitingForWelcome = true;
   let FIRST_Q_SENT = false;
 
-  // DC queue
+  // DC / readiness
   let dcIsOpen = false;
+  let remotePlayable = false;
+  let remoteTrackSeen = false;
+
   const dcQueue = [];
   function dcSend(obj){
-    if (destroyed) return;
+    if (destroyed || !obj) return;
     try{
       if (dcIsOpen && DC && DC.readyState === 'open') {
         DC.send(JSON.stringify(obj));
@@ -145,6 +157,26 @@
       }
       log('[DC] queue flushed');
     }catch(e){ console.warn('[DC] flush fail', e); }
+  }
+  function waitForDCOpen(timeout=8000){
+    return new Promise(res=>{
+      if (dcIsOpen) return res(true);
+      const t0 = Date.now();
+      const iv = setInterval(()=>{
+        if (dcIsOpen) { clearInterval(iv); res(true); }
+        else if (Date.now()-t0>timeout){ clearInterval(iv); res(false); }
+      },50);
+    });
+  }
+  function waitForRemotePlayable(timeout=8000){
+    return new Promise(res=>{
+      if (remotePlayable) return res(true);
+      const t0 = Date.now();
+      const iv = setInterval(()=>{
+        if (remotePlayable) { clearInterval(iv); res(true); }
+        else if (Date.now()-t0>timeout){ clearInterval(iv); res(false); }
+      },50);
+    });
   }
 
   // -------------------- Token --------------------
@@ -181,7 +213,7 @@
       parent?.postMessage?.({ type:'clarity.avatar', data:{ state:data.state } }, '*');
     }
 
-    // Nur Keyword-Start erlaubt
+    // Keyword-Start
     if (data.type === 'input_audio_transcription.completed'){
       const txt = (data?.transcription?.text || '').toLowerCase();
       if (/\bbereit\b|\bready\b|\bstart(en)?\b|\blas uns starten\b/.test(txt)) {
@@ -191,11 +223,12 @@
   }
 
   async function connectRealtime(clientSecret){
+    if (pc) return; // doppelte Handshakes verhindern
     pc = new RTCPeerConnection({ iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }] });
 
     pc.onconnectionstatechange = () => {
-      log('[RTC] connecting');
       if (pc.connectionState === 'connected') log('[RTC] connected');
+      else log('[RTC] connecting');
       if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected'){
         setStatus('err','Verbindung unterbrochen');
       }
@@ -206,7 +239,9 @@
       if (!remoteStream) remoteStream = new MediaStream();
       remoteStream.addTrack(ev.track);
       $remoteA.srcObject = remoteStream;
+      remoteTrackSeen = true;
 
+      // Audio-Analyse
       try{
         audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
         await audioCtx.resume().catch(()=>{});
@@ -224,12 +259,15 @@
         })();
       }catch(_){}
 
+      // Autoplay entsperren
       try {
         $remoteA.muted = false; $remoteA.volume = 1.0;
         $remoteA.setAttribute('autoplay',''); $remoteA.setAttribute('playsinline','');
         await $remoteA.play();
+        remotePlayable = true;
         log('[AUDIO] remote audio playing (unlocked).');
       } catch(e) {
+        remotePlayable = false;
         log('[AUDIO] autoplay blocked, waiting for user gesture.');
         setStatus('warn','Autoplay blockiert – bitte kurz in den Player klicken.');
       }
@@ -258,7 +296,7 @@
     DC.onopen = () => { dcIsOpen = true; log('[RTC] DC open'); flushDC(); };
     DC.onmessage = onRealtimeEvent;
 
-    // Wichtig: VOR dem Offer KEINE Local-Tracks adden → Mic bleibt stumm bis später
+    // Erst nur Empfang anbieten (Mic später)
     const offer = await pc.createOffer({ offerToReceiveAudio:true, offerToReceiveVideo:false });
     await pc.setLocalDescription(offer);
 
@@ -267,13 +305,17 @@
       headers: { 'Authorization': `Bearer ${clientSecret}`, 'Content-Type': 'application/sdp' },
       body: offer.sdp
     });
-
     if (!r.ok){
       const t = await r.text().catch(()=>r.statusText);
       throw new Error('realtime_handshake_failed: ' + t);
     }
     const answer = { type: 'answer', sdp: await r.text() };
-    await pc.setRemoteDescription(answer);
+    try{
+      await pc.setRemoteDescription(answer);
+    }catch(e){
+      log('setRemoteDescription error', e);
+      throw e;
+    }
   }
 
   // -------------- System Prompt / Priming --------
@@ -330,15 +372,18 @@
 
     dcSend({ type:'response.cancel' });
     log('[CONV] responses cancelled');
+
+    // Vorbereitungs-Ansage
     dcSend({ type:'response.create', response:{ conversation:'default', modalities:['audio'], instructions: prep }});
     log('[WELCOME] prep spoken');
 
+    // Welcome nach kurzer Pause
     setTimeout(()=>{
       dcSend({ type:'response.create', response:{ conversation:'default', modalities:['audio'], instructions: welcome }});
       log('[WELCOME] welcome spoken');
 
+      // Nach dem Welcome: VAD aktivieren & Mic hochfahren
       setTimeout(()=>{
-        // VAD aktivieren & Mic-Uplink erst NACH Welcome
         dcSend({ type:'session.update', session:{ turn_detection:{ type:'server_vad', threshold:0.9, prefix_padding_ms:200, silence_duration_ms:800 } }});
         log('[PRIME] VAD enabled');
         enableMicUplink();
@@ -391,26 +436,28 @@
     } catch(e) {
       setStatus('err','Mic/Kamera blockiert. In Browser Freigabe erteilen.');
       log('[Media] getUserMedia error', e);
-      throw e;
+      // wir lassen den Flow weiterlaufen, damit Welcome trotzdem hörbar ist
     }
-    $localV.srcObject = localStream;
+    if (localStream){
+      $localV.srcObject = localStream;
 
-    // Mic-Level
-    try{
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const src = ctx.createMediaStreamSource(localStream);
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 512;
-      const buf = new Uint8Array(analyser.frequencyBinCount);
-      src.connect(analyser);
-      (function tick(){
-        if (destroyed) return;
-        analyser.getByteTimeDomainData(buf);
-        let dev=0; for(let i=0;i<buf.length;i++) dev=Math.max(dev, Math.abs(buf[i]-128));
-        $mic.style.width = Math.min(100, dev*2) + '%';
-        requestAnimationFrame(tick);
-      })();
-    }catch(_){}
+      // Mic-Level
+      try{
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const src = ctx.createMediaStreamSource(localStream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 512;
+        const buf = new Uint8Array(analyser.frequencyBinCount);
+        src.connect(analyser);
+        (function tick(){
+          if (destroyed) return;
+          analyser.getByteTimeDomainData(buf);
+          let dev=0; for(let i=0;i<buf.length;i++) dev=Math.max(dev, Math.abs(buf[i]-128));
+          $mic.style.width = Math.min(100, dev*2) + '%';
+          requestAnimationFrame(tick);
+        })();
+      }catch(_){}
+    }
   }
 
   function enableMicUplink(){
@@ -423,12 +470,19 @@
     }catch(e){ log('[MIC] uplink error', e); }
   }
 
-  function ensureAudioUnlocked(){
-    return $remoteA.play()
-      .then(()=>{ log('[AUDIO] remote audio playing (unlocked).'); return true; })
-      .catch(()=>false);
+  async function ensureAudioUnlocked(){
+    try{
+      $remoteA.muted = false; $remoteA.volume = 1.0;
+      $remoteA.setAttribute('autoplay',''); $remoteA.setAttribute('playsinline','');
+      await $remoteA.play();
+      remotePlayable = true;
+      log('[AUDIO] remote audio playing (unlocked).');
+      return true;
+    }catch(_){
+      remotePlayable = false;
+      return false;
+    }
   }
-  function showAudioGate(){ setStatus('warn','Autoplay blockiert – bitte kurz in den Player klicken.'); }
 
   async function blobToDataURL(blob){
     return new Promise((resolve,reject)=>{
@@ -460,7 +514,7 @@
 
     mixedStream = new MediaStream();
     dest.stream.getAudioTracks().forEach(t => mixedStream.addTrack(t));
-    const cam = localStream.getVideoTracks()[0];
+    const cam = localStream?.getVideoTracks?.()[0];
     if (cam) mixedStream.addTrack(cam);
 
     const hasVideo = !!mixedStream.getVideoTracks().length;
@@ -511,6 +565,8 @@
 
   // -------------------- Start / Stop Flow --------
   async function startInterview(){
+    if (started) { log('[START] ignored (already started)'); return; }
+    started = true;
     destroyed = false;
     ENDED_SENT = false;
     setStatus('info','Initialisiere…');
@@ -520,32 +576,53 @@
     const { secret, ctx } = await getRealtimeToken({ uid:UID, companyId:COMPANY_ID, lang:LANG, voice:VOICE, debug:true, allowNoInvite:true });
 
     await connectRealtime(secret);
-    const unlocked = await ensureAudioUnlocked();
-    if (!unlocked) showAudioGate();
 
-    // Sprache + Welcome vorbereiten
+    // Warten bis DC offen UND remote Audio spielbar → erst dann primen & Welcome sprechen
+    await waitForDCOpen();
+    await ensureAudioUnlocked();         // einmal aktiv versuchen
+    await waitForRemotePlayable();       // falls Autoplay erst später freigegeben wird
+
     const usedLang = (CTX.reportLang || ctx.reportLang || LANG);
     CTX.reportLang = usedLang;
+    CTX.companyName = ctx.companyName || CTX.companyName || 'Clarity';
+
     primeStrictLanguage(usedLang);
     speakPrepThenWelcome();
 
     setStatus('ok','Verbunden • Interview läuft');
-
-    // Recorder erst nach PREPARED-Signal vom Parent anstoßen – Parent setzt RECORD_ENABLED true
   }
 
   async function hangup(){
-    destroyed = true;
-    try{ DC?.close(); }catch(_){}
-    try{ pc?.getSenders()?.forEach(s=>s.track && s.track.stop()); }catch(_){}
-    try{ pc?.getReceivers()?.forEach(r=>r.track && r.track.stop()); }catch(_){}
-    try{ pc?.close(); }catch(_){}
-    try{ localStream?.getTracks()?.forEach(t => t.stop()); }catch(_){}
-    try{ remoteStream?.getTracks()?.forEach(t => t.stop()); }catch(_){}
-    stopRecording();
-    setStatus('warn','Beendet');
-    log('[Live] hangup done');
-    sendEndedOnce();
+    try{
+      destroyed = true;
+      started = false;
+      FIRST_Q_SENT = false;
+      waitingForWelcome = true;
+
+      try{ DC?.close(); }catch(_){}
+      try{ pc?.getSenders()?.forEach(s=>s.track && s.track.stop()); }catch(_){}
+      try{ pc?.getReceivers()?.forEach(r=>r.track && r.track.stop()); }catch(_){}
+      try{ pc?.close(); }catch(_){}
+      pc = undefined; DC = undefined; dcIsOpen = false;
+
+      try{ localStream?.getTracks()?.forEach(t => t.stop()); }catch(_){}
+      try{ remoteStream?.getTracks()?.forEach(t => t.stop()); }catch(_){}
+      localStream = undefined; remoteStream = undefined;
+      if ($remoteA) $remoteA.srcObject = null;
+      if ($localV) $localV.srcObject = null;
+
+      stopRecording();
+
+      // AudioContext schließen
+      try{ audioCtx?.close?.(); }catch(_){}
+      audioCtx = undefined; remoteSource = undefined;
+
+      setStatus('warn','Beendet');
+      log('[Live] hangup done');
+      sendEndedOnce();
+    }catch(e){
+      log('[Live] hangup error', e);
+    }
   }
 
   // -------------------- Parent-Messaging ---------
@@ -563,6 +640,7 @@
       log('[REC] record flag from parent:', RECORD_ENABLED);
     }
     else if (type === 'clarity.live.start') {
+      window.__clarity_parent_started = true;
       startInterview().catch(e => {
         setStatus('err', 'Startfehler: ' + (e?.message||e));
         log('[Start error]', e);
@@ -575,29 +653,21 @@
     else if (type === 'recorder:export') {
       stopRecording();
     }
-    else if (type === 'clarity.live.prepared_ack'){
-      // (Optional) falls Parent ack sendet
+    else if (type === 'clarity.live.prepared.confirm' || type === 'clarity.live.prepared') {
+      if (RECORD_ENABLED) startRecording();
     }
   });
 
-  // Autostart fallback, falls Parent nicht startet (nur für Tests)
+  // Autostart fallback (nur wenn Parent NICHT startet)
   setTimeout(()=>{
     if (!UID || !COMPANY_ID) return;
-    if (!window.__clarity_parent_started){
+    if (!window.__clarity_parent_started && AUTOSTART && !started){
       log('[AUTO] no parent start → autostart');
       startInterview().catch(e=>{ setStatus('err','Autostart fehlgeschlagen'); log(e); });
     }
   }, 800);
 
   document.getElementById('btnStop').addEventListener('click', hangup);
-
-  // Wenn Parent PREPARED empfangen hat → Recording starten
-  window.addEventListener('message', (ev)=>{
-    const msg = ev.data || {};
-    if (msg.type === 'clarity.live.prepared.confirm' || msg.type === 'clarity.live.prepared'){
-      if (RECORD_ENABLED) startRecording();
-    }
-  });
 
   // Hinweis: iframe im Parent braucht allow="microphone; camera; autoplay"
   })();
