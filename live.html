@@ -109,9 +109,14 @@
   let audioCtx, remoteSource;
   let destroyed = false;
 
+  // Mic gate
+  let micTrack = null;
+  let MIC_UPLINK_OPEN = false;
+
   // Parent-Handshake / Flags
-  let PARENT_UPLOAD = false;         // Parent übernimmt Upload
-  let RECORD_ENABLED = false;        // Start: AUS, Parent schaltet später AN
+  let PARENT_UPLOAD = false;
+  let RECORD_ENABLED = false;              // Parent toggled
+  let READY_FOR_RECORDING = false;         // intern: erst nach prepared
   let CTX = { reportLang:'de', interviewMode:'structured', roleProfileText:'', docsText:'' };
   let ENDED_SENT = false;
   let DC_OPEN = false;
@@ -200,7 +205,6 @@
         })();
       }catch(_){}
 
-      // Try to start playback
       try {
         $remoteA.muted = false; $remoteA.volume = 1.0;
         $remoteA.setAttribute('autoplay',''); $remoteA.setAttribute('playsinline','');
@@ -210,10 +214,10 @@
         log('[RTC] remote audio playing.');
       } catch(e) {
         log('[RTC] play() blocked', e);
-        setStatus('warn','Autoplay blockiert – bitte kurz in den Player klicken.');
+        setStatus('warn','Autoplay blockiert – bitte in den Player klicken.');
       }
 
-      // Simple input meter for badge
+      // Simple input meter
       try {
         const levelAnalyser = audioCtx.createAnalyser();
         levelAnalyser.fftSize = 1024;
@@ -232,9 +236,11 @@
       }catch(_){}
     };
 
-    // Local tracks
+    // *** Nur AUDIO an Server senden – aber stumm bis nach Welcome ***
     if (localStream){
-      localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+      micTrack = localStream.getAudioTracks()[0] || null;
+      if (micTrack){ micTrack.enabled = false; }  // harte Stummschaltung für Uplink
+      if (micTrack) pc.addTrack(micTrack, localStream);
     }
 
     // DataChannel
@@ -279,7 +285,7 @@
       return;
     }
 
-    // Transkript-Events (sehr breit gefangen – falls geliefert)
+    // Naive Transcript-Keyword-Erkennung
     try{
       const t = String(data.text || data.transcript || data.message || '').toLowerCase();
       if (t) {
@@ -287,8 +293,6 @@
           READY_DETECTED = true;
           maybeAskFirstQuestion();
         }
-        // Parent fürs Debuggen informieren (optional)
-        parent?.postMessage?.({ type:'clarity.live.debug', data:{ transcript:t } }, '*');
       }
     }catch(_){}
   }
@@ -300,7 +304,8 @@
     const position = ctx.position || '';
     const maxQ = Math.max(3, Math.min(12, (ctx.interviewConfig?.maxQuestions ?? 10)));
     const kws = [];
-    [['typescript','TypeScript'],['javascript','JavaScript'],['react','React'],['python','Python'],['java','Java'],['aws','AWS'],['sql','SQL'],['docker','Docker'],['kubernetes','Kubernetes'],['sales','Sales'],['seo','SEO']].forEach(([n,l])=>{ if(txt.includes(n)) kws.push(l); });
+    [['typescript','TypeScript'],['javascript','JavaScript'],['react','React'],['python','Python'],['java','Java'],['aws','AWS'],['sql','SQL'],['docker','Docker'],['kubernetes','Kubernetes'],['sales','Sales'],['seo','SEO']]
+      .forEach(([n,l])=>{ if(txt.includes(n)) kws.push(l); });
     const bankDE = [
       'Bitte stellen Sie sich kurz vor und skizzieren Sie Ihren beruflichen Hintergrund.',
       position ? `Welche Erfahrung haben Sie in Bezug auf die Position „${position}“?` : 'Welche Ihrer Erfahrungen passt am besten zur ausgeschriebenen Position?',
@@ -366,13 +371,13 @@
       turn_detection:{ type:'none' },
       modalities:['audio']
     }});
+    log('[PRIME] session.update (lang+none VAD)', spoken);
 
-    // Reinforcement (Netz/Jitter)
+    // Verstärkung
     setTimeout(()=> dcSend({ type:'session.update', session:{
       spoken_language: spoken,
       input_audio_transcription:{ model:'whisper-1', language: spoken }
-    }}), 600);
-    setTimeout(()=> dcSend({ type:'session.update', session:{ spoken_language: spoken }}), 2000);
+    }}), 500);
   }
 
   function speakPrepThenWelcome(){
@@ -382,22 +387,41 @@
       ? `Willkommen! Dieses Interview wird im Auftrag von ${CTX.companyName||'Clarity'} geführt. Sind Sie bereit zu starten? Bitte sagen Sie einfach „bereit“.`
       : `Welcome! This interview is conducted on behalf of ${CTX.companyName||'Clarity'}. Are you ready to begin? Please say “ready”.`;
 
-    // Vorbereitungsansage
     dcSend({ type:'response.create', response:{ conversation:'default', instructions: prep, modalities:['audio'] }});
+    log('[WELCOME] prep spoken');
 
-    // Dann Welcome + VAD wieder AN + prepared
     setTimeout(()=>{
       dcSend({ type:'response.create', response:{ conversation:'default', instructions: welcome, modalities:['audio'] }});
+      log('[WELCOME] welcome spoken');
+
+      // Jetzt VAD AN …
       dcSend({ type:'session.update', session:{
         turn_detection:{ type:'server_vad', threshold:0.9, prefix_padding_ms:200, silence_duration_ms:700 }
       }});
-      // Parent kann Overlay schließen
+      log('[PRIME] VAD enabled');
+
+      // … und Uplink-Mic öffnen (erst jetzt kann GPT was hören)
+      enableMicUplink();
+
+      // Parent: prepared (Overlay schließen)
+      READY_FOR_RECORDING = true;
       parent?.postMessage?.({ type:'clarity.live.prepared', data:{} }, '*');
+      log('[PREPARED] sent to parent');
 
       // Falls niemand „bereit“ sagt: nach 6s automatisch starten
       clearTimeout(AUTO_FIRST_Q_TIMER);
       AUTO_FIRST_Q_TIMER = setTimeout(()=>{ if (!READY_DETECTED) maybeAskFirstQuestion(); }, 6000);
     }, 1500);
+  }
+
+  function enableMicUplink(){
+    try{
+      if (micTrack && !MIC_UPLINK_OPEN){
+        micTrack.enabled = true;
+        MIC_UPLINK_OPEN = true;
+        log('[MIC] uplink enabled');
+      }
+    }catch(e){ log('[MIC] enable failed', e); }
   }
 
   function askFirstQuestion(){
@@ -408,6 +432,7 @@
     const first = plan[0] || (isDE ? 'Bitte stellen Sie sich kurz vor.' : 'Please introduce yourself.');
     const q = (isDE ? `Erste Frage: ${first}` : `First question: ${first}`);
     dcSend({ type:'response.create', response:{ conversation:'default', instructions: q, modalities:['audio'] }});
+    log('[QUESTION] first sent');
   }
   function maybeAskFirstQuestion(){ try{ askFirstQuestion(); }catch(_){} }
 
@@ -454,9 +479,11 @@
   }
 
   function maybeStartRecording(){
-    if (!RECORD_ENABLED) return;
-    if (mediaRecorder) return;
-    if (!localStream) return; // need mic/cam
+    if (!RECORD_ENABLED){ log('[REC] request ignored (flag=false)'); return; }
+    if (!READY_FOR_RECORDING){ log('[REC] request queued (not prepared yet)'); return; }
+    if (mediaRecorder){ log('[REC] already running'); return; }
+    if (!localStream) return;
+
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const dest = ctx.createMediaStreamDestination();
 
@@ -532,7 +559,7 @@
   function maybeSignalReady(){
     if (DC_OPEN && AUDIO_UNLOCKED){
       parent?.postMessage?.({ type:'clarity.live.ready', data:{} }, '*');
-      // Fallback: falls Parent nicht primt, nach 2.5s selbst primen
+      // Fallback: falls Parent nicht primt, nach 1.0s selbst primen
       clearTimeout(PRIME_TIMER);
       PRIME_TIMER = setTimeout(()=>{
         if (!PRIMED){
@@ -542,7 +569,7 @@
           primeStrictLanguage(rl);
           speakPrepThenWelcome();
         }
-      }, 2500);
+      }, 1000);
     }
   }
 
@@ -550,11 +577,12 @@
   async function startInterview(){
     destroyed = false;
     ENDED_SENT = false;
+    MIC_UPLINK_OPEN = false;
     setStatus('info','Initialisiere…');
 
     await setupLocalMedia();
 
-    const { secret, ctx } = await getRealtimeToken({ uid:UID, companyId:COMPANY_ID, lang:LANG, voice:VOICE, debug:true, allowNoInvite:true });
+    const { secret } = await getRealtimeToken({ uid:UID, companyId:COMPANY_ID, lang:LANG, voice:VOICE, debug:true, allowNoInvite:true });
 
     await connectRealtime(secret);
     await ensureAudioPlayback();
@@ -618,15 +646,6 @@
     if (type === 'clarity.live.stop' || type === 'clarity.live.hangup') { hangup(); return; }
     if (type === 'recorder:export') { stopRecording(); return; }
   });
-
-  // -------------------- First Q Trigger ----------
-  // Falls wir irgendwo „bereit/ready“ erkennen, Frage direkt starten
-  function onUserReadyDetected(){
-    if (READY_DETECTED) return;
-    READY_DETECTED = true;
-    clearTimeout(AUTO_FIRST_Q_TIMER);
-    maybeAskFirstQuestion();
-  }
 
   document.getElementById('btnStop').addEventListener('click', hangup);
   window.addEventListener('beforeunload', hangup);
