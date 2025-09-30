@@ -117,6 +117,13 @@
   let DC_OPEN = false;
   let AUDIO_UNLOCKED = false;
 
+  // Interview control
+  let PRIMED = false;
+  let PRIME_TIMER = null;
+  let FIRST_Q_SENT = false;
+  let READY_DETECTED = false;
+  let AUTO_FIRST_Q_TIMER = null;
+
   // ===== DC-Queue + Wait =====
   let dcQueue = [];
   function dcSend(obj){
@@ -261,6 +268,7 @@
     await pc.setRemoteDescription(answer);
   }
 
+  // ---------------- Event Handler (DC) -----------
   function onRealtimeEvent(ev){
     let data = ev && ev.data;
     try{ if (typeof data === 'string') data = JSON.parse(data); }catch(_){}
@@ -268,7 +276,21 @@
 
     if (data.type === 'response.state' && data.state){
       parent?.postMessage?.({ type:'clarity.avatar', data:{ state:data.state } }, '*');
+      return;
     }
+
+    // Transkript-Events (sehr breit gefangen – falls geliefert)
+    try{
+      const t = String(data.text || data.transcript || data.message || '').toLowerCase();
+      if (t) {
+        if (!READY_DETECTED && (t.includes('bereit') || t.includes('ready') || t.includes('start') || t.includes('los'))) {
+          READY_DETECTED = true;
+          maybeAskFirstQuestion();
+        }
+        // Parent fürs Debuggen informieren (optional)
+        parent?.postMessage?.({ type:'clarity.live.debug', data:{ transcript:t } }, '*');
+      }
+    }catch(_){}
   }
 
   // ---------------- Interview-Plan / Priming -----
@@ -357,24 +379,39 @@
     const isDE = String(CTX.reportLang||'de').toLowerCase().startsWith('de');
     const prep = isDE ? 'Einen Moment bitte, ich bereite das Interview vor …' : 'One moment please, I am preparing the interview …';
     const welcome = isDE
-      ? `Willkommen! Dieses Interview wird im Auftrag von ${CTX.companyName||'Clarity'} geführt. Sind Sie bereit zu starten?`
-      : `Welcome! This interview is conducted on behalf of ${CTX.companyName||'Clarity'}. Are you ready to begin?`;
+      ? `Willkommen! Dieses Interview wird im Auftrag von ${CTX.companyName||'Clarity'} geführt. Sind Sie bereit zu starten? Bitte sagen Sie einfach „bereit“.`
+      : `Welcome! This interview is conducted on behalf of ${CTX.companyName||'Clarity'}. Are you ready to begin? Please say “ready”.`;
 
     // Vorbereitungsansage
-    dcSend({ type:'response.create', response:{ instructions: prep, modalities:['audio'] }});
+    dcSend({ type:'response.create', response:{ conversation:'default', instructions: prep, modalities:['audio'] }});
 
-    // Dann Welcome + VAD wieder AN
+    // Dann Welcome + VAD wieder AN + prepared
     setTimeout(()=>{
-      dcSend({ type:'response.create', response:{ instructions: welcome, modalities:['audio'] }});
+      dcSend({ type:'response.create', response:{ conversation:'default', instructions: welcome, modalities:['audio'] }});
       dcSend({ type:'session.update', session:{
         turn_detection:{ type:'server_vad', threshold:0.9, prefix_padding_ms:200, silence_duration_ms:700 }
       }});
       // Parent kann Overlay schließen
       parent?.postMessage?.({ type:'clarity.live.prepared', data:{} }, '*');
+
+      // Falls niemand „bereit“ sagt: nach 6s automatisch starten
+      clearTimeout(AUTO_FIRST_Q_TIMER);
+      AUTO_FIRST_Q_TIMER = setTimeout(()=>{ if (!READY_DETECTED) maybeAskFirstQuestion(); }, 6000);
     }, 1500);
   }
 
-  // -------------------- Media / Recording --------
+  function askFirstQuestion(){
+    if (FIRST_Q_SENT) return;
+    FIRST_Q_SENT = true;
+    const plan = buildInterviewPlan(CTX);
+    const isDE = String(CTX.reportLang||'de').toLowerCase().startsWith('de');
+    const first = plan[0] || (isDE ? 'Bitte stellen Sie sich kurz vor.' : 'Please introduce yourself.');
+    const q = (isDE ? `Erste Frage: ${first}` : `First question: ${first}`);
+    dcSend({ type:'response.create', response:{ conversation:'default', instructions: q, modalities:['audio'] }});
+  }
+  function maybeAskFirstQuestion(){ try{ askFirstQuestion(); }catch(_){} }
+
+  // ---------------- Media / Recording ------------
   async function setupLocalMedia(){
     try{
       localStream = await navigator.mediaDevices.getUserMedia({
@@ -495,6 +532,17 @@
   function maybeSignalReady(){
     if (DC_OPEN && AUDIO_UNLOCKED){
       parent?.postMessage?.({ type:'clarity.live.ready', data:{} }, '*');
+      // Fallback: falls Parent nicht primt, nach 2.5s selbst primen
+      clearTimeout(PRIME_TIMER);
+      PRIME_TIMER = setTimeout(()=>{
+        if (!PRIMED){
+          log('[PRIME] parent prime missing → auto-prime');
+          PRIMED = true;
+          const rl = CTX.reportLang || LANG;
+          primeStrictLanguage(rl);
+          speakPrepThenWelcome();
+        }
+      }, 2500);
     }
   }
 
@@ -556,23 +604,29 @@
       return;
     }
 
-    // NEU: Parent primt hart NACH ready
+    // PRIME (vom Parent) – sofort Welcome + später prepared
     if (type === 'clarity.live.prime') {
+      PRIMED = true;
+      clearTimeout(PRIME_TIMER);
       const rl = (msg.data && msg.data.reportLang) || CTX.reportLang || LANG;
       CTX.reportLang = rl;
       primeStrictLanguage(rl);
-      speakPrepThenWelcome(); // sendet später prepared
+      speakPrepThenWelcome();
       return;
     }
 
-    if (type === 'clarity.live.stop' || type === 'clarity.live.hangup') {
-      hangup(); return;
-    }
-
-    if (type === 'recorder:export') {
-      stopRecording(); return;
-    }
+    if (type === 'clarity.live.stop' || type === 'clarity.live.hangup') { hangup(); return; }
+    if (type === 'recorder:export') { stopRecording(); return; }
   });
+
+  // -------------------- First Q Trigger ----------
+  // Falls wir irgendwo „bereit/ready“ erkennen, Frage direkt starten
+  function onUserReadyDetected(){
+    if (READY_DETECTED) return;
+    READY_DETECTED = true;
+    clearTimeout(AUTO_FIRST_Q_TIMER);
+    maybeAskFirstQuestion();
+  }
 
   document.getElementById('btnStop').addEventListener('click', hangup);
   window.addEventListener('beforeunload', hangup);
