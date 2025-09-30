@@ -104,6 +104,8 @@
 
   /* ============ State ============ */
   let pc, DC;
+  let dcIsOpen = false;
+  const dcQueue = [];
   let localStream, mixedStream, mediaRecorder;
   let remoteStream;
   let audioCtx, remoteSource;
@@ -117,18 +119,32 @@
   let READY_DETECTED = false;
   let AUTO_FIRST_Q_TIMER = null;
   let STARTED = false;
+  let PRIMED = false;
+  let WELCOMED = false;
 
-  /* ============ Helpers ============ */
+  /* ============ DC Queue ============ */
   function dcSend(obj){
-    try{ DC?.send?.(JSON.stringify(obj)); }catch(e){ log('[DC] send fail', e); }
+    try{
+      if (dcIsOpen && DC?.readyState === 'open'){
+        DC.send(JSON.stringify(obj));
+      } else {
+        dcQueue.push(obj);
+        log('[DC] queued', (obj && (obj.type || Object.keys(obj)[0])) || '');
+      }
+    }catch(e){ log('[DC] send fail', e); }
   }
-  function clearConversation(){ dcSend({ type:'conversation.clear' }); log('[CONV] cleared'); }
-  function cancelAllResponses(){ dcSend({ type:'response.cancel' }); log('[CONV] responses cancelled'); }
-  function createSystemMessage(text){
-    dcSend({ type:'conversation.item.create', item:{ type:'message', role:'system', content:[{type:'input_text', text}] }});
-    log('[CONV] system item created');
+  function flushDCQueue(){
+    if (!dcIsOpen || !DC) return;
+    try{
+      while (dcQueue.length){
+        const m = dcQueue.shift();
+        DC.send(JSON.stringify(m));
+      }
+      log('[DC] queue flushed');
+    }catch(e){ log('[DC] flush error', e); }
   }
 
+  /* ============ Token ============ */
   async function getRealtimeToken(payload){
     log('[Live] Fetching token…', TOKEN_URL, JSON.stringify(payload));
     const r = await fetch(TOKEN_URL,{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
@@ -161,7 +177,7 @@
       remoteStream.addTrack(ev.track);
       $remoteA.srcObject = remoteStream;
 
-      // Audio meter (System)
+      // System meter
       try{
         audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
         await audioCtx.resume().catch(()=>{});
@@ -181,26 +197,9 @@
 
       try{ $remoteA.muted=false; $remoteA.volume=1.0; $remoteA.autoplay=true; $remoteA.playsInline=true; await $remoteA.play(); log('[RTC] remote audio playing.'); }
       catch(e){ log('[RTC] play() blocked', e); setStatus('warn','Autoplay blockiert – bitte Player antippen.'); }
-
-      // Small input monitor for "Audio in" badge
-      try {
-        const levelAnalyser = audioCtx.createAnalyser();
-        levelAnalyser.fftSize = 1024;
-        remoteSource.connect(levelAnalyser);
-        const tbuf = new Uint8Array(levelAnalyser.frequencyBinCount);
-        let lastNZ = 0;
-        (function ping(){
-          if (destroyed) return;
-          levelAnalyser.getByteTimeDomainData(tbuf);
-          let dev = 0; for (let i=0;i<tbuf.length;i++) dev = Math.max(dev, Math.abs(tbuf[i]-128));
-          if (dev>2) lastNZ = performance.now();
-          $badge.textContent = (performance.now()-lastNZ < 2000) ? '• Audio in' : '• (stumm?)';
-          requestAnimationFrame(ping);
-        })();
-      }catch(_){}
     };
 
-    // Local tracks (Mic zunächst stumm)
+    // Lokale Tracks (Mic erstmal stumm)
     if (localStream){
       localStream.getAudioTracks().forEach(t => { t.enabled=false; pc.addTrack(t, localStream); });
       localStream.getVideoTracks().forEach(t => pc.addTrack(t, localStream));
@@ -208,7 +207,15 @@
 
     // DataChannel
     DC = pc.createDataChannel('oai-events');
-    DC.onopen = () => { log('[RTC] DC open'); parent?.postMessage?.({ type:'clarity.live.ready', data:{} }, '*'); };
+    DC.onopen = () => {
+      dcIsOpen = true;
+      log('[RTC] DC open');
+      parent?.postMessage?.({ type:'clarity.live.ready', data:{} }, '*');
+      flushDCQueue();
+      // Safety: falls Priming vorher gequeued nicht ankam, hier nochmal
+      tryPrimeOnce();
+      tryWelcomeOnce();
+    };
     DC.onmessage = onRealtimeEvent;
 
     const offer = await pc.createOffer({ offerToReceiveAudio:true, offerToReceiveVideo:false });
@@ -232,7 +239,6 @@
     if (data.type === 'response.state' && data.state){
       parent?.postMessage?.({ type:'clarity.avatar', data:{ state:data.state } }, '*');
     }
-
     if (data.type === 'input_audio_buffer.speech_started'){
       READY_DETECTED = true; maybeAskFirstQuestion();
     }
@@ -248,14 +254,14 @@
   function buildSystemInstructions(ctx){
     const isDE = String(ctx.reportLang||'de').toLowerCase().startsWith('de');
     const langLine = isDE
-      ? 'Sprich ausschließlich DEUTSCH. Wechsle zu keinem Zeitpunkt die Sprache.'
-      : 'Speak strictly in ENGLISH. Do not switch languages at any time.';
+      ? 'Sprich ausschließlich DEUTSCH. Wechsle nie die Sprache.'
+      : 'Speak strictly in ENGLISH. Do not switch languages.';
     const structure = isDE
       ? 'Führe ein strukturiertes Job-Interview: nur EINE Frage zur Zeit, max. 1 Nachfrage, strikt am Jobprofil bleiben.'
-      : 'Conduct a structured job interview: one question at a time, max one follow-up, stay strictly on the job profile.';
+      : 'Conduct a structured job interview: one question at a time, max one follow-up, stick to the job profile.';
     const waiting = isDE
       ? 'Warte nach jeder Frage, bis die Kandidatin/der Kandidat fertig ist.'
-      : 'After each question, wait until the candidate finishes.';
+      : 'After each question, wait until the candidate is finished.';
     return [langLine, structure, waiting].join(' ');
   }
 
@@ -263,9 +269,10 @@
     const spoken = String(reportLang||'de').toLowerCase().startsWith('de') ? 'de' : 'en';
     const sys = buildSystemInstructions(CTX);
 
-    // VAD AUS, nur Session-Sprach-Setup
+    // Session: HARTE Vorgaben inkl. instructions
     dcSend({ type:'session.update', session:{
       voice: VOICE,
+      instructions: sys,
       spoken_language: spoken,
       input_audio_format:'pcm16',
       output_audio_format:'pcm16',
@@ -275,13 +282,25 @@
     }});
     log('[PRIME] session.update (lang+none VAD)', spoken);
 
-    // Gespräch resetten + Systemregel doppelt (robust)
-    clearConversation();
-    createSystemMessage(sys);
-    setTimeout(()=>createSystemMessage(sys), 300);
+    // Gesprächszustand zur Sicherheit resetten
+    dcSend({ type:'conversation.clear' });
+    log('[CONV] cleared');
+
+    // doppelt als System-Item (zusätzliche Robustheit)
+    dcSend({ type:'conversation.item.create', item:{ type:'message', role:'system', content:[{type:'input_text', text:sys}] }});
+    log('[CONV] system item created');
+  }
+
+  function tryPrimeOnce(){
+    if (PRIMED) return;
+    PRIMED = true;
+    primeStrictLanguage(CTX.reportLang || LANG);
   }
 
   function speakPrepThenWelcome(){
+    if (WELCOMED) return;
+    WELCOMED = true;
+
     const isDE = String(CTX.reportLang||'de').toLowerCase().startsWith('de');
     const prep = isDE ? 'Einen Moment bitte, ich bereite das Interview vor …'
                       : 'One moment please, I am preparing the interview …';
@@ -289,7 +308,9 @@
       ? `Willkommen! Dieses Interview wird im Auftrag von ${CTX.companyName||'Clarity'} geführt. Sind Sie bereit zu starten? Bitte sagen Sie „bereit“, dann stelle ich die erste Frage.`
       : `Welcome! This interview is conducted on behalf of ${CTX.companyName||'Clarity'}. Are you ready to begin? Please say “ready”, then I will ask the first question.`;
 
-    cancelAllResponses();
+    dcSend({ type:'response.cancel' });
+    log('[CONV] responses cancelled');
+
     dcSend({ type:'response.create', response:{ conversation:'default', modalities:['audio'], instructions: prep }});
     log('[WELCOME] prep spoken');
 
@@ -297,12 +318,11 @@
       dcSend({ type:'response.create', response:{ conversation:'default', modalities:['audio'], instructions: welcome }});
       log('[WELCOME] welcome spoken');
 
-      // VAD an + Mic-Uplink
       dcSend({ type:'session.update', session:{ turn_detection:{ type:'server_vad', threshold:0.9, prefix_padding_ms:200, silence_duration_ms:700 } }});
       log('[PRIME] VAD enabled');
+
       enableMicUplink();
 
-      // Parent informieren: prepared
       parent?.postMessage?.({ type:'clarity.live.prepared', data:{} }, '*');
       log('[PREPARED] sent to parent');
 
@@ -310,6 +330,8 @@
       AUTO_FIRST_Q_TIMER = setTimeout(()=>{ if (!FIRST_Q_SENT) maybeAskFirstQuestion(); }, 6000);
     }, 1000);
   }
+
+  function tryWelcomeOnce(){ if (!WELCOMED) speakPrepThenWelcome(); }
 
   function buildInterviewPlan(ctx){
     const isDE = String(ctx.reportLang||'de').toLowerCase().startsWith('de');
@@ -328,11 +350,9 @@
       'What are your expectations for the role and the team?'
     ];
     const seeds = (isDE? baseDE : baseEN).slice();
-
     const text = (ctx.roleProfileText||'').trim() + '\n' + (ctx.docsText||'').trim();
     const lines = text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean).slice(0,5);
     if (lines.length){ lines.forEach(l => seeds.push((isDE? 'Bezug zur Ausschreibung: ' : 'Regarding the job ad: ')+l)); }
-
     return seeds.slice(0, ctx.interviewConfig?.maxQuestions || 5);
   }
 
@@ -340,13 +360,15 @@
     if (FIRST_Q_SENT) return;
     FIRST_Q_SENT = true;
 
-    createSystemMessage('Starte jetzt die erste Interviewfrage. Kurze, präzise Fragen. Danach warten.');
-
     const plan = buildInterviewPlan(CTX);
     const isDE = String(CTX.reportLang||'de').toLowerCase().startsWith('de');
     const first = plan[0] || (isDE ? 'Bitte stellen Sie sich kurz vor.' : 'Please introduce yourself.');
-    const q = (isDE ? `Erste Frage: ${first}` : `First question: ${first}`);
 
+    // kleine System-Notiz und dann Frage
+    dcSend({ type:'conversation.item.create', item:{ type:'message', role:'system', content:[{type:'input_text', text:'Starte jetzt die erste Interviewfrage. Kurze, präzise Fragen. Danach warten.'}] }});
+    log('[CONV] system item created');
+
+    const q = (isDE ? `Erste Frage: ${first}` : `First question: ${first}`);
     dcSend({ type:'response.create', response:{ conversation:'default', modalities:['audio'], instructions: q }});
     log('[QUESTION] first sent');
   }
@@ -362,29 +384,31 @@
     } catch(e) {
       setStatus('err','Mic/Kamera blockiert. Bitte im Browser freigeben.');
       log('[Media] getUserMedia error', e);
-      throw e;
+      // Parent benachrichtigen (wichtig bei Permissions-Policy)
+      try{ parent?.postMessage?.({ type:'clarity.live.permission_error', data:{ message: String(e?.name||e) } }, '*'); }catch(_){}
+      // Ohne Mic weiter machen (nur Remote-Audio)
+      localStream = null;
     }
-    document.getElementById('localVideo').srcObject = localStream;
-
-    // Mic-Level
-    try{
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const src = ctx.createMediaStreamSource(localStream);
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 512;
-      const buf = new Uint8Array(analyser.frequencyBinCount);
-      src.connect(analyser);
-      (function tick(){
-        if (destroyed) return;
-        analyser.getByteTimeDomainData(buf);
-        let dev=0; for(let i=0;i<buf.length;i++) dev=Math.max(dev, Math.abs(buf[i]-128));
-        document.getElementById('micLevel').style.width = Math.min(100, dev*2) + '%';
-        requestAnimationFrame(tick);
-      })();
-    }catch(_){}
-
-    // Mic zunächst stumm
-    localStream.getAudioTracks().forEach(t => t.enabled = false);
+    if (localStream){
+      $localV.srcObject = localStream;
+      try{
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const src = ctx.createMediaStreamSource(localStream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 512;
+        const buf = new Uint8Array(analyser.frequencyBinCount);
+        src.connect(analyser);
+        (function tick(){
+          if (destroyed) return;
+          analyser.getByteTimeDomainData(buf);
+          let dev=0; for(let i=0;i<buf.length;i++) dev=Math.max(dev, Math.abs(buf[i]-128));
+          $mic.style.width = Math.min(100, dev*2) + '%';
+          requestAnimationFrame(tick);
+        })();
+      }catch(_){}
+      // Mic zunächst stumm
+      localStream.getAudioTracks().forEach(t => t.enabled = false);
+    }
   }
 
   function enableMicUplink(){ try{ localStream?.getAudioTracks()?.forEach(t => t.enabled=true); log('[MIC] uplink enabled'); }catch(_){} }
@@ -394,16 +418,18 @@
   }
 
   function prepareRecording(){
-    if (!localStream){ log('[REC] cannot prepare – no localStream'); return; }
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const dest = ctx.createMediaStreamDestination();
 
-    const micSrc = ctx.createMediaStreamSource(localStream); micSrc.connect(dest);
+    if (localStream){
+      const micSrc = ctx.createMediaStreamSource(localStream); micSrc.connect(dest);
+    }
     if (remoteStream){ try{ ctx.createMediaStreamSource(remoteStream).connect(dest); }catch(e){ log('[REC] remote mix fail', e); } }
 
     mixedStream = new MediaStream();
     dest.stream.getAudioTracks().forEach(t => mixedStream.addTrack(t));
-    const cam = localStream.getVideoTracks()[0]; if (cam) mixedStream.addTrack(cam);
+    const cam = localStream?.getVideoTracks?.()[0];
+    if (cam) mixedStream.addTrack(cam);
 
     const hasVideo = !!mixedStream.getVideoTracks().length;
     mediaRecorder = new MediaRecorder(mixedStream, {
@@ -450,12 +476,11 @@
       await connectRealtime(secret);
       prepareRecording();
 
-      const usedLang = (CTX.reportLang || ctx.reportLang || LANG);
-      CTX.reportLang = usedLang;
+      CTX.reportLang = (CTX.reportLang || ctx.reportLang || LANG);
       CTX.companyName = ctx.companyName || CTX.companyName;
 
-      primeStrictLanguage(usedLang);
-      speakPrepThenWelcome();
+      tryPrimeOnce();        // wird gequeued, falls DC noch nicht offen
+      tryWelcomeOnce();      // dito
 
       setStatus('ok','Verbunden • Interview läuft');
     }catch(e){
@@ -508,12 +533,10 @@
     }
   });
 
-  // Hello -> Parent
   function helloParent(){
     try{ parent?.postMessage?.({ type:'clarity.live.hello', data:{ uid:UID, companyId:COMPANY_ID } }, '*'); }catch(_){}
   }
 
-  // Autostart fallback
   window.addEventListener('load', ()=>{
     helloParent();
     if (AUTOSTART){
@@ -523,7 +546,8 @@
 
   document.getElementById('btnStop').addEventListener('click', hangup);
 
-  // Hinweis: iframe im Parent braucht allow="microphone; camera; autoplay"
+  // WICHTIG im Parent-Iframe:
+  // <iframe ... allow="microphone; camera; autoplay" ...>
   </script>
 </body>
 </html>
