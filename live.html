@@ -67,6 +67,12 @@
   </div>
 
   <script>
+  ;(()=>{ "use strict";
+
+  // Single-instance guard (Wix lädt Scripts teils doppelt)
+  if (window.__clarity_live_active) { console.warn('[LIVE] duplicate script ignored'); return; }
+  window.__clarity_live_active = true;
+
   /* ===== Query / UI ===== */
   const Q = new URLSearchParams(location.search);
   const UID = (Q.get('uid')||'').trim();
@@ -128,6 +134,8 @@
   let audioUnlocked = false;
   let WELCOMED = false;
 
+  let firstQuestionFallbackElapsed = false;
+
   let remoteTrackReadyResolve;
   const remoteTrackReady = new Promise(r => remoteTrackReadyResolve = r);
 
@@ -168,6 +176,7 @@
 
   /* ===== WebRTC ===== */
   async function connectRealtime(clientSecret){
+    if (pc) return;
     pc = new RTCPeerConnection({ iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }] });
 
     pc.onconnectionstatechange = () => {
@@ -245,9 +254,7 @@
       parent?.postMessage?.({ type:'clarity.avatar', data:{ state:data.state } }, '*');
     }
 
-    // ⛔ Entfernt: kein Auto-Start der 1. Frage nur wegen „speech_started“
-    // if (data.type === 'input_audio_buffer.speech_started'){ ... }
-
+    // ready keyword
     if (data.type === 'input_audio_transcription.completed'){
       const txt = (data?.transcription?.text || '').toLowerCase();
       if (/(^|\b)(bereit|ready)(\b|$)/.test(txt)){
@@ -282,42 +289,39 @@
   }
 
   /* ===== Priming & Welcome ===== */
-function buildSystemInstructions(ctx){
-  const isDE = String(ctx.reportLang||'de').toLowerCase().startsWith('de');
-  const langLine = isDE
-    ? 'Sprich ausschließlich DEUTSCH. Wechsle nie die Sprache.'
-    : 'Speak strictly in ENGLISH. Do not switch languages.';
-  const structure = isDE
-    ? 'Führe ein strukturiertes Job-Interview: nur EINE Frage zur Zeit, max. 1 Nachfrage, strikt am Jobprofil bleiben.'
-    : 'Conduct a structured job interview: one question at a time, max one follow-up, stick to the job profile.';
-  const waiting = isDE
-    ? 'Nach jeder Frage warten, bis die Kandidatin/der Kandidat fertig ist.'
-    : 'After each question, wait until the candidate is finished.';
-  const kbRule = isDE
-    ? 'Nutze ausschließlich die FIRMENKENNTNISSE aus „KONTEXT“ für Antworten zu Firma, Stelle, Prozessen, Benefits usw. Wenn etwas nicht im KONTEXT steht, sage freundlich, dass dies mit der Firma direkt zu klären ist.'
-    : 'Use only the COMPANY KNOWLEDGE from “CONTEXT” to answer company/job/process/benefits questions. If it is not in CONTEXT, politely say the candidate should check with the company.';
-  const readyGate = isDE
-    ? 'Starte die erste Frage erst, nachdem die Person „bereit“ gesagt hat (oder nach Fallback-Timeout).'
-    : 'Ask the first question only after the user says “ready” (or after a fallback timeout).';
-  return [langLine, structure, waiting, kbRule, readyGate].join(' ');
-}
+  function buildSystemInstructions(ctx){
+    const isDE = String(ctx.reportLang||'de').toLowerCase().startsWith('de');
+    const langLine = isDE
+      ? 'Sprich ausschließlich DEUTSCH. Wechsle nie die Sprache.'
+      : 'Speak strictly in ENGLISH. Do not switch languages.';
+    const structure = isDE
+      ? 'Führe ein strukturiertes Job-Interview: nur EINE Frage zur Zeit, max. 1 Nachfrage, strikt am Jobprofil bleiben.'
+      : 'Conduct a structured job interview: one question at a time, max one follow-up, stick to the job profile.';
+    const waiting = isDE
+      ? 'Nach jeder Frage warten, bis die Kandidatin/der Kandidat fertig ist.'
+      : 'After each question, wait until the candidate is finished.';
+    const kbRule = isDE
+      ? 'Nutze ausschließlich die FIRMENKENNTNISSE aus „KONTEXT“ für Antworten zu Firma, Stelle, Prozessen, Benefits usw. Wenn etwas nicht im KONTEXT steht, sage freundlich, dass dies mit der Firma direkt zu klären ist.'
+      : 'Use only the COMPANY KNOWLEDGE from “CONTEXT” to answer company/job/process/benefits questions. If it is not in CONTEXT, politely say the candidate should check with the company.';
+    const readyGate = isDE
+      ? 'Starte die erste Frage erst, nachdem die Person „bereit“ gesagt hat (oder nach Fallback-Timeout).'
+      : 'Ask the first question only after the user says “ready” (or after a fallback timeout).';
+    return [langLine, structure, waiting, kbRule, readyGate].join(' ');
+  }
 
-// --- Helpers to inject company knowledge into the convo ---
+  // --- Knowledge inject ---
   function chunkText(t, max = 1800) {
     const out = []; let i = 0;
     while (i < t.length) { out.push(t.slice(i, i + max)); i += max; }
     return out;
   }
-
   function pushCompanyKnowledge() {
     const kb  = (CTX.kbText  || '').trim();
     const job = (CTX.jobAd   || '').trim();
     if (!kb && !job) return;
-
     const header = '=== KONTEXT / CONTEXT START ===';
     const footer = '=== KONTEXT / CONTEXT ENDE ===';
     const body   = [kb, job].filter(Boolean).join('\n\n');
-
     const pieces = chunkText(`${header}\n${body}\n${footer}`, 1800);
     for (const p of pieces) {
       dcSend({
@@ -400,16 +404,17 @@ function buildSystemInstructions(ctx){
         });
         log('[PRIME] VAD enabled');
         enableMicUplink();
+
+        // Recorder erst jetzt starten (um Welcome-Playback nicht zu stören)
+        WELCOMED = true;
+        maybeStartRecorder();
+
+        // Parent benachrichtigen (Overlay ausblenden)
+        parent?.postMessage?.({ type:'clarity.live.prepared', data:{} }, '*');
+
+        // Fallback: falls niemand „bereit“ sagt → erste Frage nach 8s möglich
+        setTimeout(()=>{ firstQuestionFallbackElapsed = true; maybeAskFirstQuestion(); }, 8000);
       }, 250);
-    }, 900);
-  }
-
-      // Recorder erst jetzt starten (um Welcome-Playback nicht zu stören)
-      WELCOMED = true;
-      maybeStartRecorder();
-
-      // Fallback: falls niemand „bereit“ sagt → erste Frage nach 8s
-      setTimeout(()=> maybeAskFirstQuestion(), 8000);
     }, 900);
   }
 
@@ -438,7 +443,6 @@ function buildSystemInstructions(ctx){
 
   function askFirstQuestion(){
     if (FIRST_Q_SENT || !WELCOMED) return;
-    // nur nach „bereit“ ODER nach Fallback-Timeout
     if (!READY_DETECTED && !firstQuestionFallbackElapsed) return;
 
     FIRST_Q_SENT = true;
@@ -454,10 +458,9 @@ function buildSystemInstructions(ctx){
     dcSend({ type:'response.create', response:{ conversation:'default', modalities:['audio'], instructions: q }});
     log('[QUESTION] first sent');
   }
-  let firstQuestionFallbackElapsed = false;
+
   function maybeAskFirstQuestion(){
-    if (!firstQuestionFallbackElapsed && !READY_DETECTED) return; // warte bis ready ODER Fallback
-    askFirstQuestion();
+    if (READY_DETECTED || firstQuestionFallbackElapsed) askFirstQuestion();
   }
 
   /* ===== Media / Recorder ===== */
@@ -485,7 +488,9 @@ function buildSystemInstructions(ctx){
         (function tick(){
           if (destroyed) return;
           analyser.getByteTimeDomainData(buf);
-          let dev=0; for(let i=0;i<tbuf.length;i++) dev=Math.max(dev, Math.abs(buf[i]-128));
+          let dev=0; for(let i=0;i<buf.length;i++) dev=Math.max(dev, Math.abs(buf[i]-128));
+          $mic.style.width = Math.min(100, dev*2) + '%';
+          requestAnimationFrame(tick);
         })();
       }catch(_){}
       localStream.getAudioTracks().forEach(t => t.enabled=false);
@@ -558,19 +563,14 @@ function buildSystemInstructions(ctx){
       await connectRealtime(secret);
       prepareRecording();
 
-      // Kontext
-      CTX.reportLang = (CTX.reportLang || ctx.reportLang || LANG);
-      CTX.companyName = ctx.companyName || CTX.companyName;
-
-      // Welcome erst NACH Remote-Track & Audio-Unlock
+      // Kontext-Infos
+      CTX = { ...CTX, ...ctx };
+      // Remote-Audio muss laufen
       await remoteTrackReady;
       await ensureAudioUnlocked();
 
-      primeStrictLanguage(CTX.reportLang);
-      speakPrepThenWelcome();
-
-      // Fallback-Timer setzt das Flag, damit maybeAskFirstQuestion() absenden darf
-      setTimeout(()=>{ firstQuestionFallbackElapsed = true; maybeAskFirstQuestion(); }, 8000);
+      // Parent informieren: live ist bereit → Parent sendet 'clarity.live.prime'
+      parent?.postMessage?.({ type:'clarity.live.ready', data:{} }, '*');
 
       setStatus('ok','Verbunden • Interview läuft');
     }catch(e){
@@ -596,11 +596,11 @@ function buildSystemInstructions(ctx){
 
   /* ===== Parent Messaging ===== */
   window.addEventListener('message', (ev)=>{
-    const msg = ev.data || {};
+    let msg = ev && ev.data || {};
     const type = msg.type;
 
     if (type === 'clarity.live.context'){
-      CTX = msg.data || {};
+      CTX = { ...CTX, ...(msg.data || {}) };
       PARENT_UPLOAD = (CTX.uploadMode === 'parent');
       log('[CTX]', CTX);
     }
@@ -608,6 +608,12 @@ function buildSystemInstructions(ctx){
       RECORD_ENABLED = !!(msg.data && msg.data.enabled);
       log('[REC] record flag from parent:', RECORD_ENABLED);
       maybeStartRecorder();
+    }
+    else if (type === 'clarity.live.prime'){
+      // Parent gibt reportLang vor → dann Welcome fahren
+      const rep = (msg.data && msg.data.reportLang) || CTX.reportLang || LANG;
+      primeStrictLanguage(rep);
+      speakPrepThenWelcome();
     }
     else if (type === 'clarity.live.start'){
       startInterview();
@@ -628,6 +634,7 @@ function buildSystemInstructions(ctx){
   document.getElementById('btnStop').addEventListener('click', hangup);
 
   // WICHTIG im Parent-iframe: allow="microphone; camera; autoplay"
+  })();
   </script>
 </body>
 </html>
