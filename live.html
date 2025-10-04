@@ -312,8 +312,7 @@ function buildSystemInstructions(ctx){
   function pushCompanyKnowledge() {
     const kb  = (CTX.kbText  || '').trim();
     const job = (CTX.jobAd   || '').trim();
-    const has = kb || job;
-    if (!has) return;
+    if (!kb && !job) return;
 
     const header = '=== KONTEXT / CONTEXT START ===';
     const footer = '=== KONTEXT / CONTEXT ENDE ===';
@@ -328,66 +327,77 @@ function buildSystemInstructions(ctx){
     }
   }
 
-  function primeStrictLanguage(reportLang){
-    const spoken = String(reportLang||'de').toLowerCase().startsWith('de') ? 'de' : 'en';
+  function primeStrictLanguage(reportLang) {
+    const spoken = String(reportLang || 'de').toLowerCase().startsWith('de') ? 'de' : 'en';
     const sys = buildSystemInstructions(CTX);
 
-    dcSend({ type:'session.update', session:{
-      voice: VOICE,
-      instructions: sys,
-      spoken_language: spoken,
-      input_audio_format:'pcm16',
-      output_audio_format:'pcm16',
-      input_audio_transcription:{ model:'whisper-1', language: spoken },
-      turn_detection:{ type:'none' },          // WICHTIG: noch kein Zuhören
-      modalities:['audio']
-    }});
+    dcSend({
+      type: 'session.update', session: {
+        voice: VOICE,
+        instructions: sys,
+        spoken_language: spoken,
+        input_audio_format: 'pcm16',
+        output_audio_format: 'pcm16',
+        input_audio_transcription: { model: 'whisper-1', language: spoken },
+        turn_detection: { type: 'none' },       // noch kein Zuhören
+        modalities: ['audio']
+      }
+    });
     log('[PRIME] session.update (lang+none VAD)', spoken);
 
-    dcSend({ type:'conversation.clear' }); 
+    dcSend({ type: 'conversation.clear' });
     log('[CONV] cleared');
 
-    dcSend({ 
-      type:'conversation.item.create', 
-      item:{ type:'message', role:'system', content:[{type:'input_text', text:sys}] }
+    dcSend({
+      type: 'conversation.item.create',
+      item: { type: 'message', role: 'system', content: [{ type: 'input_text', text: sys }] }
     });
     log('[CONV] system item created (instructions)');
 
-    // NEU: Firmen-/Stellenwissen als System-Kontext pushen
+    // Firmen-/Stellenwissen als System-Kontext pushen
     pushCompanyKnowledge();
     log('[CONV] company knowledge injected (kbText/jobAd, if provided)');
   }
 
-  function speakPrepThenWelcome(){
-    const isDE = String(CTX.reportLang||'de').toLowerCase().startsWith('de');
-    const prep = isDE ? 'Einen Moment bitte, ich bereite das Interview vor …'
-                      : 'One moment please, I am preparing the interview …';
+  function speakPrepThenWelcome() {
+    const isDE = String(CTX.reportLang || 'de').toLowerCase().startsWith('de');
+    const prep = isDE
+      ? 'Einen Moment bitte, ich bereite das Interview vor …'
+      : 'One moment please, I am preparing the interview …';
     const welcome = isDE
-      ? `Willkommen! Dieses Interview wird im Auftrag von ${CTX.companyName||'Clarity'} geführt. Sind Sie bereit zu starten? Bitte sagen Sie „bereit“.`
-      : `Welcome! This interview is conducted on behalf of ${CTX.companyName||'Clarity'}. Are you ready to begin? Please say “ready”.`;
+      ? `Willkommen! Dieses Interview wird im Auftrag von ${CTX.companyName || 'Clarity'} geführt. Sind Sie bereit zu starten? Bitte sagen Sie „bereit“.`
+      : `Welcome! This interview is conducted on behalf of ${CTX.companyName || 'Clarity'}. Are you ready to begin? Please say “ready”.`;
 
     // alles Alte stoppen, dann Prep + Welcome
-    dcSend({ type:'response.cancel' });            
+    dcSend({ type: 'response.cancel' });
     log('[CONV] responses cancelled');
 
-    dcSend({ 
-      type:'response.create', 
-      response:{ conversation:'default', modalities:['audio'], instructions: prep }
-    });      
+    dcSend({
+      type: 'response.create',
+      response: { conversation: 'default', modalities: ['audio'], instructions: prep }
+    });
     log('[WELCOME] prep spoken');
 
-    setTimeout(()=>{
-      dcSend({ 
-        type:'response.create', 
-        response:{ conversation:'default', modalities:['audio'], instructions: welcome }
-      }); 
+    setTimeout(() => {
+      dcSend({
+        type: 'response.create',
+        response: { conversation: 'default', modalities: ['audio'], instructions: welcome }
+      });
       log('[WELCOME] welcome spoken');
 
       // VAD AN, Mic AN (erst nach Welcome)
-      setTimeout(()=> {
-        dcSend({ type:'session.update', session:{ 
-          turn_detection:{ type:'server_vad', threshold:0.9, prefix_padding_ms:200, silence_duration_ms:700 } 
-        }});
+      setTimeout(() => {
+        dcSend({
+          type: 'session.update',
+          session: {
+            turn_detection: {
+              type: 'server_vad',
+              threshold: 0.9,
+              prefix_padding_ms: 200,
+              silence_duration_ms: 700
+            }
+          }
+        });
         log('[PRIME] VAD enabled');
         enableMicUplink();
       }, 250);
