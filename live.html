@@ -282,21 +282,50 @@
   }
 
   /* ===== Priming & Welcome ===== */
-  function buildSystemInstructions(ctx){
-    const isDE = String(ctx.reportLang||'de').toLowerCase().startsWith('de');
-    const langLine = isDE
-      ? 'Sprich ausschließlich DEUTSCH. Wechsle nie die Sprache.'
-      : 'Speak strictly in ENGLISH. Do not switch languages.';
-    const structure = isDE
-      ? 'Führe ein strukturiertes Job-Interview: nur EINE Frage zur Zeit, max. 1 Nachfrage, strikt am Jobprofil bleiben.'
-      : 'Conduct a structured job interview: one question at a time, max one follow-up, stick to the job profile.';
-    const waiting = isDE
-      ? 'Nach jeder Frage warten, bis die Kandidatin/der Kandidat fertig ist.'
-      : 'After each question, wait until the candidate is finished.';
-    const noSmalltalk = isDE
-      ? 'Kein Smalltalk am Anfang. Frage erst nach Bestätigung „bereit“ die erste Frage.'
-      : 'No small talk at start. Ask the first question only after the user says “ready”.';
-    return [langLine, structure, waiting, noSmalltalk].join(' ');
+function buildSystemInstructions(ctx){
+  const isDE = String(ctx.reportLang||'de').toLowerCase().startsWith('de');
+  const langLine = isDE
+    ? 'Sprich ausschließlich DEUTSCH. Wechsle nie die Sprache.'
+    : 'Speak strictly in ENGLISH. Do not switch languages.';
+  const structure = isDE
+    ? 'Führe ein strukturiertes Job-Interview: nur EINE Frage zur Zeit, max. 1 Nachfrage, strikt am Jobprofil bleiben.'
+    : 'Conduct a structured job interview: one question at a time, max one follow-up, stick to the job profile.';
+  const waiting = isDE
+    ? 'Nach jeder Frage warten, bis die Kandidatin/der Kandidat fertig ist.'
+    : 'After each question, wait until the candidate is finished.';
+  const kbRule = isDE
+    ? 'Nutze ausschließlich die FIRMENKENNTNISSE aus „KONTEXT“ für Antworten zu Firma, Stelle, Prozessen, Benefits usw. Wenn etwas nicht im KONTEXT steht, sage freundlich, dass dies mit der Firma direkt zu klären ist.'
+    : 'Use only the COMPANY KNOWLEDGE from “CONTEXT” to answer company/job/process/benefits questions. If it is not in CONTEXT, politely say the candidate should check with the company.';
+  const readyGate = isDE
+    ? 'Starte die erste Frage erst, nachdem die Person „bereit“ gesagt hat (oder nach Fallback-Timeout).'
+    : 'Ask the first question only after the user says “ready” (or after a fallback timeout).';
+  return [langLine, structure, waiting, kbRule, readyGate].join(' ');
+}
+
+// --- Helpers to inject company knowledge into the convo ---
+  function chunkText(t, max = 1800) {
+    const out = []; let i = 0;
+    while (i < t.length) { out.push(t.slice(i, i + max)); i += max; }
+    return out;
+  }
+
+  function pushCompanyKnowledge() {
+    const kb  = (CTX.kbText  || '').trim();
+    const job = (CTX.jobAd   || '').trim();
+    const has = kb || job;
+    if (!has) return;
+
+    const header = '=== KONTEXT / CONTEXT START ===';
+    const footer = '=== KONTEXT / CONTEXT ENDE ===';
+    const body   = [kb, job].filter(Boolean).join('\n\n');
+
+    const pieces = chunkText(`${header}\n${body}\n${footer}`, 1800);
+    for (const p of pieces) {
+      dcSend({
+        type: 'conversation.item.create',
+        item: { type: 'message', role: 'system', content: [{ type: 'input_text', text: p }] }
+      });
+    }
   }
 
   function primeStrictLanguage(reportLang){
@@ -315,9 +344,18 @@
     }});
     log('[PRIME] session.update (lang+none VAD)', spoken);
 
-    dcSend({ type:'conversation.clear' }); log('[CONV] cleared');
-    dcSend({ type:'conversation.item.create', item:{ type:'message', role:'system', content:[{type:'input_text', text:sys}] }});
-    log('[CONV] system item created');
+    dcSend({ type:'conversation.clear' }); 
+    log('[CONV] cleared');
+
+    dcSend({ 
+      type:'conversation.item.create', 
+      item:{ type:'message', role:'system', content:[{type:'input_text', text:sys}] }
+    });
+    log('[CONV] system item created (instructions)');
+
+    // NEU: Firmen-/Stellenwissen als System-Kontext pushen
+    pushCompanyKnowledge();
+    log('[CONV] company knowledge injected (kbText/jobAd, if provided)');
   }
 
   function speakPrepThenWelcome(){
@@ -329,18 +367,32 @@
       : `Welcome! This interview is conducted on behalf of ${CTX.companyName||'Clarity'}. Are you ready to begin? Please say “ready”.`;
 
     // alles Alte stoppen, dann Prep + Welcome
-    dcSend({ type:'response.cancel' });            log('[CONV] responses cancelled');
-    dcSend({ type:'response.create', response:{ conversation:'default', modalities:['audio'], instructions: prep }});      log('[WELCOME] prep spoken');
+    dcSend({ type:'response.cancel' });            
+    log('[CONV] responses cancelled');
+
+    dcSend({ 
+      type:'response.create', 
+      response:{ conversation:'default', modalities:['audio'], instructions: prep }
+    });      
+    log('[WELCOME] prep spoken');
 
     setTimeout(()=>{
-      dcSend({ type:'response.create', response:{ conversation:'default', modalities:['audio'], instructions: welcome }}); log('[WELCOME] welcome spoken');
+      dcSend({ 
+        type:'response.create', 
+        response:{ conversation:'default', modalities:['audio'], instructions: welcome }
+      }); 
+      log('[WELCOME] welcome spoken');
 
       // VAD AN, Mic AN (erst nach Welcome)
       setTimeout(()=> {
-        dcSend({ type:'session.update', session:{ turn_detection:{ type:'server_vad', threshold:0.9, prefix_padding_ms:200, silence_duration_ms:700 } }});
+        dcSend({ type:'session.update', session:{ 
+          turn_detection:{ type:'server_vad', threshold:0.9, prefix_padding_ms:200, silence_duration_ms:700 } 
+        }});
         log('[PRIME] VAD enabled');
         enableMicUplink();
       }, 250);
+    }, 900);
+  }
 
       // Recorder erst jetzt starten (um Welcome-Playback nicht zu stören)
       WELCOMED = true;
