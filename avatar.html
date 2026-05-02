@@ -3,249 +3,698 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Clarity Glass Orb Avatar</title>
+<title>Clarity Avatar Front Premium</title>
 <style>
-  html,body{margin:0;height:100%;background:transparent;overflow:hidden}
-  #root{position:fixed;inset:0}
+  html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+  }
+
+  #root {
+    position: fixed;
+    inset: 0;
+    background: transparent;
+  }
+
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+  }
 </style>
 </head>
 <body>
-<div id="root"></div>
+<div id="root">
+  <canvas id="avatarCanvas"></canvas>
+</div>
 
-<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
 <script>
-(()=>{
-  // ---------- Setup ----------
-  const root = document.getElementById('root');
-  const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true, powerPreference:'high-performance' });
-  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
-  renderer.setSize(innerWidth, innerHeight);
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  root.appendChild(renderer.domElement);
+(() => {
+  "use strict";
 
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 50);
-  camera.position.set(0,0,3.2);
+  const canvas = document.getElementById("avatarCanvas");
+  const ctx = canvas.getContext("2d", { alpha: true });
 
-  scene.add(new THREE.AmbientLight(0xffffff, .9));
-  const dir = new THREE.DirectionalLight(0xffffff, .35); dir.position.set(3,2,3); scene.add(dir);
+  let width = 0;
+  let height = 0;
+  let dpr = 1;
 
-  // ---------- Inner Effect Sphere (schwebt "1 cm" Abstand zur Hülle) ----------
-  const R_INNER = 0.85;       // ~1 cm Abstand zur Glaswand (Glasradius 1.0)
-  const geoInner = new THREE.SphereGeometry(R_INNER, 192, 128);
+  const nobreath = new URLSearchParams(location.search).get("nobreath") === "1";
 
-  const uniforms = {
-    uTime:    { value: 0 },
-    uBaseAmp: { value: 0.06 },
-    uAudioAmp:{ value: 0.22 },
-    uLevel:   { value: 0.0 },
-    uBand:    { value: 0.0 },
-    uGlow:    { value: 0.85 },
-    uColorA:  { value: new THREE.Vector3(200/360, .90, .55) }, // cyan
-    uColorB:  { value: new THREE.Vector3(270/360, .85, .60) }, // violet
-    uColorC:  { value: new THREE.Vector3(320/360, .85, .62) }, // magenta
-    uAspect:  { value: innerWidth/innerHeight }
-  };
-
-  const simplex=`
-  vec3 mod289(vec3 x){return x - floor(x * (1.0/289.0)) * 289.0;}
-  vec4 mod289(vec4 x){return x - floor(x * (1.0/289.0)) * 289.0;}
-  vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
-  vec4 taylorInvSqrt(vec4 r){return 1.79284291400159 - 0.85373472095314 * r;}
-  float snoise(vec3 v){
-    const vec2 C = vec2(1.0/6.0, 1.0/3.0);
-    const vec4 D = vec4(0.0,0.5,1.0,2.0);
-    vec3 i=floor(v+dot(v,C.yyy));
-    vec3 x0=v-i+dot(i,C.xxx);
-    vec3 g=step(x0.yzx,x0.xyz); vec3 l=1.0-g;
-    vec3 i1=min(g.xyz,l.zxy), i2=max(g.xyz,l.zxy);
-    vec3 x1=x0-i1+C.xxx, x2=x0-i2+C.yyy, x3=x0-D.yyy;
-    i=mod289(i);
-    vec4 p=permute(permute(permute(i.z+vec4(0.0,i1.z,i2.z,1.0))+i.y+vec4(0.0,i1.y,i2.y,1.0))+i.x+vec4(0.0,i1.x,i2.x,1.0));
-    float n_=0.142857142857; vec3 ns=n_*D.wyz-D.xzx;
-    vec4 j=p-49.0*floor(p*ns.z*ns.z); vec4 x_=floor(j*ns.z); vec4 y_=floor(j-7.0*x_);
-    vec4 x=x_*ns.x+ns.yyyy, y=y_*ns.x+ns.yyyy, h=1.0-abs(x)-abs(y);
-    vec4 b0=vec4(x.xy,y.xy), b1=vec4(x.zw,y.zw);
-    vec4 s0=floor(b0)*2.0+1.0, s1=floor(b1)*2.0+1.0; vec4 sh=-step(h,vec4(0.0));
-    vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy, a1=b1.xzyw+s1.xzyw*sh.zzww;
-    vec3 p0=vec3(a0.xy,h.x), p1=vec3(a1.xy,h.y), p2=vec3(a0.zw,h.z), p3=vec3(a1.zw,h.w);
-    vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
-    p0*=norm.x; p1*=norm.y; p2*=norm.z; p3*=norm.w;
-    vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0); m*=m;
-    return 42.0*dot(m*m, vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
-  }`;
-
-  const vInner=`
-    uniform float uTime,uBaseAmp,uAudioAmp,uLevel,uBand;
-    varying vec3 vPos; varying float vDef;
-    ${simplex}
-    void main(){
-      vec3 p=position;
-      float t=uTime*0.35;
-      float n1=snoise(normal*1.4+vec3(t*0.6,t*0.4,t*0.8));
-      float n2=snoise(position*0.8+vec3(-t*0.3,t*0.5,-t*0.2));
-      float d=uBaseAmp*n1 + uAudioAmp*(0.6*uLevel+0.4*uBand)*n2;
-      vDef=d; vec3 q=normalize(p)*(1.0+d);
-      vPos=q; gl_Position=projectionMatrix*modelViewMatrix*vec4(q,1.0);
-    }`;
-
-  const fInner=`
-    precision highp float;
-    varying vec3 vPos; varying float vDef;
-    uniform float uGlow,uTime,uLevel,uBand,uAspect;
-    uniform vec3 uColorA,uColorB,uColorC;
-    vec3 hsl2rgb(vec3 hsl){
-      float h=hsl.x,s=hsl.y,l=hsl.z;
-      float c=(1.0-abs(2.0*l-1.0))*s;
-      float x=c*(1.0-abs(mod(h*6.0,2.0)-1.0));
-      float m=l-0.5*c; vec3 rgb;
-      if(h<1.0/6.0) rgb=vec3(c,x,0.0);
-      else if(h<2.0/6.0) rgb=vec3(x,c,0.0);
-      else if(h<3.0/6.0) rgb=vec3(0.0,c,x);
-      else if(h<4.0/6.0) rgb=vec3(0.0,x,c);
-      else if(h<5.0/6.0) rgb=vec3(x,0.0,c);
-      else rgb=vec3(c,0.0,x);
-      return rgb+m;
-    }
-    void main(){
-      vec3 n=normalize(vPos);
-      float a=atan(n.y,n.x);
-      float mixAB=(sin(a*2.0+uTime*0.7)*0.5+0.5);
-      vec3 colA=hsl2rgb(uColorA), colB=hsl2rgb(uColorB), colC=hsl2rgb(uColorC);
-      vec3 base=mix(colA,colB,mixAB);
-      float pull=clamp(0.25+0.75*(0.6*uLevel+0.4*uBand),0.0,1.0);
-      vec3 color=mix(base,colC,pull);
-      float sheen=smoothstep(0.0,0.2,vDef+0.1);
-      color=mix(color,vec3(1.0),sheen*0.25);
-      float fres=pow(1.0-abs(n.z),2.6);
-      vec3 glow=color*uGlow*fres;
-      gl_FragColor=vec4(color+glow*0.55,0.96);
-    }`;
-
-  const innerMat = new THREE.ShaderMaterial({
-    uniforms, vertexShader:vInner, fragmentShader:fInner, transparent:true
-  });
-  const innerSphere = new THREE.Mesh(geoInner, innerMat);
-  scene.add(innerSphere);
-
-  // ---------- Glass Shell (Radius 1.0) ----------
-  const R_GLASS = 1.0;
-  const geoGlass = new THREE.SphereGeometry(R_GLASS, 128, 96);
-  const glassMat = new THREE.ShaderMaterial({
-    transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
-    uniforms:{ uTime:{value:0.0}, uTint:{value:new THREE.Color(0xEAF2FF)}, uStrength:{value:0.22} },
-    vertexShader:`
-      varying vec3 vN; varying vec3 vV;
-      void main(){
-        vec4 mv = modelViewMatrix * vec4(position,1.0);
-        vV = -mv.xyz; vN = normalize(normalMatrix * normal);
-        gl_Position = projectionMatrix * mv;
-      }`,
-    fragmentShader:`
-      precision highp float;
-      varying vec3 vN; varying vec3 vV;
-      uniform vec3 uTint; uniform float uStrength;
-      void main(){
-        float fres = pow(1.0 - max(0.0, dot(normalize(vN), normalize(vV))), 2.2);
-        vec3 col = uTint * (0.35 + 0.65*fres);
-        float a = 0.08 + fres * uStrength;     // dünnes Glas, starker Rand
-        gl_FragColor = vec4(col, a);
-      }`
-  });
-  const glass = new THREE.Mesh(geoGlass, glassMat);
-  scene.add(glass);
-
-  // ---------- Outer Pulse Ring (~1 cm außerhalb) ----------
-  const RING_SCALE = 1.18; // etwas außerhalb der Glasoberfläche
-  const ringGeo = new THREE.PlaneGeometry(6,6,1,1);
-  const ringMat = new THREE.ShaderMaterial({
-    transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
-    uniforms:{ uTime:{value:0}, uLevel:{value:0} },
-    vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-    fragmentShader:`
-      precision highp float; varying vec2 vUv; uniform float uTime; uniform float uLevel;
-      void main(){
-        vec2 p = vUv*2.0-1.0;
-        float d = length(p);
-        // Grundradius + Puls
-        float R = 0.78 + 0.015*sin(uTime*2.2) + 0.02*uLevel;
-        float width = 0.035 + 0.015*uLevel;
-        float ring = smoothstep(R, R-width, abs(d-R));
-        float fade = smoothstep(1.1, 0.8, d); // weiches Ausblenden außen
-        float a = ring * fade * (0.55 + 0.35*uLevel);
-        gl_FragColor = vec4(vec3(1.0), a);
-      }`
-  });
-  const ring = new THREE.Mesh(ringGeo, ringMat);
-  ring.scale.setScalar(RING_SCALE);
-  ring.position.z = -0.55; // knapp hinter der Kugel, damit es wirklich außen wirkt
-  scene.add(ring);
-
-  // ---------- State/Level API ----------
   const STYLES = {
-    idle:      { glow:.85, base:.06, audio:.22, rotX:.05, rotY:.12 },
-    listening: { glow:.95, base:.08, audio:.28, rotX:.05, rotY:.16 },
-    thinking:  { glow:.92, base:.07, audio:.24, rotX:.04, rotY:.10 },
-    speaking:  { glow:.98, base:.09, audio:.30, rotX:.06, rotY:.20 },
+    idle: {
+      baseGlow: 0.62,
+      pulseSpeed: 1.0,
+      haloStrength: 0.55,
+      eyeGlow: 0.85,
+      orbitSpeed: 0.22,
+      floatAmount: 1.0
+    },
+    listening: {
+      baseGlow: 0.78,
+      pulseSpeed: 1.35,
+      haloStrength: 0.82,
+      eyeGlow: 1.0,
+      orbitSpeed: 0.34,
+      floatAmount: 1.1
+    },
+    thinking: {
+      baseGlow: 0.70,
+      pulseSpeed: 0.72,
+      haloStrength: 0.64,
+      eyeGlow: 0.78,
+      orbitSpeed: 0.16,
+      floatAmount: 0.85
+    },
+    speaking: {
+      baseGlow: 0.98,
+      pulseSpeed: 1.85,
+      haloStrength: 1.0,
+      eyeGlow: 1.08,
+      orbitSpeed: 0.42,
+      floatAmount: 1.25
+    }
   };
-  let rotX=.05, rotY=.12, targetLevel=0, currentLevel=0, lastMsg=performance.now();
-  function setState(s='idle'){
-    const m = STYLES[s]||STYLES.idle;
-    uniforms.uGlow.value=m.glow;
-    uniforms.uBaseAmp.value=m.base;
-    uniforms.uAudioAmp.value=m.audio;
-    rotX=m.rotX; rotY=m.rotY;
-  }
-  function setLevel(v=0){
-    targetLevel=Math.max(0,Math.min(1,Number(v)||0));
-    lastMsg=performance.now();
+
+  let currentState = "idle";
+  let targetLevel = 0;
+  let currentLevel = 0;
+  let lastMsg = performance.now();
+  let activeStyle = { ...STYLES.idle };
+
+  const particles = Array.from({ length: 24 }, (_, i) => ({
+    angle: (Math.PI * 2 * i) / 24 + Math.random() * 0.4,
+    radius: 1.18 + Math.random() * 0.28,
+    speed: 0.15 + Math.random() * 0.18,
+    size: 0.006 + Math.random() * 0.012,
+    phase: Math.random() * Math.PI * 2,
+    tint: Math.random() > 0.5 ? "cyan" : "magenta"
+  }));
+
+  function clamp(v, min, max) {
+    return Math.max(min, Math.min(max, v));
   }
 
-  // ---------- Loop ----------
-  let tPrev = performance.now()/1000;
-  const nobreath = new URLSearchParams(location.search).get('nobreath')==='1';
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
 
-  function frame(){
+  function setState(state = "idle") {
+    currentState = STYLES[state] ? state : "idle";
+    activeStyle = { ...STYLES[currentState] };
+  }
+
+  function setLevel(value = 0) {
+    targetLevel = clamp(Number(value) || 0, 0, 1);
+    lastMsg = performance.now();
+  }
+
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    width = window.innerWidth;
+    height = window.innerHeight;
+
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    canvas.style.width = width + "px";
+    canvas.style.height = height + "px";
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function drawEllipse(x, y, rx, ry, rotation, fillStyle, alpha = 1, shadowColor = null, shadowBlur = 0) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rotation || 0);
+    ctx.globalAlpha = alpha;
+    if (shadowColor) {
+      ctx.shadowColor = shadowColor;
+      ctx.shadowBlur = shadowBlur;
+    }
+    ctx.beginPath();
+    ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fillStyle = fillStyle;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function strokePath(drawFn, options) {
+    ctx.save();
+    ctx.globalAlpha = options.alpha == null ? 1 : options.alpha;
+    ctx.lineCap = options.lineCap || "round";
+    ctx.lineJoin = options.lineJoin || "round";
+    ctx.lineWidth = options.lineWidth || 10;
+    ctx.strokeStyle = options.strokeStyle || "#fff";
+
+    if (options.shadowColor) ctx.shadowColor = options.shadowColor;
+    if (options.shadowBlur) ctx.shadowBlur = options.shadowBlur;
+
+    ctx.beginPath();
+    drawFn();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function fillPath(drawFn, options) {
+    ctx.save();
+    ctx.globalAlpha = options.alpha == null ? 1 : options.alpha;
+    if (options.shadowColor) ctx.shadowColor = options.shadowColor;
+    if (options.shadowBlur) ctx.shadowBlur = options.shadowBlur;
+    ctx.beginPath();
+    drawFn();
+    ctx.fillStyle = options.fillStyle;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function createLinearGradient(x1, y1, x2, y2, stops) {
+    const g = ctx.createLinearGradient(x1, y1, x2, y2);
+    stops.forEach(stop => g.addColorStop(stop[0], stop[1]));
+    return g;
+  }
+
+  function createRadialGradient(x1, y1, r1, x2, y2, r2, stops) {
+    const g = ctx.createRadialGradient(x1, y1, r1, x2, y2, r2);
+    stops.forEach(stop => g.addColorStop(stop[0], stop[1]));
+    return g;
+  }
+
+  function drawAura(s, t, level, pulse) {
+    const auraScale = 1 + pulse * 0.03 + level * 0.08;
+    const haloStrength = activeStyle.haloStrength;
+
+    // Soft outer aura
+    const auraGrad = createRadialGradient(
+      0, 0, s * 0.35,
+      0, 0, s * 1.55 * auraScale,
+      [
+        [0.00, "rgba(70,220,255,0.18)"],
+        [0.38, "rgba(60,140,255,0.12)"],
+        [0.65, "rgba(255,40,170,0.10)"],
+        [1.00, "rgba(255,255,255,0.00)"]
+      ]
+    );
+    drawEllipse(0, 0, s * 1.55 * auraScale, s * 1.55 * auraScale, 0, auraGrad, 0.85 * haloStrength);
+
+    // Cyan main ring
+    strokePath(() => {
+      ctx.arc(0, 0, s * (1.18 + level * 0.03 + pulse * 0.015), -Math.PI * 0.96, Math.PI * 0.78);
+    }, {
+      lineWidth: s * 0.018,
+      strokeStyle: "rgba(120,255,255,0.48)",
+      alpha: 0.55 * haloStrength,
+      shadowColor: "rgba(70,240,255,0.75)",
+      shadowBlur: s * 0.08
+    });
+
+    // Magenta secondary ring
+    strokePath(() => {
+      ctx.arc(0, 0, s * (1.31 + level * 0.04 + pulse * 0.02), -Math.PI * 0.08, Math.PI * 1.62);
+    }, {
+      lineWidth: s * 0.014,
+      strokeStyle: "rgba(255,100,220,0.36)",
+      alpha: 0.48 * haloStrength,
+      shadowColor: "rgba(255,70,200,0.7)",
+      shadowBlur: s * 0.07
+    });
+
+    // Dotted tech ring
+    ctx.save();
+    ctx.setLineDash([s * 0.022, s * 0.026]);
+    strokePath(() => {
+      ctx.arc(0, 0, s * (1.24 + pulse * 0.01), -Math.PI * 0.65 + t * 0.15, Math.PI * 1.1 + t * 0.15);
+    }, {
+      lineWidth: s * 0.008,
+      strokeStyle: "rgba(210,245,255,0.28)",
+      alpha: 0.55 * haloStrength,
+      shadowColor: "rgba(140,235,255,0.35)",
+      shadowBlur: s * 0.04
+    });
+    ctx.restore();
+  }
+
+  function drawParticles(s, t, level) {
+    const orbitBase = activeStyle.orbitSpeed;
+    particles.forEach((p, i) => {
+      const a = p.angle + t * (orbitBase + p.speed + level * 0.35);
+      const r = s * (p.radius + Math.sin(t * 1.1 + p.phase) * 0.02 + level * 0.05);
+      const x = Math.cos(a) * r;
+      const y = Math.sin(a) * r * 0.96;
+      const size = s * (p.size + level * 0.006);
+
+      let color = p.tint === "cyan"
+        ? "rgba(135,255,255,0.85)"
+        : "rgba(255,125,230,0.78)";
+
+      drawEllipse(
+        x, y, size, size, 0,
+        color,
+        0.75,
+        color,
+        s * 0.045
+      );
+    });
+  }
+
+  function drawCore(s, t, level) {
+    // dark face orb
+    const faceGrad = createRadialGradient(
+      -s * 0.22, -s * 0.28, s * 0.04,
+      0, 0, s * 0.9,
+      [
+        [0.00, "#173e8c"],
+        [0.18, "#0b2e79"],
+        [0.48, "#07255f"],
+        [0.78, "#03173e"],
+        [1.00, "#010e2a"]
+      ]
+    );
+
+    drawEllipse(0, 0.01 * s, s * 0.78, s * 0.74, -0.06, faceGrad, 0.98, "rgba(30,180,255,0.16)", s * 0.06);
+
+    // Inner subtle rim
+    strokePath(() => {
+      ctx.ellipse(0, 0.01 * s, s * 0.78, s * 0.74, -0.06, 0, Math.PI * 2);
+    }, {
+      lineWidth: s * 0.018,
+      strokeStyle: "rgba(90,170,255,0.12)",
+      alpha: 1
+    });
+
+    // left highlight
+    const gloss = createRadialGradient(
+      -s * 0.32, -s * 0.28, 0,
+      -s * 0.32, -s * 0.28, s * 0.34,
+      [
+        [0.00, "rgba(255,255,255,0.95)"],
+        [0.12, "rgba(220,235,255,0.72)"],
+        [0.38, "rgba(120,180,255,0.20)"],
+        [1.00, "rgba(255,255,255,0.00)"]
+      ]
+    );
+    drawEllipse(-s * 0.18, -s * 0.20, s * 0.24, s * 0.18, -0.55, gloss, 0.9);
+
+    // inner color ambience
+    const innerAmbience = createRadialGradient(
+      s * 0.18, s * 0.22, 0,
+      s * 0.18, s * 0.22, s * 0.55,
+      [
+        [0.00, "rgba(255,0,150,0.16)"],
+        [0.40, "rgba(110,40,255,0.08)"],
+        [1.00, "rgba(0,0,0,0.00)"]
+      ]
+    );
+    drawEllipse(0, 0.02 * s, s * 0.62, s * 0.58, 0, innerAmbience, 1);
+
+    // cyan edge glow left
+    const edgeGlow = createRadialGradient(
+      -s * 0.52, 0, 0,
+      -s * 0.52, 0, s * 0.42,
+      [
+        [0.00, "rgba(30,255,255,0.16)"],
+        [0.55, "rgba(30,140,255,0.08)"],
+        [1.00, "rgba(0,0,0,0.00)"]
+      ]
+    );
+    drawEllipse(-s * 0.18, 0, s * 0.74, s * 0.68, 0, edgeGlow, 1);
+  }
+
+  function drawTopCyanRibbon(s, level, pulse) {
+    const grad = createLinearGradient(-s * 0.9, -s * 0.9, s * 0.8, -s * 0.1, [
+      [0.00, "#3bf9f1"],
+      [0.35, "#34dce7"],
+      [0.70, "#1795e8"],
+      [1.00, "#0d4ab6"]
+    ]);
+
+    const hi = createLinearGradient(-s * 0.5, -s * 0.6, s * 0.6, -s * 0.25, [
+      [0.00, "rgba(255,255,255,0.00)"],
+      [0.25, "rgba(210,255,255,0.95)"],
+      [0.65, "rgba(170,245,255,0.65)"],
+      [1.00, "rgba(255,255,255,0.00)"]
+    ]);
+
+    strokePath(() => {
+      ctx.moveTo(-s * 0.54, s * 0.03);
+      ctx.bezierCurveTo(
+        -s * 0.88, -s * 0.48,
+        -s * 0.48, -s * 1.02,
+        s * 0.16, -s * 0.96
+      );
+      ctx.bezierCurveTo(
+        s * 0.68, -s * 0.90,
+        s * 0.88, -s * 0.56,
+        s * 0.68, -s * 0.26
+      );
+    }, {
+      lineWidth: s * (0.39 + level * 0.03 + pulse * 0.01),
+      strokeStyle: grad,
+      alpha: 0.98,
+      shadowColor: "rgba(35,240,255,0.70)",
+      shadowBlur: s * 0.09
+    });
+
+    strokePath(() => {
+      ctx.moveTo(-s * 0.34, -s * 0.02);
+      ctx.bezierCurveTo(
+        -s * 0.58, -s * 0.36,
+        -s * 0.32, -s * 0.76,
+        s * 0.18, -s * 0.78
+      );
+      ctx.bezierCurveTo(
+        s * 0.48, -s * 0.78,
+        s * 0.62, -s * 0.60,
+        s * 0.52, -s * 0.44
+      );
+    }, {
+      lineWidth: s * 0.06,
+      strokeStyle: hi,
+      alpha: 0.72
+    });
+  }
+
+  function drawLowerBlueRibbon(s, level, pulse) {
+    const grad = createLinearGradient(-s * 0.95, s * 0.75, s * 0.95, s * 0.15, [
+      [0.00, "#0f63d6"],
+      [0.28, "#004db6"],
+      [0.60, "#00328f"],
+      [1.00, "#031d67"]
+    ]);
+
+    strokePath(() => {
+      ctx.moveTo(-s * 0.62, s * 0.35);
+      ctx.bezierCurveTo(
+        -s * 0.80, s * 0.62,
+        -s * 0.44, s * 0.98,
+        s * 0.08, s * 0.92
+      );
+      ctx.bezierCurveTo(
+        s * 0.56, s * 0.86,
+        s * 0.84, s * 0.54,
+        s * 0.92, s * 0.18
+      );
+    }, {
+      lineWidth: s * (0.33 + level * 0.02 + pulse * 0.01),
+      strokeStyle: grad,
+      alpha: 0.98,
+      shadowColor: "rgba(0,110,255,0.52)",
+      shadowBlur: s * 0.075
+    });
+
+    const hi = createLinearGradient(-s * 0.45, s * 0.52, s * 0.60, s * 0.16, [
+      [0.00, "rgba(255,255,255,0.00)"],
+      [0.25, "rgba(135,215,255,0.45)"],
+      [0.55, "rgba(180,240,255,0.62)"],
+      [1.00, "rgba(255,255,255,0.00)"]
+    ]);
+
+    strokePath(() => {
+      ctx.moveTo(-s * 0.30, s * 0.44);
+      ctx.bezierCurveTo(
+        -s * 0.42, s * 0.64,
+        -s * 0.10, s * 0.77,
+        s * 0.28, s * 0.72
+      );
+      ctx.bezierCurveTo(
+        s * 0.54, s * 0.68,
+        s * 0.66, s * 0.48,
+        s * 0.70, s * 0.30
+      );
+    }, {
+      lineWidth: s * 0.048,
+      strokeStyle: hi,
+      alpha: 0.58
+    });
+  }
+
+  function drawMagentaRibbon(s, level, pulse) {
+    const grad = createLinearGradient(s * 0.42, -s * 0.52, s * 0.42, s * 0.98, [
+      [0.00, "#ff2db0"],
+      [0.32, "#f80099"],
+      [0.62, "#b300ff"],
+      [1.00, "#ff139d"]
+    ]);
+
+    strokePath(() => {
+      ctx.moveTo(s * 0.72, -s * 0.20);
+      ctx.bezierCurveTo(
+        s * 0.92, s * 0.02,
+        s * 0.98, s * 0.42,
+        s * 0.72, s * 0.74
+      );
+      ctx.bezierCurveTo(
+        s * 0.42, s * 1.02,
+        -s * 0.04, s * 0.98,
+        -s * 0.22, s * 0.84
+      );
+    }, {
+      lineWidth: s * (0.34 + level * 0.03 + pulse * 0.015),
+      strokeStyle: grad,
+      alpha: 0.98,
+      shadowColor: "rgba(255,40,180,0.78)",
+      shadowBlur: s * 0.10
+    });
+
+    const hi = createLinearGradient(s * 0.60, -s * 0.25, s * 0.18, s * 0.88, [
+      [0.00, "rgba(255,255,255,0.00)"],
+      [0.15, "rgba(255,220,245,0.72)"],
+      [0.55, "rgba(255,170,235,0.60)"],
+      [1.00, "rgba(255,255,255,0.00)"]
+    ]);
+
+    strokePath(() => {
+      ctx.moveTo(s * 0.68, -s * 0.02);
+      ctx.bezierCurveTo(
+        s * 0.76, s * 0.14,
+        s * 0.76, s * 0.42,
+        s * 0.56, s * 0.66
+      );
+      ctx.bezierCurveTo(
+        s * 0.34, s * 0.84,
+        s * 0.10, s * 0.88,
+        -s * 0.02, s * 0.82
+      );
+    }, {
+      lineWidth: s * 0.05,
+      strokeStyle: hi,
+      alpha: 0.72
+    });
+  }
+
+  function drawPurpleTransition(s) {
+    const grad = createLinearGradient(-s * 0.20, s * 0.78, s * 0.82, s * 0.30, [
+      [0.00, "rgba(70,120,255,0.00)"],
+      [0.24, "rgba(100,80,255,0.50)"],
+      [0.70, "rgba(220,70,255,0.58)"],
+      [1.00, "rgba(255,120,240,0.10)"]
+    ]);
+
+    strokePath(() => {
+      ctx.moveTo(-s * 0.24, s * 0.72);
+      ctx.bezierCurveTo(
+        s * 0.04, s * 0.82,
+        s * 0.34, s * 0.76,
+        s * 0.62, s * 0.56
+      );
+    }, {
+      lineWidth: s * 0.10,
+      strokeStyle: grad,
+      alpha: 0.48,
+      shadowColor: "rgba(120,60,255,0.28)",
+      shadowBlur: s * 0.05
+    });
+  }
+
+  function drawRibbonShadows(s) {
+    // faint overall shape depth
+    drawEllipse(-s * 0.08, s * 0.14, s * 0.92, s * 0.76, 0.08, "rgba(0,0,0,0.10)", 1, "rgba(0,0,0,0.18)", s * 0.09);
+  }
+
+  function drawEyes(s, t, level) {
+    const blinkCycle = 4.8;
+    const blinkPhase = (t % blinkCycle) / blinkCycle;
+    let eyeOpen = 1;
+
+    if (blinkPhase > 0.93) {
+      eyeOpen = 1 - ((blinkPhase - 0.93) / 0.07);
+    }
+    if (blinkPhase > 0.965) {
+      eyeOpen = (blinkPhase - 0.965) / 0.035;
+    }
+
+    eyeOpen = clamp(eyeOpen, 0.35, 1);
+
+    const glow = activeStyle.eyeGlow + level * 0.42;
+
+    function drawOneEye(x) {
+      const y = s * 0.12;
+      const w = s * 0.26;
+      const h = s * 0.095 * eyeOpen;
+
+      // glow
+      strokePath(() => {
+        ctx.moveTo(x - w * 0.52, y);
+        ctx.quadraticCurveTo(x, y - h * 1.05, x + w * 0.52, y);
+      }, {
+        lineWidth: s * 0.075,
+        strokeStyle: "rgba(0,220,255,0.16)",
+        alpha: 0.95,
+        shadowColor: "rgba(40,240,255,0.95)",
+        shadowBlur: s * 0.11
+      });
+
+      // main eye line
+      const g = createLinearGradient(x - w * 0.5, y - h, x + w * 0.5, y, [
+        [0.00, "#8bffff"],
+        [0.50, "#d3ffff"],
+        [1.00, "#8bffff"]
+      ]);
+
+      strokePath(() => {
+        ctx.moveTo(x - w * 0.48, y);
+        ctx.quadraticCurveTo(x, y - h, x + w * 0.48, y);
+      }, {
+        lineWidth: s * 0.038,
+        strokeStyle: g,
+        alpha: clamp(0.78 + glow * 0.14, 0, 1)
+      });
+    }
+
+    drawOneEye(-s * 0.20);
+    drawOneEye(s * 0.20);
+  }
+
+  function drawSpeculars(s) {
+    // strong white reflection
+    const g1 = createRadialGradient(
+      -s * 0.32, -s * 0.24, 0,
+      -s * 0.32, -s * 0.24, s * 0.26,
+      [
+        [0.00, "rgba(255,255,255,0.98)"],
+        [0.18, "rgba(220,235,255,0.75)"],
+        [0.45, "rgba(170,200,255,0.18)"],
+        [1.00, "rgba(255,255,255,0.00)"]
+      ]
+    );
+    drawEllipse(-s * 0.18, -s * 0.19, s * 0.20, s * 0.13, -0.58, g1, 0.88);
+
+    const g2 = createLinearGradient(-s * 0.50, -s * 0.36, s * 0.42, -s * 0.02, [
+      [0.00, "rgba(255,255,255,0.00)"],
+      [0.18, "rgba(220,255,255,0.65)"],
+      [0.50, "rgba(160,245,255,0.52)"],
+      [1.00, "rgba(255,255,255,0.00)"]
+    ]);
+
+    strokePath(() => {
+      ctx.moveTo(-s * 0.42, -s * 0.20);
+      ctx.bezierCurveTo(
+        -s * 0.28, -s * 0.42,
+        -s * 0.02, -s * 0.58,
+        s * 0.30, -s * 0.52
+      );
+    }, {
+      lineWidth: s * 0.05,
+      strokeStyle: g2,
+      alpha: 0.45
+    });
+  }
+
+  function drawAvatar(t) {
+    const silentFor = performance.now() - lastMsg;
+    const fallback = (!nobreath && silentFor > 3000)
+      ? (Math.sin(t * 1.6) * 0.5 + 0.5) * 0.34
+      : targetLevel;
+
+    currentLevel = lerp(currentLevel, fallback, 0.12);
+
+    const s = Math.min(width, height) * 0.235;
+    const pulse = Math.sin(t * activeStyle.pulseSpeed * 2.2) * 0.5 + 0.5;
+    const breath = nobreath ? 0 : (Math.sin(t * 1.55) * 0.5 + 0.5);
+
+    const floatY = Math.sin(t * 1.25) * s * 0.018 * activeStyle.floatAmount;
+    const subtleTilt = Math.sin(t * 0.7) * 0.02;
+
+    ctx.clearRect(0, 0, width, height);
+
+    ctx.save();
+    ctx.translate(width / 2, height / 2 + floatY);
+    ctx.rotate(subtleTilt);
+    ctx.scale(
+      1 + breath * 0.010 + currentLevel * 0.032,
+      1 + breath * 0.016 + currentLevel * 0.045
+    );
+
+    drawAura(s, t, currentLevel, pulse);
+    drawParticles(s, t, currentLevel);
+    drawRibbonShadows(s);
+
+    // back ambient glow
+    const backGlow = createRadialGradient(
+      0, 0, s * 0.18,
+      0, 0, s * 1.05,
+      [
+        [0.00, "rgba(0,150,255,0.12)"],
+        [0.40, "rgba(130,60,255,0.08)"],
+        [0.75, "rgba(255,0,160,0.06)"],
+        [1.00, "rgba(0,0,0,0.00)"]
+      ]
+    );
+    drawEllipse(0, 0.04 * s, s * 1.00, s * 0.95, 0, backGlow, 1);
+
+    drawCore(s, t, currentLevel);
+    drawLowerBlueRibbon(s, currentLevel, pulse);
+    drawTopCyanRibbon(s, currentLevel, pulse);
+    drawPurpleTransition(s);
+    drawMagentaRibbon(s, currentLevel, pulse);
+    drawSpeculars(s);
+    drawEyes(s, t, currentLevel);
+
+    ctx.restore();
+  }
+
+  let prev = performance.now() / 1000;
+
+  function frame() {
     requestAnimationFrame(frame);
-    const tNow=performance.now()/1000, dt=Math.min(tNow-tPrev,.05); tPrev=tNow;
-
-    const since = performance.now()-lastMsg;
-    const fallback = (!nobreath && since>3000) ? (Math.sin(tNow*1.6)*.5+.5)*.35 : targetLevel;
-    currentLevel = currentLevel*0.85 + fallback*0.15;
-
-    uniforms.uLevel.value=currentLevel;
-    uniforms.uTime.value += dt;
-    ringMat.uniforms.uTime.value += dt;
-    ringMat.uniforms.uLevel.value = currentLevel;
-
-    innerSphere.rotation.y += rotY*dt;
-    innerSphere.rotation.x += rotX*dt;
-
-    // Billboard für Ring
-    ring.lookAt(camera.position);
-
-    renderer.render(scene,camera);
+    const now = performance.now() / 1000;
+    prev = now;
+    drawAvatar(now);
   }
+
+  window.addEventListener("resize", resize);
+
+  window.addEventListener("message", (ev) => {
+    const d = ev && ev.data ? ev.data : {};
+
+    if (d.type === "avatar:set") {
+      setState(d.state || "idle");
+    }
+
+    if (d.type === "avatar:level") {
+      setLevel(d.value);
+    }
+
+    if (d.type === "ping") {
+      try {
+        ev.source && ev.source.postMessage && ev.source.postMessage({ type: "avatar:ready" }, "*");
+      } catch (e) {}
+    }
+  });
+
+  resize();
+  setState("idle");
+  setLevel(0);
   frame();
 
-  // ---------- Resize ----------
-  addEventListener('resize', ()=>{
-    renderer.setSize(innerWidth,innerHeight);
-    camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
-    uniforms.uAspect.value=innerWidth/innerHeight;
-  });
-
-  // ---------- Messaging ----------
-  addEventListener('message', (ev)=>{
-    const d=ev?.data||{};
-    if(d.type==='avatar:set')   setState(d.state||'idle');
-    if(d.type==='avatar:level') setLevel(d.value);
-    if(d.type==='ping') ev.source?.postMessage?.({type:'avatar:ready'}, '*');
-  });
-
-  // init
-  setState('idle'); setLevel(0);
-  setTimeout(()=> parent?.postMessage?.({type:'avatar:ready'}, '*'), 40);
+  setTimeout(() => {
+    try {
+      window.parent && window.parent.postMessage && window.parent.postMessage({ type: "avatar:ready" }, "*");
+    } catch (e) {}
+  }, 50);
 })();
 </script>
 </body>
