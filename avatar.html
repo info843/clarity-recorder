@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Clarity Avatar Front Premium</title>
+<title>Clarity Avatar v1 Final Business</title>
 <style>
   html, body {
     margin: 0;
@@ -16,7 +16,10 @@
   #root {
     position: fixed;
     inset: 0;
+    width: 100%;
+    height: 100%;
     background: transparent;
+    overflow: hidden;
   }
 
   canvas {
@@ -36,63 +39,92 @@
 (() => {
   "use strict";
 
+  // ============================================================
+  // CLARITY AVATAR v1 FINAL BUSINESS
+  // ------------------------------------------------------------
+  // State API (backward compatible):
+  // - { type:'avatar:set', state:'idle|listening|thinking|speaking' }
+  // - { type:'avatar:level', value:0..1 }
+  // - { type:'ping' } -> responds with { type:'avatar:ready' }
+  //
+  // Query params:
+  // - ?nobreath=1   => disable idle breathing
+  // - ?scale=1.0    => avatar size multiplier
+  // ============================================================
+
+  const root = document.getElementById("root");
   const canvas = document.getElementById("avatarCanvas");
   const ctx = canvas.getContext("2d", { alpha: true });
 
-  let width = 0;
-  let height = 0;
-  let dpr = 1;
-
+  const dprMax = 2;
+  const baseDesign = 800;
   const nobreath = new URLSearchParams(location.search).get("nobreath") === "1";
+  const scaleParam = Math.max(0.5, Math.min(1.5, parseFloat(new URLSearchParams(location.search).get("scale") || "1") || 1));
+
+  let width = 1;
+  let height = 1;
+  let dpr = 1;
+  let centerX = 0;
+  let centerY = 0;
+  let unit = 100;
 
   const STYLES = {
     idle: {
-      baseGlow: 0.62,
+      baseGlow: 0.55,
+      haloStrength: 0.52,
       pulseSpeed: 1.0,
-      haloStrength: 0.55,
-      eyeGlow: 0.85,
-      orbitSpeed: 0.22,
-      floatAmount: 1.0
+      eyeIntensity: 0.88,
+      orbitSpeed: 0.18,
+      floatAmount: 0.75,
+      speechPower: 0.0,
+      seriousness: 1.0
     },
     listening: {
-      baseGlow: 0.78,
-      pulseSpeed: 1.35,
-      haloStrength: 0.82,
-      eyeGlow: 1.0,
-      orbitSpeed: 0.34,
-      floatAmount: 1.1
+      baseGlow: 0.72,
+      haloStrength: 0.78,
+      pulseSpeed: 1.32,
+      eyeIntensity: 0.98,
+      orbitSpeed: 0.28,
+      floatAmount: 0.9,
+      speechPower: 0.0,
+      seriousness: 1.02
     },
     thinking: {
-      baseGlow: 0.70,
-      pulseSpeed: 0.72,
-      haloStrength: 0.64,
-      eyeGlow: 0.78,
-      orbitSpeed: 0.16,
-      floatAmount: 0.85
+      baseGlow: 0.63,
+      haloStrength: 0.62,
+      pulseSpeed: 0.82,
+      eyeIntensity: 0.80,
+      orbitSpeed: 0.13,
+      floatAmount: 0.65,
+      speechPower: 0.0,
+      seriousness: 1.04
     },
     speaking: {
-      baseGlow: 0.98,
-      pulseSpeed: 1.85,
+      baseGlow: 0.96,
       haloStrength: 1.0,
-      eyeGlow: 1.08,
-      orbitSpeed: 0.42,
-      floatAmount: 1.25
+      pulseSpeed: 1.78,
+      eyeIntensity: 1.02,
+      orbitSpeed: 0.36,
+      floatAmount: 1.0,
+      speechPower: 1.0,
+      seriousness: 1.0
     }
   };
 
   let currentState = "idle";
+  let activeStyle = { ...STYLES.idle };
   let targetLevel = 0;
   let currentLevel = 0;
   let lastMsg = performance.now();
-  let activeStyle = { ...STYLES.idle };
+  let lastStateChange = performance.now();
 
-  const particles = Array.from({ length: 24 }, (_, i) => ({
-    angle: (Math.PI * 2 * i) / 24 + Math.random() * 0.4,
-    radius: 1.18 + Math.random() * 0.28,
-    speed: 0.15 + Math.random() * 0.18,
-    size: 0.006 + Math.random() * 0.012,
+  const particles = Array.from({ length: 22 }, (_, i) => ({
+    angle: (Math.PI * 2 * i) / 22 + Math.random() * 0.35,
+    radius: 1.16 + Math.random() * 0.28,
+    speed: 0.08 + Math.random() * 0.18,
+    size: 0.009 + Math.random() * 0.012,
     phase: Math.random() * Math.PI * 2,
-    tint: Math.random() > 0.5 ? "cyan" : "magenta"
+    tint: Math.random() > 0.55 ? "cyan" : "magenta"
   }));
 
   function clamp(v, min, max) {
@@ -103,20 +135,26 @@
     return a + (b - a) * t;
   }
 
+  function easeInOut(t) {
+    return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+  }
+
   function setState(state = "idle") {
     currentState = STYLES[state] ? state : "idle";
     activeStyle = { ...STYLES[currentState] };
+    lastStateChange = performance.now();
   }
 
-  function setLevel(value = 0) {
-    targetLevel = clamp(Number(value) || 0, 0, 1);
+  function setLevel(v = 0) {
+    targetLevel = clamp(Number(v) || 0, 0, 1);
     lastMsg = performance.now();
   }
 
-  function resize() {
-    dpr = Math.min(window.devicePixelRatio || 1, 2);
-    width = window.innerWidth;
-    height = window.innerHeight;
+  function updateMetrics() {
+    const rect = root.getBoundingClientRect();
+    width = Math.max(1, rect.width || window.innerWidth || 1);
+    height = Math.max(1, rect.height || window.innerHeight || 1);
+    dpr = Math.min(window.devicePixelRatio || 1, dprMax);
 
     canvas.width = Math.round(width * dpr);
     canvas.height = Math.round(height * dpr);
@@ -124,6 +162,22 @@
     canvas.style.height = height + "px";
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    centerX = width / 2;
+    centerY = height / 2;
+    unit = Math.min(width, height) * 0.225 * scaleParam;
+  }
+
+  function createLinearGradient(x1, y1, x2, y2, stops) {
+    const g = ctx.createLinearGradient(x1, y1, x2, y2);
+    for (const stop of stops) g.addColorStop(stop[0], stop[1]);
+    return g;
+  }
+
+  function createRadialGradient(x1, y1, r1, x2, y2, r2, stops) {
+    const g = ctx.createRadialGradient(x1, y1, r1, x2, y2, r2);
+    for (const stop of stops) g.addColorStop(stop[0], stop[1]);
+    return g;
   }
 
   function drawEllipse(x, y, rx, ry, rotation, fillStyle, alpha = 1, shadowColor = null, shadowBlur = 0) {
@@ -131,31 +185,12 @@
     ctx.translate(x, y);
     ctx.rotate(rotation || 0);
     ctx.globalAlpha = alpha;
-    if (shadowColor) {
-      ctx.shadowColor = shadowColor;
-      ctx.shadowBlur = shadowBlur;
-    }
+    if (shadowColor) ctx.shadowColor = shadowColor;
+    if (shadowBlur) ctx.shadowBlur = shadowBlur;
     ctx.beginPath();
     ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
     ctx.fillStyle = fillStyle;
     ctx.fill();
-    ctx.restore();
-  }
-
-  function strokePath(drawFn, options) {
-    ctx.save();
-    ctx.globalAlpha = options.alpha == null ? 1 : options.alpha;
-    ctx.lineCap = options.lineCap || "round";
-    ctx.lineJoin = options.lineJoin || "round";
-    ctx.lineWidth = options.lineWidth || 10;
-    ctx.strokeStyle = options.strokeStyle || "#fff";
-
-    if (options.shadowColor) ctx.shadowColor = options.shadowColor;
-    if (options.shadowBlur) ctx.shadowBlur = options.shadowBlur;
-
-    ctx.beginPath();
-    drawFn();
-    ctx.stroke();
     ctx.restore();
   }
 
@@ -171,272 +206,314 @@
     ctx.restore();
   }
 
-  function createLinearGradient(x1, y1, x2, y2, stops) {
-    const g = ctx.createLinearGradient(x1, y1, x2, y2);
-    stops.forEach(stop => g.addColorStop(stop[0], stop[1]));
-    return g;
-  }
-
-  function createRadialGradient(x1, y1, r1, x2, y2, r2, stops) {
-    const g = ctx.createRadialGradient(x1, y1, r1, x2, y2, r2);
-    stops.forEach(stop => g.addColorStop(stop[0], stop[1]));
-    return g;
-  }
-
-  function drawAura(s, t, level, pulse) {
-    const auraScale = 1 + pulse * 0.03 + level * 0.08;
-    const haloStrength = activeStyle.haloStrength;
-
-    // Soft outer aura
-    const auraGrad = createRadialGradient(
-      0, 0, s * 0.35,
-      0, 0, s * 1.55 * auraScale,
-      [
-        [0.00, "rgba(70,220,255,0.18)"],
-        [0.38, "rgba(60,140,255,0.12)"],
-        [0.65, "rgba(255,40,170,0.10)"],
-        [1.00, "rgba(255,255,255,0.00)"]
-      ]
-    );
-    drawEllipse(0, 0, s * 1.55 * auraScale, s * 1.55 * auraScale, 0, auraGrad, 0.85 * haloStrength);
-
-    // Cyan main ring
-    strokePath(() => {
-      ctx.arc(0, 0, s * (1.18 + level * 0.03 + pulse * 0.015), -Math.PI * 0.96, Math.PI * 0.78);
-    }, {
-      lineWidth: s * 0.018,
-      strokeStyle: "rgba(120,255,255,0.48)",
-      alpha: 0.55 * haloStrength,
-      shadowColor: "rgba(70,240,255,0.75)",
-      shadowBlur: s * 0.08
-    });
-
-    // Magenta secondary ring
-    strokePath(() => {
-      ctx.arc(0, 0, s * (1.31 + level * 0.04 + pulse * 0.02), -Math.PI * 0.08, Math.PI * 1.62);
-    }, {
-      lineWidth: s * 0.014,
-      strokeStyle: "rgba(255,100,220,0.36)",
-      alpha: 0.48 * haloStrength,
-      shadowColor: "rgba(255,70,200,0.7)",
-      shadowBlur: s * 0.07
-    });
-
-    // Dotted tech ring
+  function strokePath(drawFn, options) {
     ctx.save();
-    ctx.setLineDash([s * 0.022, s * 0.026]);
-    strokePath(() => {
-      ctx.arc(0, 0, s * (1.24 + pulse * 0.01), -Math.PI * 0.65 + t * 0.15, Math.PI * 1.1 + t * 0.15);
-    }, {
-      lineWidth: s * 0.008,
-      strokeStyle: "rgba(210,245,255,0.28)",
-      alpha: 0.55 * haloStrength,
-      shadowColor: "rgba(140,235,255,0.35)",
-      shadowBlur: s * 0.04
-    });
+    ctx.globalAlpha = options.alpha == null ? 1 : options.alpha;
+    ctx.beginPath();
+    drawFn();
+    ctx.lineCap = options.lineCap || "round";
+    ctx.lineJoin = options.lineJoin || "round";
+    ctx.lineWidth = options.lineWidth || 10;
+    ctx.strokeStyle = options.strokeStyle || "#fff";
+    if (options.shadowColor) ctx.shadowColor = options.shadowColor;
+    if (options.shadowBlur) ctx.shadowBlur = options.shadowBlur;
+    if (options.dash) ctx.setLineDash(options.dash);
+    ctx.stroke();
     ctx.restore();
   }
 
-  function drawParticles(s, t, level) {
-    const orbitBase = activeStyle.orbitSpeed;
-    particles.forEach((p, i) => {
-      const a = p.angle + t * (orbitBase + p.speed + level * 0.35);
-      const r = s * (p.radius + Math.sin(t * 1.1 + p.phase) * 0.02 + level * 0.05);
-      const x = Math.cos(a) * r;
-      const y = Math.sin(a) * r * 0.96;
-      const size = s * (p.size + level * 0.006);
+  function drawAura(s, t, level, pulse) {
+    const haloPower = activeStyle.haloStrength;
+    const scale = 1 + pulse * 0.02 + level * 0.07;
 
-      let color = p.tint === "cyan"
-        ? "rgba(135,255,255,0.85)"
-        : "rgba(255,125,230,0.78)";
+    const outerAura = createRadialGradient(
+      0, 0, s * 0.28,
+      0, 0, s * 1.62 * scale,
+      [
+        [0.00, "rgba(85,225,255,0.18)"],
+        [0.30, "rgba(45,140,255,0.12)"],
+        [0.60, "rgba(130,60,255,0.10)"],
+        [0.82, "rgba(255,30,165,0.09)"],
+        [1.00, "rgba(255,255,255,0.00)"]
+      ]
+    );
+    drawEllipse(0, 0, s * 1.60 * scale, s * 1.56 * scale, 0, outerAura, 0.78 * haloPower);
+
+    strokePath(() => {
+      ctx.arc(0, 0, s * (1.17 + level * 0.03 + pulse * 0.015), -Math.PI * 0.95, Math.PI * 0.77);
+    }, {
+      lineWidth: s * 0.016,
+      strokeStyle: "rgba(130,255,255,0.44)",
+      alpha: 0.55 * haloPower,
+      shadowColor: "rgba(70,245,255,0.72)",
+      shadowBlur: s * 0.08
+    });
+
+    strokePath(() => {
+      ctx.arc(0, 0, s * (1.31 + level * 0.035), -Math.PI * 0.06, Math.PI * 1.60);
+    }, {
+      lineWidth: s * 0.013,
+      strokeStyle: "rgba(255,105,220,0.34)",
+      alpha: 0.5 * haloPower,
+      shadowColor: "rgba(255,70,190,0.65)",
+      shadowBlur: s * 0.075
+    });
+
+    strokePath(() => {
+      ctx.arc(0, 0, s * (1.235 + pulse * 0.008), -Math.PI * 0.70 + t * 0.11, Math.PI * 1.05 + t * 0.11);
+    }, {
+      lineWidth: s * 0.0075,
+      strokeStyle: "rgba(210,245,255,0.26)",
+      alpha: 0.55 * haloPower,
+      dash: [s * 0.024, s * 0.028],
+      shadowColor: "rgba(155,240,255,0.32)",
+      shadowBlur: s * 0.035
+    });
+  }
+
+  function drawParticles(s, t, level) {
+    const speedBase = activeStyle.orbitSpeed;
+
+    for (const p of particles) {
+      const a = p.angle + t * (speedBase + p.speed + level * 0.28);
+      const r = s * (p.radius + Math.sin(t * 1.1 + p.phase) * 0.02 + level * 0.03);
+      const x = Math.cos(a) * r;
+      const y = Math.sin(a) * r * 0.94;
+      const size = s * (p.size + level * 0.005);
+
+      const color = p.tint === "cyan"
+        ? "rgba(150,255,255,0.82)"
+        : "rgba(255,120,225,0.72)";
 
       drawEllipse(
         x, y, size, size, 0,
         color,
         0.75,
         color,
-        s * 0.045
+        s * 0.042
       );
-    });
+    }
+  }
+
+  function drawBackShadow(s) {
+    drawEllipse(
+      -s * 0.04,
+      s * 0.13,
+      s * 0.95,
+      s * 0.80,
+      0.06,
+      "rgba(0,0,0,0.08)",
+      1,
+      "rgba(0,0,0,0.14)",
+      s * 0.08
+    );
   }
 
   function drawCore(s, t, level) {
-    // dark face orb
     const faceGrad = createRadialGradient(
-      -s * 0.22, -s * 0.28, s * 0.04,
-      0, 0, s * 0.9,
+      -s * 0.20, -s * 0.25, s * 0.02,
+      0, 0, s * 0.88,
       [
-        [0.00, "#173e8c"],
-        [0.18, "#0b2e79"],
-        [0.48, "#07255f"],
-        [0.78, "#03173e"],
-        [1.00, "#010e2a"]
+        [0.00, "#1b428d"],
+        [0.18, "#10357d"],
+        [0.45, "#072960"],
+        [0.75, "#041b45"],
+        [1.00, "#021230"]
       ]
     );
 
-    drawEllipse(0, 0.01 * s, s * 0.78, s * 0.74, -0.06, faceGrad, 0.98, "rgba(30,180,255,0.16)", s * 0.06);
+    drawEllipse(
+      0, s * 0.01,
+      s * 0.78,
+      s * 0.74,
+      -0.05,
+      faceGrad,
+      0.98,
+      "rgba(40,175,255,0.15)",
+      s * 0.055
+    );
 
-    // Inner subtle rim
     strokePath(() => {
-      ctx.ellipse(0, 0.01 * s, s * 0.78, s * 0.74, -0.06, 0, Math.PI * 2);
+      ctx.ellipse(0, s * 0.01, s * 0.78, s * 0.74, -0.05, 0, Math.PI * 2);
     }, {
-      lineWidth: s * 0.018,
-      strokeStyle: "rgba(90,170,255,0.12)",
+      lineWidth: s * 0.016,
+      strokeStyle: "rgba(120,190,255,0.10)",
       alpha: 1
     });
 
-    // left highlight
-    const gloss = createRadialGradient(
-      -s * 0.32, -s * 0.28, 0,
-      -s * 0.32, -s * 0.28, s * 0.34,
+    const innerCyan = createRadialGradient(
+      -s * 0.48, -s * 0.02, 0,
+      -s * 0.48, -s * 0.02, s * 0.42,
       [
-        [0.00, "rgba(255,255,255,0.95)"],
-        [0.12, "rgba(220,235,255,0.72)"],
-        [0.38, "rgba(120,180,255,0.20)"],
+        [0.00, "rgba(35,255,255,0.16)"],
+        [0.48, "rgba(35,160,255,0.09)"],
+        [1.00, "rgba(0,0,0,0.00)"]
+      ]
+    );
+    drawEllipse(-s * 0.18, 0, s * 0.72, s * 0.66, 0, innerCyan, 1);
+
+    const innerMag = createRadialGradient(
+      s * 0.22, s * 0.22, 0,
+      s * 0.22, s * 0.22, s * 0.56,
+      [
+        [0.00, "rgba(255,0,165,0.14)"],
+        [0.40, "rgba(135,40,255,0.08)"],
+        [1.00, "rgba(0,0,0,0.00)"]
+      ]
+    );
+    drawEllipse(0, 0, s * 0.64, s * 0.58, 0, innerMag, 1);
+
+    const gloss = createRadialGradient(
+      -s * 0.34, -s * 0.24, 0,
+      -s * 0.34, -s * 0.24, s * 0.28,
+      [
+        [0.00, "rgba(255,255,255,0.96)"],
+        [0.18, "rgba(215,230,255,0.72)"],
+        [0.45, "rgba(170,205,255,0.18)"],
         [1.00, "rgba(255,255,255,0.00)"]
       ]
     );
-    drawEllipse(-s * 0.18, -s * 0.20, s * 0.24, s * 0.18, -0.55, gloss, 0.9);
-
-    // inner color ambience
-    const innerAmbience = createRadialGradient(
-      s * 0.18, s * 0.22, 0,
-      s * 0.18, s * 0.22, s * 0.55,
-      [
-        [0.00, "rgba(255,0,150,0.16)"],
-        [0.40, "rgba(110,40,255,0.08)"],
-        [1.00, "rgba(0,0,0,0.00)"]
-      ]
-    );
-    drawEllipse(0, 0.02 * s, s * 0.62, s * 0.58, 0, innerAmbience, 1);
-
-    // cyan edge glow left
-    const edgeGlow = createRadialGradient(
-      -s * 0.52, 0, 0,
-      -s * 0.52, 0, s * 0.42,
-      [
-        [0.00, "rgba(30,255,255,0.16)"],
-        [0.55, "rgba(30,140,255,0.08)"],
-        [1.00, "rgba(0,0,0,0.00)"]
-      ]
-    );
-    drawEllipse(-s * 0.18, 0, s * 0.74, s * 0.68, 0, edgeGlow, 1);
-  }
-
-  function drawTopCyanRibbon(s, level, pulse) {
-    const grad = createLinearGradient(-s * 0.9, -s * 0.9, s * 0.8, -s * 0.1, [
-      [0.00, "#3bf9f1"],
-      [0.35, "#34dce7"],
-      [0.70, "#1795e8"],
-      [1.00, "#0d4ab6"]
-    ]);
-
-    const hi = createLinearGradient(-s * 0.5, -s * 0.6, s * 0.6, -s * 0.25, [
-      [0.00, "rgba(255,255,255,0.00)"],
-      [0.25, "rgba(210,255,255,0.95)"],
-      [0.65, "rgba(170,245,255,0.65)"],
-      [1.00, "rgba(255,255,255,0.00)"]
-    ]);
-
-    strokePath(() => {
-      ctx.moveTo(-s * 0.54, s * 0.03);
-      ctx.bezierCurveTo(
-        -s * 0.88, -s * 0.48,
-        -s * 0.48, -s * 1.02,
-        s * 0.16, -s * 0.96
-      );
-      ctx.bezierCurveTo(
-        s * 0.68, -s * 0.90,
-        s * 0.88, -s * 0.56,
-        s * 0.68, -s * 0.26
-      );
-    }, {
-      lineWidth: s * (0.39 + level * 0.03 + pulse * 0.01),
-      strokeStyle: grad,
-      alpha: 0.98,
-      shadowColor: "rgba(35,240,255,0.70)",
-      shadowBlur: s * 0.09
-    });
-
-    strokePath(() => {
-      ctx.moveTo(-s * 0.34, -s * 0.02);
-      ctx.bezierCurveTo(
-        -s * 0.58, -s * 0.36,
-        -s * 0.32, -s * 0.76,
-        s * 0.18, -s * 0.78
-      );
-      ctx.bezierCurveTo(
-        s * 0.48, -s * 0.78,
-        s * 0.62, -s * 0.60,
-        s * 0.52, -s * 0.44
-      );
-    }, {
-      lineWidth: s * 0.06,
-      strokeStyle: hi,
-      alpha: 0.72
-    });
+    drawEllipse(-s * 0.18, -s * 0.18, s * 0.20, s * 0.14, -0.55, gloss, 0.86);
   }
 
   function drawLowerBlueRibbon(s, level, pulse) {
-    const grad = createLinearGradient(-s * 0.95, s * 0.75, s * 0.95, s * 0.15, [
-      [0.00, "#0f63d6"],
-      [0.28, "#004db6"],
-      [0.60, "#00328f"],
-      [1.00, "#031d67"]
+    const grad = createLinearGradient(-s * 1.0, s * 0.72, s * 1.0, s * 0.14, [
+      [0.00, "#1167db"],
+      [0.26, "#0552c0"],
+      [0.58, "#013797"],
+      [1.00, "#041f69"]
     ]);
 
     strokePath(() => {
-      ctx.moveTo(-s * 0.62, s * 0.35);
+      ctx.moveTo(-s * 0.63, s * 0.34);
       ctx.bezierCurveTo(
-        -s * 0.80, s * 0.62,
-        -s * 0.44, s * 0.98,
-        s * 0.08, s * 0.92
+        -s * 0.82, s * 0.60,
+        -s * 0.48, s * 0.98,
+        s * 0.07, s * 0.93
       );
       ctx.bezierCurveTo(
-        s * 0.56, s * 0.86,
-        s * 0.84, s * 0.54,
+        s * 0.55, s * 0.89,
+        s * 0.83, s * 0.56,
         s * 0.92, s * 0.18
       );
     }, {
-      lineWidth: s * (0.33 + level * 0.02 + pulse * 0.01),
+      lineWidth: s * (0.325 + level * 0.02 + pulse * 0.008),
       strokeStyle: grad,
-      alpha: 0.98,
-      shadowColor: "rgba(0,110,255,0.52)",
-      shadowBlur: s * 0.075
+      alpha: 0.99,
+      shadowColor: "rgba(0,110,255,0.50)",
+      shadowBlur: s * 0.07
     });
 
-    const hi = createLinearGradient(-s * 0.45, s * 0.52, s * 0.60, s * 0.16, [
+    const hi = createLinearGradient(-s * 0.44, s * 0.50, s * 0.60, s * 0.16, [
       [0.00, "rgba(255,255,255,0.00)"],
-      [0.25, "rgba(135,215,255,0.45)"],
-      [0.55, "rgba(180,240,255,0.62)"],
+      [0.18, "rgba(145,225,255,0.42)"],
+      [0.52, "rgba(195,245,255,0.58)"],
       [1.00, "rgba(255,255,255,0.00)"]
     ]);
 
     strokePath(() => {
       ctx.moveTo(-s * 0.30, s * 0.44);
       ctx.bezierCurveTo(
-        -s * 0.42, s * 0.64,
-        -s * 0.10, s * 0.77,
+        -s * 0.40, s * 0.62,
+        -s * 0.09, s * 0.76,
         s * 0.28, s * 0.72
       );
       ctx.bezierCurveTo(
-        s * 0.54, s * 0.68,
-        s * 0.66, s * 0.48,
+        s * 0.53, s * 0.68,
+        s * 0.66, s * 0.49,
         s * 0.70, s * 0.30
       );
     }, {
-      lineWidth: s * 0.048,
+      lineWidth: s * 0.045,
       strokeStyle: hi,
-      alpha: 0.58
+      alpha: 0.56
+    });
+  }
+
+  function drawTopCyanRibbon(s, level, pulse) {
+    const grad = createLinearGradient(-s * 0.95, -s * 0.92, s * 0.82, -s * 0.12, [
+      [0.00, "#42faf0"],
+      [0.34, "#39dde8"],
+      [0.68, "#1498ea"],
+      [1.00, "#0d49b5"]
+    ]);
+
+    strokePath(() => {
+      ctx.moveTo(-s * 0.54, s * 0.04);
+      ctx.bezierCurveTo(
+        -s * 0.88, -s * 0.48,
+        -s * 0.49, -s * 1.02,
+        s * 0.16, -s * 0.97
+      );
+      ctx.bezierCurveTo(
+        s * 0.68, -s * 0.92,
+        s * 0.88, -s * 0.56,
+        s * 0.68, -s * 0.26
+      );
+    }, {
+      lineWidth: s * (0.38 + level * 0.026 + pulse * 0.01),
+      strokeStyle: grad,
+      alpha: 0.99,
+      shadowColor: "rgba(40,240,255,0.66)",
+      shadowBlur: s * 0.085
+    });
+
+    const hi = createLinearGradient(-s * 0.50, -s * 0.58, s * 0.58, -s * 0.28, [
+      [0.00, "rgba(255,255,255,0.00)"],
+      [0.24, "rgba(220,255,255,0.92)"],
+      [0.62, "rgba(175,245,255,0.62)"],
+      [1.00, "rgba(255,255,255,0.00)"]
+    ]);
+
+    strokePath(() => {
+      ctx.moveTo(-s * 0.34, -s * 0.02);
+      ctx.bezierCurveTo(
+        -s * 0.58, -s * 0.35,
+        -s * 0.32, -s * 0.75,
+        s * 0.18, -s * 0.77
+      );
+      ctx.bezierCurveTo(
+        s * 0.48, -s * 0.77,
+        s * 0.62, -s * 0.60,
+        s * 0.52, -s * 0.44
+      );
+    }, {
+      lineWidth: s * 0.055,
+      strokeStyle: hi,
+      alpha: 0.70
+    });
+  }
+
+  function drawPurpleTransition(s) {
+    const grad = createLinearGradient(-s * 0.18, s * 0.79, s * 0.82, s * 0.32, [
+      [0.00, "rgba(70,120,255,0.00)"],
+      [0.22, "rgba(100,90,255,0.44)"],
+      [0.68, "rgba(220,70,255,0.52)"],
+      [1.00, "rgba(255,120,240,0.10)"]
+    ]);
+
+    strokePath(() => {
+      ctx.moveTo(-s * 0.22, s * 0.72);
+      ctx.bezierCurveTo(
+        s * 0.04, s * 0.82,
+        s * 0.34, s * 0.75,
+        s * 0.62, s * 0.56
+      );
+    }, {
+      lineWidth: s * 0.09,
+      strokeStyle: grad,
+      alpha: 0.46,
+      shadowColor: "rgba(120,60,255,0.24)",
+      shadowBlur: s * 0.05
     });
   }
 
   function drawMagentaRibbon(s, level, pulse) {
-    const grad = createLinearGradient(s * 0.42, -s * 0.52, s * 0.42, s * 0.98, [
-      [0.00, "#ff2db0"],
-      [0.32, "#f80099"],
-      [0.62, "#b300ff"],
-      [1.00, "#ff139d"]
+    const grad = createLinearGradient(s * 0.44, -s * 0.52, s * 0.42, s * 0.98, [
+      [0.00, "#ff31b4"],
+      [0.32, "#f50098"],
+      [0.64, "#b100ff"],
+      [1.00, "#ff149d"]
     ]);
 
     strokePath(() => {
@@ -452,17 +529,17 @@
         -s * 0.22, s * 0.84
       );
     }, {
-      lineWidth: s * (0.34 + level * 0.03 + pulse * 0.015),
+      lineWidth: s * (0.335 + level * 0.024 + pulse * 0.012),
       strokeStyle: grad,
-      alpha: 0.98,
-      shadowColor: "rgba(255,40,180,0.78)",
-      shadowBlur: s * 0.10
+      alpha: 0.99,
+      shadowColor: "rgba(255,45,185,0.74)",
+      shadowBlur: s * 0.09
     });
 
-    const hi = createLinearGradient(s * 0.60, -s * 0.25, s * 0.18, s * 0.88, [
+    const hi = createLinearGradient(s * 0.60, -s * 0.26, s * 0.18, s * 0.88, [
       [0.00, "rgba(255,255,255,0.00)"],
-      [0.15, "rgba(255,220,245,0.72)"],
-      [0.55, "rgba(255,170,235,0.60)"],
+      [0.16, "rgba(255,225,245,0.72)"],
+      [0.56, "rgba(255,170,235,0.60)"],
       [1.00, "rgba(255,255,255,0.00)"]
     ]);
 
@@ -479,113 +556,17 @@
         -s * 0.02, s * 0.82
       );
     }, {
-      lineWidth: s * 0.05,
+      lineWidth: s * 0.048,
       strokeStyle: hi,
-      alpha: 0.72
+      alpha: 0.70
     });
-  }
-
-  function drawPurpleTransition(s) {
-    const grad = createLinearGradient(-s * 0.20, s * 0.78, s * 0.82, s * 0.30, [
-      [0.00, "rgba(70,120,255,0.00)"],
-      [0.24, "rgba(100,80,255,0.50)"],
-      [0.70, "rgba(220,70,255,0.58)"],
-      [1.00, "rgba(255,120,240,0.10)"]
-    ]);
-
-    strokePath(() => {
-      ctx.moveTo(-s * 0.24, s * 0.72);
-      ctx.bezierCurveTo(
-        s * 0.04, s * 0.82,
-        s * 0.34, s * 0.76,
-        s * 0.62, s * 0.56
-      );
-    }, {
-      lineWidth: s * 0.10,
-      strokeStyle: grad,
-      alpha: 0.48,
-      shadowColor: "rgba(120,60,255,0.28)",
-      shadowBlur: s * 0.05
-    });
-  }
-
-  function drawRibbonShadows(s) {
-    // faint overall shape depth
-    drawEllipse(-s * 0.08, s * 0.14, s * 0.92, s * 0.76, 0.08, "rgba(0,0,0,0.10)", 1, "rgba(0,0,0,0.18)", s * 0.09);
-  }
-
-  function drawEyes(s, t, level) {
-    const blinkCycle = 4.8;
-    const blinkPhase = (t % blinkCycle) / blinkCycle;
-    let eyeOpen = 1;
-
-    if (blinkPhase > 0.93) {
-      eyeOpen = 1 - ((blinkPhase - 0.93) / 0.07);
-    }
-    if (blinkPhase > 0.965) {
-      eyeOpen = (blinkPhase - 0.965) / 0.035;
-    }
-
-    eyeOpen = clamp(eyeOpen, 0.35, 1);
-
-    const glow = activeStyle.eyeGlow + level * 0.42;
-
-    function drawOneEye(x) {
-      const y = s * 0.12;
-      const w = s * 0.26;
-      const h = s * 0.095 * eyeOpen;
-
-      // glow
-      strokePath(() => {
-        ctx.moveTo(x - w * 0.52, y);
-        ctx.quadraticCurveTo(x, y - h * 1.05, x + w * 0.52, y);
-      }, {
-        lineWidth: s * 0.075,
-        strokeStyle: "rgba(0,220,255,0.16)",
-        alpha: 0.95,
-        shadowColor: "rgba(40,240,255,0.95)",
-        shadowBlur: s * 0.11
-      });
-
-      // main eye line
-      const g = createLinearGradient(x - w * 0.5, y - h, x + w * 0.5, y, [
-        [0.00, "#8bffff"],
-        [0.50, "#d3ffff"],
-        [1.00, "#8bffff"]
-      ]);
-
-      strokePath(() => {
-        ctx.moveTo(x - w * 0.48, y);
-        ctx.quadraticCurveTo(x, y - h, x + w * 0.48, y);
-      }, {
-        lineWidth: s * 0.038,
-        strokeStyle: g,
-        alpha: clamp(0.78 + glow * 0.14, 0, 1)
-      });
-    }
-
-    drawOneEye(-s * 0.20);
-    drawOneEye(s * 0.20);
   }
 
   function drawSpeculars(s) {
-    // strong white reflection
-    const g1 = createRadialGradient(
-      -s * 0.32, -s * 0.24, 0,
-      -s * 0.32, -s * 0.24, s * 0.26,
-      [
-        [0.00, "rgba(255,255,255,0.98)"],
-        [0.18, "rgba(220,235,255,0.75)"],
-        [0.45, "rgba(170,200,255,0.18)"],
-        [1.00, "rgba(255,255,255,0.00)"]
-      ]
-    );
-    drawEllipse(-s * 0.18, -s * 0.19, s * 0.20, s * 0.13, -0.58, g1, 0.88);
-
     const g2 = createLinearGradient(-s * 0.50, -s * 0.36, s * 0.42, -s * 0.02, [
       [0.00, "rgba(255,255,255,0.00)"],
-      [0.18, "rgba(220,255,255,0.65)"],
-      [0.50, "rgba(160,245,255,0.52)"],
+      [0.18, "rgba(220,255,255,0.62)"],
+      [0.50, "rgba(160,245,255,0.48)"],
       [1.00, "rgba(255,255,255,0.00)"]
     ]);
 
@@ -597,75 +578,170 @@
         s * 0.30, -s * 0.52
       );
     }, {
-      lineWidth: s * 0.05,
+      lineWidth: s * 0.046,
       strokeStyle: g2,
-      alpha: 0.45
+      alpha: 0.42
     });
   }
 
+  function drawEyes(s, t, level) {
+    const blinkCycle = 5.6;
+    const mod = t % blinkCycle;
+    let blink = 1;
+
+    if (mod > 5.12 && mod <= 5.22) {
+      blink = 1 - (mod - 5.12) / 0.10;
+    } else if (mod > 5.22 && mod <= 5.34) {
+      blink = (mod - 5.22) / 0.12;
+    }
+
+    blink = clamp(blink, 0.30, 1);
+
+    const eyeIntensity = activeStyle.eyeIntensity + level * 0.18;
+    const eyeWidth = s * 0.23;
+    const eyeHeight = s * 0.040 * blink;
+    const browTilt = s * 0.014 * activeStyle.seriousness;
+
+    function drawEye(x) {
+      const y = s * 0.12;
+
+      strokePath(() => {
+        ctx.moveTo(x - eyeWidth * 0.52, y + browTilt * 0.4);
+        ctx.quadraticCurveTo(x, y - eyeHeight - browTilt, x + eyeWidth * 0.52, y);
+      }, {
+        lineWidth: s * 0.067,
+        strokeStyle: "rgba(0,220,255,0.14)",
+        alpha: 0.95,
+        shadowColor: "rgba(30,240,255,0.92)",
+        shadowBlur: s * 0.10
+      });
+
+      const g = createLinearGradient(x - eyeWidth * 0.5, y - eyeHeight, x + eyeWidth * 0.5, y, [
+        [0.00, "#91ffff"],
+        [0.50, "#d8ffff"],
+        [1.00, "#91ffff"]
+      ]);
+
+      strokePath(() => {
+        ctx.moveTo(x - eyeWidth * 0.48, y);
+        ctx.quadraticCurveTo(x, y - eyeHeight, x + eyeWidth * 0.48, y);
+      }, {
+        lineWidth: s * 0.032,
+        strokeStyle: g,
+        alpha: clamp(0.76 + eyeIntensity * 0.16, 0, 1)
+      });
+    }
+
+    drawEye(-s * 0.20);
+    drawEye(s * 0.20);
+  }
+
+  function drawVoicePulse(s, t, level) {
+    if (currentState !== "speaking") return;
+
+    const energy = clamp(0.35 + level * 0.9, 0, 1.2);
+    const beat = Math.sin(t * 10.5) * 0.5 + 0.5;
+    const amp = (0.35 + beat * 0.65) * energy;
+
+    const voiceGrad = createLinearGradient(-s * 0.52, s * 0.48, s * 0.52, s * 0.48, [
+      [0.00, "rgba(0,220,255,0.00)"],
+      [0.20, "rgba(60,230,255,0.20)"],
+      [0.50, "rgba(255,255,255,0.42)"],
+      [0.78, "rgba(255,110,220,0.22)"],
+      [1.00, "rgba(255,110,220,0.00)"]
+    ]);
+
+    strokePath(() => {
+      const y = s * 0.50;
+      ctx.moveTo(-s * 0.38, y);
+      for (let i = 0; i <= 18; i++) {
+        const p = i / 18;
+        const x = lerp(-s * 0.38, s * 0.38, p);
+        const wave = Math.sin((p * Math.PI * 4.5) + t * 12) * s * 0.012 * amp;
+        const envelope = Math.sin(p * Math.PI);
+        const yy = y + wave * envelope;
+        if (i === 0) ctx.moveTo(x, yy);
+        else ctx.lineTo(x, yy);
+      }
+    }, {
+      lineWidth: s * 0.018,
+      strokeStyle: voiceGrad,
+      alpha: 0.70,
+      shadowColor: "rgba(110,235,255,0.34)",
+      shadowBlur: s * 0.05
+    });
+
+    const pulseAura = createRadialGradient(
+      0, s * 0.48, 0,
+      0, s * 0.48, s * 0.42,
+      [
+        [0.00, "rgba(130,240,255,0.12)"],
+        [0.45, "rgba(255,70,190,0.08)"],
+        [1.00, "rgba(255,255,255,0.00)"]
+      ]
+    );
+    drawEllipse(0, s * 0.50, s * 0.45, s * 0.16, 0, pulseAura, 0.9);
+  }
+
   function drawAvatar(t) {
-    const silentFor = performance.now() - lastMsg;
-    const fallback = (!nobreath && silentFor > 3000)
-      ? (Math.sin(t * 1.6) * 0.5 + 0.5) * 0.34
+    const silentTime = performance.now() - lastMsg;
+    const fallback = (!nobreath && silentTime > 3000)
+      ? (Math.sin(t * 1.55) * 0.5 + 0.5) * 0.25
       : targetLevel;
 
     currentLevel = lerp(currentLevel, fallback, 0.12);
 
-    const s = Math.min(width, height) * 0.235;
     const pulse = Math.sin(t * activeStyle.pulseSpeed * 2.2) * 0.5 + 0.5;
-    const breath = nobreath ? 0 : (Math.sin(t * 1.55) * 0.5 + 0.5);
+    const breath = nobreath ? 0 : (Math.sin(t * 1.4) * 0.5 + 0.5);
+    const speechBoost = currentState === "speaking" ? (Math.sin(t * 8.5) * 0.5 + 0.5) * 0.04 : 0;
 
-    const floatY = Math.sin(t * 1.25) * s * 0.018 * activeStyle.floatAmount;
-    const subtleTilt = Math.sin(t * 0.7) * 0.02;
+    const scaleX = 1 + breath * 0.006 + currentLevel * 0.020 + speechBoost * 0.5;
+    const scaleY = 1 + breath * 0.012 + currentLevel * 0.032 + speechBoost;
+    const floatY = Math.sin(t * 1.18) * unit * 0.012 * activeStyle.floatAmount;
+    const subtleTilt = Math.sin(t * 0.66) * 0.012;
+    const settle = easeInOut(clamp((performance.now() - lastStateChange) / 420, 0, 1));
 
     ctx.clearRect(0, 0, width, height);
 
     ctx.save();
-    ctx.translate(width / 2, height / 2 + floatY);
-    ctx.rotate(subtleTilt);
-    ctx.scale(
-      1 + breath * 0.010 + currentLevel * 0.032,
-      1 + breath * 0.016 + currentLevel * 0.045
-    );
+    ctx.translate(centerX, centerY + floatY);
+    ctx.rotate(subtleTilt * settle);
+    ctx.scale(scaleX, scaleY);
 
-    drawAura(s, t, currentLevel, pulse);
-    drawParticles(s, t, currentLevel);
-    drawRibbonShadows(s);
-
-    // back ambient glow
-    const backGlow = createRadialGradient(
-      0, 0, s * 0.18,
-      0, 0, s * 1.05,
-      [
-        [0.00, "rgba(0,150,255,0.12)"],
-        [0.40, "rgba(130,60,255,0.08)"],
-        [0.75, "rgba(255,0,160,0.06)"],
-        [1.00, "rgba(0,0,0,0.00)"]
-      ]
-    );
-    drawEllipse(0, 0.04 * s, s * 1.00, s * 0.95, 0, backGlow, 1);
-
-    drawCore(s, t, currentLevel);
-    drawLowerBlueRibbon(s, currentLevel, pulse);
-    drawTopCyanRibbon(s, currentLevel, pulse);
-    drawPurpleTransition(s);
-    drawMagentaRibbon(s, currentLevel, pulse);
-    drawSpeculars(s);
-    drawEyes(s, t, currentLevel);
+    drawAura(unit, t, currentLevel, pulse);
+    drawParticles(unit, t, currentLevel);
+    drawBackShadow(unit);
+    drawCore(unit, t, currentLevel);
+    drawLowerBlueRibbon(unit, currentLevel, pulse);
+    drawTopCyanRibbon(unit, currentLevel, pulse);
+    drawPurpleTransition(unit);
+    drawMagentaRibbon(unit, currentLevel, pulse);
+    drawSpeculars(unit);
+    drawVoicePulse(unit, t, currentLevel);
+    drawEyes(unit, t, currentLevel);
 
     ctx.restore();
   }
 
-  let prev = performance.now() / 1000;
+  let rafId = 0;
 
   function frame() {
-    requestAnimationFrame(frame);
+    rafId = requestAnimationFrame(frame);
     const now = performance.now() / 1000;
-    prev = now;
     drawAvatar(now);
   }
 
-  window.addEventListener("resize", resize);
+  function onResize() {
+    updateMetrics();
+  }
+
+  window.addEventListener("resize", onResize);
+
+  let ro = null;
+  if ("ResizeObserver" in window) {
+    ro = new ResizeObserver(() => updateMetrics());
+    ro.observe(root);
+  }
 
   window.addEventListener("message", (ev) => {
     const d = ev && ev.data ? ev.data : {};
@@ -685,7 +761,7 @@
     }
   });
 
-  resize();
+  updateMetrics();
   setState("idle");
   setLevel(0);
   frame();
