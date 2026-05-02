@@ -3,10 +3,26 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Clarity Glass Orb Avatar</title>
+<title>Clarity AI Orb Avatar v2</title>
 <style>
-  html,body{margin:0;height:100%;background:transparent;overflow:hidden}
-  #root{position:fixed;inset:0}
+  html,body{
+    margin:0;
+    width:100%;
+    height:100%;
+    background:transparent;
+    overflow:hidden;
+  }
+  #root{
+    position:fixed;
+    inset:0;
+    background:transparent;
+  }
+  canvas{
+    display:block;
+    width:100%;
+    height:100%;
+    background:transparent;
+  }
 </style>
 </head>
 <body>
@@ -15,237 +31,686 @@
 <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
 <script>
 (()=>{
-  // ---------- Setup ----------
-  const root = document.getElementById('root');
-  const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true, powerPreference:'high-performance' });
-  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
-  renderer.setSize(innerWidth, innerHeight);
+  "use strict";
+
+  // ------------------------------------------------------------
+  // BASIC SETUP
+  // ------------------------------------------------------------
+  const root = document.getElementById("root");
+
+  const renderer = new THREE.WebGLRenderer({
+    antialias:true,
+    alpha:true,
+    powerPreference:"high-performance"
+  });
+
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.18;
   root.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 50);
-  camera.position.set(0,0,3.2);
 
-  scene.add(new THREE.AmbientLight(0xffffff, .9));
-  const dir = new THREE.DirectionalLight(0xffffff, .35); dir.position.set(3,2,3); scene.add(dir);
+  const camera = new THREE.PerspectiveCamera(
+    42,
+    window.innerWidth / window.innerHeight,
+    0.1,
+    100
+  );
+  camera.position.set(0, 0, 4.8);
 
-  // ---------- Inner Effect Sphere (schwebt "1 cm" Abstand zur Hülle) ----------
-  const R_INNER = 0.85;       // ~1 cm Abstand zur Glaswand (Glasradius 1.0)
-  const geoInner = new THREE.SphereGeometry(R_INNER, 192, 128);
+  const group = new THREE.Group();
+  scene.add(group);
 
-  const uniforms = {
-    uTime:    { value: 0 },
-    uBaseAmp: { value: 0.06 },
-    uAudioAmp:{ value: 0.22 },
-    uLevel:   { value: 0.0 },
-    uBand:    { value: 0.0 },
-    uGlow:    { value: 0.85 },
-    uColorA:  { value: new THREE.Vector3(200/360, .90, .55) }, // cyan
-    uColorB:  { value: new THREE.Vector3(270/360, .85, .60) }, // violet
-    uColorC:  { value: new THREE.Vector3(320/360, .85, .62) }, // magenta
-    uAspect:  { value: innerWidth/innerHeight }
-  };
+  const haloGroup = new THREE.Group();
+  scene.add(haloGroup);
 
-  const simplex=`
-  vec3 mod289(vec3 x){return x - floor(x * (1.0/289.0)) * 289.0;}
-  vec4 mod289(vec4 x){return x - floor(x * (1.0/289.0)) * 289.0;}
-  vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
-  vec4 taylorInvSqrt(vec4 r){return 1.79284291400159 - 0.85373472095314 * r;}
-  float snoise(vec3 v){
-    const vec2 C = vec2(1.0/6.0, 1.0/3.0);
-    const vec4 D = vec4(0.0,0.5,1.0,2.0);
-    vec3 i=floor(v+dot(v,C.yyy));
-    vec3 x0=v-i+dot(i,C.xxx);
-    vec3 g=step(x0.yzx,x0.xyz); vec3 l=1.0-g;
-    vec3 i1=min(g.xyz,l.zxy), i2=max(g.xyz,l.zxy);
-    vec3 x1=x0-i1+C.xxx, x2=x0-i2+C.yyy, x3=x0-D.yyy;
-    i=mod289(i);
-    vec4 p=permute(permute(permute(i.z+vec4(0.0,i1.z,i2.z,1.0))+i.y+vec4(0.0,i1.y,i2.y,1.0))+i.x+vec4(0.0,i1.x,i2.x,1.0));
-    float n_=0.142857142857; vec3 ns=n_*D.wyz-D.xzx;
-    vec4 j=p-49.0*floor(p*ns.z*ns.z); vec4 x_=floor(j*ns.z); vec4 y_=floor(j-7.0*x_);
-    vec4 x=x_*ns.x+ns.yyyy, y=y_*ns.x+ns.yyyy, h=1.0-abs(x)-abs(y);
-    vec4 b0=vec4(x.xy,y.xy), b1=vec4(x.zw,y.zw);
-    vec4 s0=floor(b0)*2.0+1.0, s1=floor(b1)*2.0+1.0; vec4 sh=-step(h,vec4(0.0));
-    vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy, a1=b1.xzyw+s1.xzyw*sh.zzww;
-    vec3 p0=vec3(a0.xy,h.x), p1=vec3(a1.xy,h.y), p2=vec3(a0.zw,h.z), p3=vec3(a1.zw,h.w);
-    vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
-    p0*=norm.x; p1*=norm.y; p2*=norm.z; p3*=norm.w;
-    vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0); m*=m;
-    return 42.0*dot(m*m, vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
-  }`;
+  const particleGroup = new THREE.Group();
+  scene.add(particleGroup);
 
-  const vInner=`
-    uniform float uTime,uBaseAmp,uAudioAmp,uLevel,uBand;
-    varying vec3 vPos; varying float vDef;
-    ${simplex}
-    void main(){
-      vec3 p=position;
-      float t=uTime*0.35;
-      float n1=snoise(normal*1.4+vec3(t*0.6,t*0.4,t*0.8));
-      float n2=snoise(position*0.8+vec3(-t*0.3,t*0.5,-t*0.2));
-      float d=uBaseAmp*n1 + uAudioAmp*(0.6*uLevel+0.4*uBand)*n2;
-      vDef=d; vec3 q=normalize(p)*(1.0+d);
-      vPos=q; gl_Position=projectionMatrix*modelViewMatrix*vec4(q,1.0);
-    }`;
+  // ------------------------------------------------------------
+  // LIGHTING
+  // ------------------------------------------------------------
+  scene.add(new THREE.AmbientLight(0xffffff, 0.82));
 
-  const fInner=`
-    precision highp float;
-    varying vec3 vPos; varying float vDef;
-    uniform float uGlow,uTime,uLevel,uBand,uAspect;
-    uniform vec3 uColorA,uColorB,uColorC;
-    vec3 hsl2rgb(vec3 hsl){
-      float h=hsl.x,s=hsl.y,l=hsl.z;
-      float c=(1.0-abs(2.0*l-1.0))*s;
-      float x=c*(1.0-abs(mod(h*6.0,2.0)-1.0));
-      float m=l-0.5*c; vec3 rgb;
-      if(h<1.0/6.0) rgb=vec3(c,x,0.0);
-      else if(h<2.0/6.0) rgb=vec3(x,c,0.0);
-      else if(h<3.0/6.0) rgb=vec3(0.0,c,x);
-      else if(h<4.0/6.0) rgb=vec3(0.0,x,c);
-      else if(h<5.0/6.0) rgb=vec3(x,0.0,c);
-      else rgb=vec3(c,0.0,x);
-      return rgb+m;
-    }
-    void main(){
-      vec3 n=normalize(vPos);
-      float a=atan(n.y,n.x);
-      float mixAB=(sin(a*2.0+uTime*0.7)*0.5+0.5);
-      vec3 colA=hsl2rgb(uColorA), colB=hsl2rgb(uColorB), colC=hsl2rgb(uColorC);
-      vec3 base=mix(colA,colB,mixAB);
-      float pull=clamp(0.25+0.75*(0.6*uLevel+0.4*uBand),0.0,1.0);
-      vec3 color=mix(base,colC,pull);
-      float sheen=smoothstep(0.0,0.2,vDef+0.1);
-      color=mix(color,vec3(1.0),sheen*0.25);
-      float fres=pow(1.0-abs(n.z),2.6);
-      vec3 glow=color*uGlow*fres;
-      gl_FragColor=vec4(color+glow*0.55,0.96);
-    }`;
+  const keyLight = new THREE.DirectionalLight(0xffffff, 1.25);
+  keyLight.position.set(3.5, 4, 5);
+  scene.add(keyLight);
 
-  const innerMat = new THREE.ShaderMaterial({
-    uniforms, vertexShader:vInner, fragmentShader:fInner, transparent:true
+  const cyanLight = new THREE.PointLight(0x23f3ff, 2.5, 6);
+  cyanLight.position.set(-2.2, 1.2, 2.5);
+  scene.add(cyanLight);
+
+  const magentaLight = new THREE.PointLight(0xff149d, 2.3, 6);
+  magentaLight.position.set(2.1, -0.7, 2.2);
+  scene.add(magentaLight);
+
+  const blueLight = new THREE.PointLight(0x005dff, 1.7, 5);
+  blueLight.position.set(0, -2, 2.4);
+  scene.add(blueLight);
+
+  // ------------------------------------------------------------
+  // MATERIAL HELPERS
+  // ------------------------------------------------------------
+  function physicalMaterial(options){
+    return new THREE.MeshPhysicalMaterial(Object.assign({
+      roughness:0.22,
+      metalness:0.05,
+      clearcoat:1,
+      clearcoatRoughness:0.12,
+      transparent:true
+    }, options || {}));
+  }
+
+  const matFace = physicalMaterial({
+    color:0x071a3f,
+    emissive:0x00194d,
+    emissiveIntensity:0.55,
+    transmission:0,
+    opacity:0.98,
+    ior:1.4,
+    thickness:0.5,
+    roughness:0.3,
+    metalness:0.08,
+    clearcoat:1
   });
-  const innerSphere = new THREE.Mesh(geoInner, innerMat);
-  scene.add(innerSphere);
 
-  // ---------- Glass Shell (Radius 1.0) ----------
-  const R_GLASS = 1.0;
-  const geoGlass = new THREE.SphereGeometry(R_GLASS, 128, 96);
-  const glassMat = new THREE.ShaderMaterial({
-    transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
-    uniforms:{ uTime:{value:0.0}, uTint:{value:new THREE.Color(0xEAF2FF)}, uStrength:{value:0.22} },
+  const matFaceInnerGlow = new THREE.ShaderMaterial({
+    transparent:true,
+    depthWrite:false,
+    blending:THREE.AdditiveBlending,
+    uniforms:{
+      uTime:{value:0},
+      uLevel:{value:0}
+    },
     vertexShader:`
-      varying vec3 vN; varying vec3 vV;
+      varying vec3 vNormal;
+      varying vec3 vPos;
       void main(){
-        vec4 mv = modelViewMatrix * vec4(position,1.0);
-        vV = -mv.xyz; vN = normalize(normalMatrix * normal);
+        vNormal = normalize(normalMatrix * normal);
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vPos = mv.xyz;
         gl_Position = projectionMatrix * mv;
-      }`,
+      }
+    `,
     fragmentShader:`
       precision highp float;
-      varying vec3 vN; varying vec3 vV;
-      uniform vec3 uTint; uniform float uStrength;
+      varying vec3 vNormal;
+      varying vec3 vPos;
+      uniform float uTime;
+      uniform float uLevel;
       void main(){
-        float fres = pow(1.0 - max(0.0, dot(normalize(vN), normalize(vV))), 2.2);
-        vec3 col = uTint * (0.35 + 0.65*fres);
-        float a = 0.08 + fres * uStrength;     // dünnes Glas, starker Rand
+        vec3 viewDir = normalize(-vPos);
+        float fres = pow(1.0 - max(dot(normalize(vNormal), viewDir), 0.0), 2.2);
+        float pulse = 0.52 + 0.48 * sin(uTime * 2.4);
+        vec3 cyan = vec3(0.05, 0.85, 1.0);
+        vec3 blue = vec3(0.03, 0.18, 0.9);
+        vec3 mag = vec3(1.0, 0.05, 0.65);
+        float vertical = smoothstep(-0.8, 0.8, vNormal.y);
+        vec3 col = mix(blue, cyan, vertical);
+        col = mix(col, mag, 0.18 + 0.18 * sin(uTime * 0.8));
+        float a = fres * (0.22 + 0.26 * pulse + 0.45 * uLevel);
         gl_FragColor = vec4(col, a);
-      }`
+      }
+    `
   });
-  const glass = new THREE.Mesh(geoGlass, glassMat);
-  scene.add(glass);
 
-  // ---------- Outer Pulse Ring (~1 cm außerhalb) ----------
-  const RING_SCALE = 1.18; // etwas außerhalb der Glasoberfläche
-  const ringGeo = new THREE.PlaneGeometry(6,6,1,1);
-  const ringMat = new THREE.ShaderMaterial({
-    transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
-    uniforms:{ uTime:{value:0}, uLevel:{value:0} },
-    vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-    fragmentShader:`
-      precision highp float; varying vec2 vUv; uniform float uTime; uniform float uLevel;
+  const matCyan = physicalMaterial({
+    color:0x18dfe3,
+    emissive:0x00ddea,
+    emissiveIntensity:0.28,
+    opacity:0.98,
+    roughness:0.18
+  });
+
+  const matCyanLight = physicalMaterial({
+    color:0x75fff8,
+    emissive:0x2fffff,
+    emissiveIntensity:0.45,
+    opacity:0.95,
+    roughness:0.16
+  });
+
+  const matBlue = physicalMaterial({
+    color:0x003b9e,
+    emissive:0x003cff,
+    emissiveIntensity:0.26,
+    opacity:0.98,
+    roughness:0.2
+  });
+
+  const matDeepBlue = physicalMaterial({
+    color:0x001f63,
+    emissive:0x0036c9,
+    emissiveIntensity:0.35,
+    opacity:0.98,
+    roughness:0.22
+  });
+
+  const matMagenta = physicalMaterial({
+    color:0xe6008b,
+    emissive:0xff0099,
+    emissiveIntensity:0.42,
+    opacity:0.98,
+    roughness:0.17
+  });
+
+  const matPurple = physicalMaterial({
+    color:0x5827d9,
+    emissive:0x742cff,
+    emissiveIntensity:0.25,
+    opacity:0.96,
+    roughness:0.18
+  });
+
+  const matEye = new THREE.MeshBasicMaterial({
+    color:0x88ffff,
+    transparent:true,
+    opacity:0.98
+  });
+
+  const matEyeGlow = new THREE.MeshBasicMaterial({
+    color:0x00dfff,
+    transparent:true,
+    opacity:0.35,
+    blending:THREE.AdditiveBlending,
+    depthWrite:false
+  });
+
+  const matWhiteSpark = new THREE.MeshBasicMaterial({
+    color:0xffffff,
+    transparent:true,
+    opacity:0.78,
+    blending:THREE.AdditiveBlending,
+    depthWrite:false
+  });
+
+  // ------------------------------------------------------------
+  // CORE FACE ORB
+  // ------------------------------------------------------------
+  const faceGeo = new THREE.SphereGeometry(1.02, 128, 96);
+  const face = new THREE.Mesh(faceGeo, matFace);
+  face.scale.set(1.04, 0.96, 0.82);
+  face.position.set(0, 0.02, 0);
+  group.add(face);
+
+  const faceGlow = new THREE.Mesh(
+    new THREE.SphereGeometry(1.035, 128, 96),
+    matFaceInnerGlow
+  );
+  faceGlow.scale.copy(face.scale);
+  faceGlow.position.copy(face.position);
+  group.add(faceGlow);
+
+  // ------------------------------------------------------------
+  // CURVE / TUBE HELPERS
+  // ------------------------------------------------------------
+  function makeTube(points, radius, material, tubularSegments, radialSegments){
+    const curve = new THREE.CatmullRomCurve3(points);
+    curve.curveType = "catmullrom";
+    curve.tension = 0.42;
+    const geo = new THREE.TubeGeometry(
+      curve,
+      tubularSegments || 96,
+      radius,
+      radialSegments || 20,
+      false
+    );
+    const mesh = new THREE.Mesh(geo, material);
+    return mesh;
+  }
+
+  function makeArcPoints(startDeg, endDeg, radiusX, radiusY, z, count, yOffset, xOffset){
+    const pts = [];
+    const start = THREE.MathUtils.degToRad(startDeg);
+    const end = THREE.MathUtils.degToRad(endDeg);
+    for(let i=0;i<count;i++){
+      const t = i/(count-1);
+      const a = start + (end-start)*t;
+      pts.push(new THREE.Vector3(
+        Math.cos(a)*radiusX + (xOffset || 0),
+        Math.sin(a)*radiusY + (yOffset || 0),
+        z
+      ));
+    }
+    return pts;
+  }
+
+  // ------------------------------------------------------------
+  // CLARITY SWIRL SHELL
+  // Cyan upper-left / top shell
+  // ------------------------------------------------------------
+  const topCyanPts = [
+    new THREE.Vector3(-1.23,-0.24,0.22),
+    new THREE.Vector3(-1.28,0.25,0.34),
+    new THREE.Vector3(-0.96,0.78,0.42),
+    new THREE.Vector3(-0.36,1.10,0.44),
+    new THREE.Vector3(0.34,1.14,0.40),
+    new THREE.Vector3(0.96,0.90,0.32),
+    new THREE.Vector3(1.18,0.50,0.18)
+  ];
+  const topCyan = makeTube(topCyanPts, 0.18, matCyan, 130, 28);
+  topCyan.scale.set(1.03, 0.86, 1);
+  group.add(topCyan);
+
+  const topHighlightPts = [
+    new THREE.Vector3(-0.93,0.27,0.48),
+    new THREE.Vector3(-0.62,0.62,0.55),
+    new THREE.Vector3(-0.12,0.86,0.58),
+    new THREE.Vector3(0.46,0.93,0.54),
+    new THREE.Vector3(0.89,0.78,0.43)
+  ];
+  const topHighlight = makeTube(topHighlightPts, 0.035, matCyanLight, 90, 12);
+  group.add(topHighlight);
+
+  // Deep blue lower-left shell
+  const lowerBluePts = [
+    new THREE.Vector3(-1.12,-0.62,0.14),
+    new THREE.Vector3(-0.74,-0.98,0.18),
+    new THREE.Vector3(-0.12,-1.14,0.20),
+    new THREE.Vector3(0.58,-1.02,0.22),
+    new THREE.Vector3(1.02,-0.66,0.24),
+    new THREE.Vector3(1.20,-0.20,0.20)
+  ];
+  const lowerBlue = makeTube(lowerBluePts, 0.19, matBlue, 120, 28);
+  lowerBlue.scale.set(1.02, 0.9, 1);
+  group.add(lowerBlue);
+
+  const innerDeepBluePts = [
+    new THREE.Vector3(-1.02,-0.43,0.31),
+    new THREE.Vector3(-0.68,-0.70,0.40),
+    new THREE.Vector3(-0.10,-0.79,0.46),
+    new THREE.Vector3(0.55,-0.64,0.43),
+    new THREE.Vector3(0.93,-0.34,0.35)
+  ];
+  const innerDeepBlue = makeTube(innerDeepBluePts, 0.055, matDeepBlue, 90, 14);
+  group.add(innerDeepBlue);
+
+  // Magenta right crescent shell
+  const magentaPts = [
+    new THREE.Vector3(1.03,0.58,0.24),
+    new THREE.Vector3(1.28,0.22,0.35),
+    new THREE.Vector3(1.31,-0.23,0.42),
+    new THREE.Vector3(1.05,-0.78,0.38),
+    new THREE.Vector3(0.55,-1.08,0.30),
+    new THREE.Vector3(-0.02,-1.12,0.18)
+  ];
+  const magentaShell = makeTube(magentaPts, 0.2, matMagenta, 120, 30);
+  magentaShell.scale.set(0.97, 0.98, 1);
+  group.add(magentaShell);
+
+  const magentaEdgePts = [
+    new THREE.Vector3(1.13,0.50,0.52),
+    new THREE.Vector3(1.18,0.05,0.58),
+    new THREE.Vector3(1.08,-0.44,0.56),
+    new THREE.Vector3(0.76,-0.84,0.48),
+    new THREE.Vector3(0.31,-1.02,0.34)
+  ];
+  const magentaEdge = makeTube(magentaEdgePts, 0.04, new THREE.MeshBasicMaterial({
+    color:0xffb9ff,
+    transparent:true,
+    opacity:0.9,
+    blending:THREE.AdditiveBlending
+  }), 90, 12);
+  group.add(magentaEdge);
+
+  // Purple transition ribbon across front
+  const purplePts = [
+    new THREE.Vector3(-0.72,-0.78,0.38),
+    new THREE.Vector3(-0.18,-0.88,0.46),
+    new THREE.Vector3(0.48,-0.76,0.52),
+    new THREE.Vector3(1.03,-0.38,0.50)
+  ];
+  const purpleRibbon = makeTube(purplePts, 0.075, matPurple, 80, 16);
+  group.add(purpleRibbon);
+
+  // ------------------------------------------------------------
+  // FRIENDLY AVATAR EYES
+  // ------------------------------------------------------------
+  function createEye(x){
+    const pts = [
+      new THREE.Vector3(x - 0.21, 0.06, 0.89),
+      new THREE.Vector3(x - 0.11, 0.18, 0.93),
+      new THREE.Vector3(x + 0.02, 0.21, 0.95),
+      new THREE.Vector3(x + 0.17, 0.12, 0.93),
+      new THREE.Vector3(x + 0.23, 0.02, 0.89)
+    ];
+    const eye = makeTube(pts, 0.026, matEye, 42, 10);
+    const glow = makeTube(pts, 0.058, matEyeGlow, 42, 12);
+    return { eye, glow };
+  }
+
+  const leftEye = createEye(-0.39);
+  const rightEye = createEye(0.39);
+  group.add(leftEye.glow, rightEye.glow, leftEye.eye, rightEye.eye);
+
+  // Face glass highlight
+  const shinePts = [
+    new THREE.Vector3(-0.55,0.52,0.86),
+    new THREE.Vector3(-0.45,0.68,0.93),
+    new THREE.Vector3(-0.25,0.77,0.96),
+    new THREE.Vector3(-0.07,0.73,0.94)
+  ];
+  const faceShine = makeTube(shinePts, 0.045, matWhiteSpark, 45, 12);
+  group.add(faceShine);
+
+  // ------------------------------------------------------------
+  // HALO RINGS / PULSE AURA
+  // ------------------------------------------------------------
+  function createRing(radius, tube, color, opacity){
+    const geo = new THREE.TorusGeometry(radius, tube, 12, 180);
+    const mat = new THREE.MeshBasicMaterial({
+      color,
+      transparent:true,
+      opacity,
+      blending:THREE.AdditiveBlending,
+      depthWrite:false
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    return mesh;
+  }
+
+  const ringBackCyan = createRing(1.58, 0.008, 0x39faff, 0.42);
+  ringBackCyan.position.z = -0.35;
+  haloGroup.add(ringBackCyan);
+
+  const ringBackMagenta = createRing(1.72, 0.008, 0xff4fd8, 0.33);
+  ringBackMagenta.position.z = -0.43;
+  haloGroup.add(ringBackMagenta);
+
+  const ringFront = createRing(1.38, 0.006, 0xffffff, 0.18);
+  ringFront.position.z = 0.1;
+  haloGroup.add(ringFront);
+
+  const auraMat = new THREE.ShaderMaterial({
+    transparent:true,
+    depthWrite:false,
+    blending:THREE.AdditiveBlending,
+    uniforms:{
+      uTime:{value:0},
+      uLevel:{value:0}
+    },
+    vertexShader:`
+      varying vec2 vUv;
       void main(){
-        vec2 p = vUv*2.0-1.0;
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader:`
+      precision highp float;
+      varying vec2 vUv;
+      uniform float uTime;
+      uniform float uLevel;
+
+      void main(){
+        vec2 p = vUv * 2.0 - 1.0;
         float d = length(p);
-        // Grundradius + Puls
-        float R = 0.78 + 0.015*sin(uTime*2.2) + 0.02*uLevel;
-        float width = 0.035 + 0.015*uLevel;
-        float ring = smoothstep(R, R-width, abs(d-R));
-        float fade = smoothstep(1.1, 0.8, d); // weiches Ausblenden außen
-        float a = ring * fade * (0.55 + 0.35*uLevel);
-        gl_FragColor = vec4(vec3(1.0), a);
-      }`
-  });
-  const ring = new THREE.Mesh(ringGeo, ringMat);
-  ring.scale.setScalar(RING_SCALE);
-  ring.position.z = -0.55; // knapp hinter der Kugel, damit es wirklich außen wirkt
-  scene.add(ring);
+        float angle = atan(p.y, p.x);
 
-  // ---------- State/Level API ----------
+        float baseRing = 0.78 + 0.02 * sin(uTime * 1.8);
+        float ring = smoothstep(0.028, 0.0, abs(d - baseRing));
+
+        float second = smoothstep(0.018, 0.0, abs(d - (0.98 + 0.025 * sin(uTime * 1.25))));
+        float dash = 0.55 + 0.45 * sin(angle * 22.0 + uTime * 2.0);
+
+        vec3 cyan = vec3(0.05, 0.95, 1.0);
+        vec3 mag = vec3(1.0, 0.05, 0.75);
+        vec3 col = mix(cyan, mag, smoothstep(-0.2, 0.9, p.x));
+
+        float radialFade = smoothstep(1.18, 0.3, d);
+        float alpha = (ring * 0.42 + second * dash * 0.28) * radialFade;
+        alpha *= 0.55 + 0.9 * uLevel;
+
+        gl_FragColor = vec4(col, alpha);
+      }
+    `
+  });
+
+  const aura = new THREE.Mesh(new THREE.PlaneGeometry(4.3, 4.3), auraMat);
+  aura.position.z = -0.62;
+  haloGroup.add(aura);
+
+  // ------------------------------------------------------------
+  // SMALL ENERGY PARTICLES
+  // ------------------------------------------------------------
+  const particleGeo = new THREE.BufferGeometry();
+  const particleCount = 90;
+  const particlePositions = new Float32Array(particleCount * 3);
+  const particleSeeds = [];
+
+  for(let i=0;i<particleCount;i++){
+    const a = Math.random() * Math.PI * 2;
+    const r = 1.45 + Math.random() * 0.45;
+    particlePositions[i*3+0] = Math.cos(a) * r;
+    particlePositions[i*3+1] = Math.sin(a) * r;
+    particlePositions[i*3+2] = -0.12 + (Math.random() - 0.5) * 0.38;
+    particleSeeds.push({
+      a,
+      r,
+      speed:0.08 + Math.random() * 0.18,
+      size:0.02 + Math.random() * 0.035,
+      phase:Math.random() * Math.PI * 2
+    });
+  }
+
+  particleGeo.setAttribute("position", new THREE.BufferAttribute(particlePositions, 3));
+
+  const particleMat = new THREE.PointsMaterial({
+    size:0.035,
+    color:0x9cffff,
+    transparent:true,
+    opacity:0.62,
+    blending:THREE.AdditiveBlending,
+    depthWrite:false,
+    sizeAttenuation:true
+  });
+
+  const particles = new THREE.Points(particleGeo, particleMat);
+  particleGroup.add(particles);
+
+  // ------------------------------------------------------------
+  // STATE API
+  // ------------------------------------------------------------
   const STYLES = {
-    idle:      { glow:.85, base:.06, audio:.22, rotX:.05, rotY:.12 },
-    listening: { glow:.95, base:.08, audio:.28, rotX:.05, rotY:.16 },
-    thinking:  { glow:.92, base:.07, audio:.24, rotX:.04, rotY:.10 },
-    speaking:  { glow:.98, base:.09, audio:.30, rotX:.06, rotY:.20 },
+    idle:{
+      glow:0.62,
+      rotX:0.035,
+      rotY:0.09,
+      pulseSpeed:1.0,
+      eyeOpacity:0.95,
+      aura:0.55
+    },
+    listening:{
+      glow:0.82,
+      rotX:0.045,
+      rotY:0.13,
+      pulseSpeed:1.35,
+      eyeOpacity:1.0,
+      aura:0.78
+    },
+    thinking:{
+      glow:0.74,
+      rotX:0.025,
+      rotY:0.075,
+      pulseSpeed:0.72,
+      eyeOpacity:0.82,
+      aura:0.65
+    },
+    speaking:{
+      glow:1.0,
+      rotX:0.055,
+      rotY:0.17,
+      pulseSpeed:1.75,
+      eyeOpacity:1.0,
+      aura:1.0
+    }
   };
-  let rotX=.05, rotY=.12, targetLevel=0, currentLevel=0, lastMsg=performance.now();
-  function setState(s='idle'){
-    const m = STYLES[s]||STYLES.idle;
-    uniforms.uGlow.value=m.glow;
-    uniforms.uBaseAmp.value=m.base;
-    uniforms.uAudioAmp.value=m.audio;
-    rotX=m.rotX; rotY=m.rotY;
+
+  let currentState = "idle";
+  let targetLevel = 0;
+  let currentLevel = 0;
+  let rotX = STYLES.idle.rotX;
+  let rotY = STYLES.idle.rotY;
+  let pulseSpeed = STYLES.idle.pulseSpeed;
+  let targetGlow = STYLES.idle.glow;
+  let auraPower = STYLES.idle.aura;
+  let lastMsg = performance.now();
+
+  function clamp01(v){
+    return Math.max(0, Math.min(1, Number(v) || 0));
   }
-  function setLevel(v=0){
-    targetLevel=Math.max(0,Math.min(1,Number(v)||0));
-    lastMsg=performance.now();
+
+  function setState(state){
+    currentState = STYLES[state] ? state : "idle";
+    const s = STYLES[currentState];
+
+    rotX = s.rotX;
+    rotY = s.rotY;
+    pulseSpeed = s.pulseSpeed;
+    targetGlow = s.glow;
+    auraPower = s.aura;
+
+    matEye.opacity = s.eyeOpacity;
+    matEyeGlow.opacity = 0.28 + s.eyeOpacity * 0.18;
   }
 
-  // ---------- Loop ----------
-  let tPrev = performance.now()/1000;
-  const nobreath = new URLSearchParams(location.search).get('nobreath')==='1';
-
-  function frame(){
-    requestAnimationFrame(frame);
-    const tNow=performance.now()/1000, dt=Math.min(tNow-tPrev,.05); tPrev=tNow;
-
-    const since = performance.now()-lastMsg;
-    const fallback = (!nobreath && since>3000) ? (Math.sin(tNow*1.6)*.5+.5)*.35 : targetLevel;
-    currentLevel = currentLevel*0.85 + fallback*0.15;
-
-    uniforms.uLevel.value=currentLevel;
-    uniforms.uTime.value += dt;
-    ringMat.uniforms.uTime.value += dt;
-    ringMat.uniforms.uLevel.value = currentLevel;
-
-    innerSphere.rotation.y += rotY*dt;
-    innerSphere.rotation.x += rotX*dt;
-
-    // Billboard für Ring
-    ring.lookAt(camera.position);
-
-    renderer.render(scene,camera);
+  function setLevel(v){
+    targetLevel = clamp01(v);
+    lastMsg = performance.now();
   }
-  frame();
 
-  // ---------- Resize ----------
-  addEventListener('resize', ()=>{
-    renderer.setSize(innerWidth,innerHeight);
-    camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
-    uniforms.uAspect.value=innerWidth/innerHeight;
+  // ------------------------------------------------------------
+  // ANIMATION LOOP
+  // ------------------------------------------------------------
+  const nobreath = new URLSearchParams(window.location.search).get("nobreath") === "1";
+  let previous = performance.now() / 1000;
+
+  function animate(){
+    requestAnimationFrame(animate);
+
+    const nowMs = performance.now();
+    const now = nowMs / 1000;
+    const dt = Math.min(now - previous, 0.05);
+    previous = now;
+
+    const silentTime = nowMs - lastMsg;
+    const breathing = (!nobreath && silentTime > 3000)
+      ? (Math.sin(now * 1.45) * 0.5 + 0.5) * 0.28
+      : targetLevel;
+
+    currentLevel = currentLevel * 0.86 + breathing * 0.14;
+
+    const statePulse = Math.sin(now * (1.7 * pulseSpeed)) * 0.5 + 0.5;
+    const levelPulse = 0.65 + currentLevel * 0.35;
+    const breatheScale = 1 + 0.018 * statePulse + 0.055 * currentLevel;
+
+    group.scale.setScalar(breatheScale);
+    group.rotation.y += rotY * dt;
+    group.rotation.x = Math.sin(now * 0.55) * 0.035 + rotX * 0.55;
+    group.rotation.z = Math.sin(now * 0.42) * 0.018;
+
+    haloGroup.rotation.z -= dt * (0.08 + 0.18 * currentLevel);
+    haloGroup.scale.setScalar(1 + 0.025 * statePulse + 0.09 * currentLevel);
+
+    ringBackCyan.material.opacity = (0.25 + 0.22 * statePulse + 0.35 * currentLevel) * auraPower;
+    ringBackMagenta.material.opacity = (0.20 + 0.20 * (1 - statePulse) + 0.32 * currentLevel) * auraPower;
+    ringFront.material.opacity = (0.10 + 0.10 * statePulse + 0.18 * currentLevel) * auraPower;
+
+    ringBackCyan.rotation.z += dt * (0.12 + currentLevel * 0.25);
+    ringBackMagenta.rotation.z -= dt * (0.09 + currentLevel * 0.2);
+    ringFront.rotation.z += dt * (0.16 + currentLevel * 0.28);
+
+    matFace.emissiveIntensity = 0.42 + targetGlow * 0.18 + currentLevel * 0.45;
+    matCyan.emissiveIntensity = 0.24 + currentLevel * 0.45 + statePulse * 0.08;
+    matCyanLight.emissiveIntensity = 0.36 + currentLevel * 0.72;
+    matBlue.emissiveIntensity = 0.22 + currentLevel * 0.38;
+    matDeepBlue.emissiveIntensity = 0.25 + currentLevel * 0.38;
+    matMagenta.emissiveIntensity = 0.34 + currentLevel * 0.68 + (1 - statePulse) * 0.08;
+    matPurple.emissiveIntensity = 0.20 + currentLevel * 0.42;
+
+    matEye.opacity = Math.min(1, STYLES[currentState].eyeOpacity + currentLevel * 0.15);
+    matEyeGlow.opacity = 0.28 + currentLevel * 0.38 + statePulse * 0.06;
+
+    matFaceInnerGlow.uniforms.uTime.value = now;
+    matFaceInnerGlow.uniforms.uLevel.value = currentLevel;
+
+    auraMat.uniforms.uTime.value = now;
+    auraMat.uniforms.uLevel.value = currentLevel * auraPower;
+
+    cyanLight.intensity = 2.1 + statePulse * 0.6 + currentLevel * 1.5;
+    magentaLight.intensity = 1.9 + (1 - statePulse) * 0.7 + currentLevel * 1.4;
+    blueLight.intensity = 1.3 + currentLevel * 0.9;
+
+    const pos = particleGeo.attributes.position.array;
+    for(let i=0;i<particleCount;i++){
+      const seed = particleSeeds[i];
+      seed.a += seed.speed * dt * (0.8 + currentLevel * 1.8);
+      const wobble = Math.sin(now * 1.1 + seed.phase) * 0.035;
+      const r = seed.r + wobble + currentLevel * 0.06;
+      pos[i*3+0] = Math.cos(seed.a) * r;
+      pos[i*3+1] = Math.sin(seed.a) * r;
+      pos[i*3+2] = -0.12 + Math.sin(now * 0.8 + seed.phase) * 0.16;
+    }
+    particleGeo.attributes.position.needsUpdate = true;
+    particleMat.opacity = 0.35 + currentLevel * 0.35 + statePulse * 0.08;
+    particleMat.size = 0.025 + currentLevel * 0.035;
+
+    aura.lookAt(camera.position);
+
+    renderer.render(scene, camera);
+  }
+
+  animate();
+
+  // ------------------------------------------------------------
+  // RESIZE
+  // ------------------------------------------------------------
+  window.addEventListener("resize", ()=>{
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    renderer.setSize(w, h);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
   });
 
-  // ---------- Messaging ----------
-  addEventListener('message', (ev)=>{
-    const d=ev?.data||{};
-    if(d.type==='avatar:set')   setState(d.state||'idle');
-    if(d.type==='avatar:level') setLevel(d.value);
-    if(d.type==='ping') ev.source?.postMessage?.({type:'avatar:ready'}, '*');
+  // ------------------------------------------------------------
+  // MESSAGING API - BACKWARD COMPATIBLE
+  // ------------------------------------------------------------
+  window.addEventListener("message", (ev)=>{
+    const d = ev && ev.data ? ev.data : {};
+
+    if(d.type === "avatar:set"){
+      setState(d.state || "idle");
+    }
+
+    if(d.type === "avatar:level"){
+      setLevel(d.value);
+    }
+
+    if(d.type === "ping"){
+      if(ev.source && typeof ev.source.postMessage === "function"){
+        ev.source.postMessage({type:"avatar:ready"}, "*");
+      }
+    }
   });
 
-  // init
-  setState('idle'); setLevel(0);
-  setTimeout(()=> parent?.postMessage?.({type:'avatar:ready'}, '*'), 40);
+  // ------------------------------------------------------------
+  // INIT
+  // ------------------------------------------------------------
+  setState("idle");
+  setLevel(0);
+
+  setTimeout(()=>{
+    try{
+      if(window.parent && typeof window.parent.postMessage === "function"){
+        window.parent.postMessage({type:"avatar:ready"}, "*");
+      }
+    }catch(e){}
+  }, 50);
+
 })();
 </script>
 </body>
