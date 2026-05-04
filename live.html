@@ -531,7 +531,7 @@
       try{
         $muxState.textContent='exporting'; $recProg.style.width='60%';
         const dataUrl = await blobToDataURL(blob);
-       parent?.postMessage?.(JSON.stringify({ type:'recorder:export', data:{ dataUrl, kind:(hasVid?'video':'audio'), bytes: blob.size } }), '*');
+        parent?.postMessage?.({ type:'recorder:export', data:{ dataUrl, kind:(hasVid?'video':'audio'), bytes: blob.size } }, '*');
         $recProg.style.width='100%'; $muxState.textContent='export sent';
       }catch(e){ $muxState.textContent='export failed'; log('[REC] export failed', e); }
       finally{ chunks.length=0; }
@@ -570,7 +570,7 @@
       await ensureAudioUnlocked();
 
       // Parent informieren: live ist bereit → Parent sendet 'clarity.live.prime'
-     parent?.postMessage?.(JSON.stringify({ type:'clarity.live.ended', data:{} }), '*');
+      parent?.postMessage?.({ type:'clarity.live.ready', data:{} }, '*');
 
       setStatus('ok','Verbunden • Interview läuft');
     }catch(e){
