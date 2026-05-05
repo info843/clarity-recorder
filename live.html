@@ -144,7 +144,7 @@
         dcQueue.push(obj);
         log('[DC] queued', (obj && (obj.type || Object.keys(obj)[0])) || '');
       }
-    }catch(e){ log('[DC] send fail', e); }
+    }catch(e){ log('[DC] send fail', (e && (e.message || e.toString())) || e); }
   }
   function flushDCQueue(){
     if (!dcIsOpen || !DC) return;
@@ -154,19 +154,22 @@
         DC.send(JSON.stringify(m));
       }
       log('[DC] queue flushed');
-    }catch(e){ log('[DC] flush error', e); }
+    }catch(e){ log('[DC] flush error', (e && (e.message || e.toString())) || e); }
   }
 
   /* ===== Token ===== */
   async function getRealtimeToken(payload){
     log('[Live] Fetching token…', TOKEN_URL, JSON.stringify(payload));
     const r = await fetch(TOKEN_URL,{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
-    if (!r.ok){ const t=await r.text().catch(()=>r.statusText); throw new Error('token_http_'+r.status+': '+t); }
-    const data = await r.json().catch(e=>{ throw new Error('token_json_parse: '+e); });
+    const txt = await r.text().catch(()=> '');
+    let data=null; try{ data = txt ? JSON.parse(txt) : null; }catch(_){}
+    if (!r.ok) throw new Error('token_http_'+r.status+': '+(txt||r.statusText));
     if (!data?.ok) throw new Error('token_error: '+(data?.error||'unknown')+' '+(data?.message||''));
     const sec = data.client_secret || data?.clientSecret || data?.token || (data?.client_secret?.value);
     if (!sec) throw new Error('client_secret_missing');
-    log('[Live] effective', { lang:data.reportLang||payload.lang, voice:data.voice, model:data.model });
+
+    // Wichtig: Hier loggen wir beides
+    log('[Live] effective', { lang: data.lang, reportLang: data.reportLang, voice: data.voice, model: data.model });
     return { secret: sec, ctx: data };
   }
 
@@ -276,7 +279,8 @@
 
   /* ===== Priming & Welcome ===== */
   function buildSystemInstructions(ctx){
-    const isDE = String(ctx.reportLang||'de').toLowerCase().startsWith('de');
+    // WICHTIG: Interview-Sprache wird über CTX.lang gesteuert (nicht reportLang)
+    const isDE = String(ctx.lang||'de').toLowerCase().startsWith('de');
     const langLine = isDE
       ? 'Sprich ausschließlich DEUTSCH. Wechsle nie die Sprache.'
       : 'Speak strictly in ENGLISH. Do not switch languages.';
@@ -292,8 +296,8 @@
     return [langLine, structure, waiting, readyGate].join(' ');
   }
 
-  function primeStrictLanguage(reportLang) {
-    const spoken = String(reportLang || 'de').toLowerCase().startsWith('de') ? 'de' : 'en';
+  function primeStrictLanguage(spokenLang) {
+    const spoken = String(spokenLang || 'de').toLowerCase().startsWith('de') ? 'de' : 'en';
     const sys = buildSystemInstructions(CTX);
 
     dcSend({
@@ -321,7 +325,8 @@
   }
 
   function speakPrepThenWelcome() {
-    const isDE = String(CTX.reportLang || 'de').toLowerCase().startsWith('de');
+    // WICHTIG: Welcome-Sprache ebenfalls über CTX.lang
+    const isDE = String(CTX.lang || 'de').toLowerCase().startsWith('de');
     const prep = isDE
       ? 'Einen Moment bitte, ich bereite das Interview vor …'
       : 'One moment please, I am preparing the interview …';
@@ -331,25 +336,17 @@
 
     dcSend({ type: 'response.cancel' });
 
-    dcSend({
-      type: 'response.create',
-      response: { conversation: 'default', modalities: ['audio'], instructions: prep }
-    });
+    dcSend({ type: 'response.create', response: { conversation: 'default', modalities: ['audio'], instructions: prep } });
     log('[WELCOME] prep spoken');
 
     setTimeout(() => {
-      dcSend({
-        type: 'response.create',
-        response: { conversation: 'default', modalities: ['audio'], instructions: welcome }
-      });
+      dcSend({ type: 'response.create', response: { conversation: 'default', modalities: ['audio'], instructions: welcome } });
       log('[WELCOME] welcome spoken');
 
       setTimeout(() => {
         dcSend({
           type: 'session.update',
-          session: {
-            turn_detection: { type: 'server_vad', threshold: 0.9, prefix_padding_ms: 200, silence_duration_ms: 700 }
-          }
+          session: { turn_detection: { type: 'server_vad', threshold: 0.9, prefix_padding_ms: 200, silence_duration_ms: 700 } }
         });
         log('[PRIME] VAD enabled');
         enableMicUplink();
@@ -365,7 +362,8 @@
   }
 
   function buildInterviewPlan(ctx){
-    const isDE = String(ctx.reportLang||'de').toLowerCase().startsWith('de');
+    // Interview-Sprache über ctx.lang
+    const isDE = String(ctx.lang||'de').toLowerCase().startsWith('de');
     const baseDE = [
       'Bitte stellen Sie sich kurz vor.',
       'Warum passt diese Position zu Ihnen?',
@@ -389,7 +387,7 @@
 
     FIRST_Q_SENT = true;
     const plan = buildInterviewPlan(CTX);
-    const isDE = String(CTX.reportLang||'de').toLowerCase().startsWith('de');
+    const isDE = String(CTX.lang||'de').toLowerCase().startsWith('de');
     const first = plan[0] || (isDE ? 'Bitte stellen Sie sich kurz vor.' : 'Please introduce yourself.');
 
     const q = (isDE ? `Erste Frage: ${first}` : `First question: ${first}`);
@@ -409,7 +407,7 @@
       });
     } catch(e) {
       setStatus('warn','Mic/Kamera blockiert (weiter ohne Mic).');
-      log('[Media] getUserMedia error', e);
+      log('[Media] getUserMedia error', (e && (e.message || e.toString())) || e);
       localStream = null;
     }
     if (localStream){
@@ -456,8 +454,9 @@
         headers:{ 'Content-Type':'application/json' },
         body: JSON.stringify({ uploadId, companyId: COMPANY_ID, linkId: UID, kind, idx:i, total, data: part })
       });
-      const js = await r.json().catch(()=>null);
-      if (!r.ok || !js?.ok) throw new Error(js?.error || ('chunk_http_' + r.status));
+      const txt = await r.text().catch(()=> '');
+      let js=null; try{ js = txt ? JSON.parse(txt) : null; }catch(_){}
+      if (!r.ok || !js?.ok) throw new Error((js && (js.error || js.message)) || ('chunk_http_' + r.status + ':' + txt.slice(0,200)));
 
       const pct = 45 + Math.floor((i/Math.max(1,total))*40);
       $recProg.style.width = pct + '%';
@@ -468,8 +467,9 @@
       headers:{ 'Content-Type':'application/json' },
       body: JSON.stringify({ uploadId, companyId: COMPANY_ID, linkId: UID, kind, fileName: `Interview_${UID}` })
     });
-    const out = await fin.json().catch(()=>null);
-    if (!fin.ok || !out?.ok) throw new Error(out?.error || ('finalize_http_' + fin.status));
+    const outText = await fin.text().catch(()=> '');
+    let out=null; try{ out = outText ? JSON.parse(outText) : null; }catch(_){}
+    if (!fin.ok || !out?.ok) throw new Error((out && (out.error||out.message)) || ('finalize_http_' + fin.status + ':' + outText.slice(0,200)));
 
     $recProg.style.width = '100%';
     $muxState.textContent='uploaded';
@@ -481,7 +481,7 @@
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const dest = ctx.createMediaStreamDestination();
     if (localStream){ ctx.createMediaStreamSource(localStream).connect(dest); }
-    if (remoteStream){ try{ ctx.createMediaStreamSource(remoteStream).connect(dest); }catch(e){ log('[REC] remote mix fail', e); } }
+    if (remoteStream){ try{ ctx.createMediaStreamSource(remoteStream).connect(dest); }catch(e){ log('[REC] remote mix fail', (e && (e.message||e.toString()))||e); } }
     mixedStream = new MediaStream();
     dest.stream.getAudioTracks().forEach(t => mixedStream.addTrack(t));
     const cam = localStream?.getVideoTracks?.()[0];
@@ -519,8 +519,8 @@
 
       }catch(e){
         $muxState.textContent='upload failed';
-        log('[UPLOAD] failed', e);
-        parent?.postMessage?.({ type:'recorder:upload_error', data:{ message: String(e?.message||e) } }, '*');
+        log('[UPLOAD] failed', (e && (e.message || e.toString())) || e);
+        parent?.postMessage?.({ type:'recorder:upload_error', data:{ message: (e && (e.message || e.toString())) || 'upload_failed' } }, '*');
       } finally {
         chunks.length = 0;
       }
@@ -530,7 +530,7 @@
   }
 
   function startRecorder(){
-    try{ if (mediaRecorder && mediaRecorder.state==='inactive') mediaRecorder.start(); }catch(e){ log('[REC] start error', e); }
+    try{ if (mediaRecorder && mediaRecorder.state==='inactive') mediaRecorder.start(); }catch(e){ log('[REC] start error', (e && (e.message || e.toString())) || e); }
   }
   function stopRecording(){
     try{ if (mediaRecorder && mediaRecorder.state!=='inactive') mediaRecorder.stop(); }catch(_){}
@@ -558,7 +558,10 @@
       await connectRealtime(secret);
       prepareRecording();
 
+      // CTX initial: wichtig, dass ctx.lang (Interview) und ctx.reportLang (Report) getrennt bleiben
       CTX = { ...CTX, ...ctx };
+      CTX.lang = (ctx.lang || CTX.lang || LANG);
+      CTX.reportLang = (ctx.reportLang || CTX.reportLang || CTX.lang);
 
       await remoteTrackReady;
       await ensureAudioUnlocked();
@@ -567,7 +570,7 @@
       setStatus('ok','Verbunden • Interview läuft');
     }catch(e){
       setStatus('err','Startfehler: '+(e?.message||e));
-      log('[Start error]', e);
+      log('[Start error]', (e && (e.message || e.toString())) || e);
       parent?.postMessage?.({ type:'clarity.live.error', data:{ message:String(e?.message||e) } }, '*');
     }
   }
@@ -601,12 +604,15 @@
       maybeStartRecorder();
     }
     else if (type === 'clarity.live.prime'){
+      // FIX: spokenLang kommt aus msg.data.lang/userCommLang ODER CTX.lang (DB), NICHT aus reportLang
       const spoken = (msg.data && (msg.data.lang || msg.data.userCommLang)) || CTX.lang || LANG;
-const rep    = (msg.data && msg.data.reportLang) || CTX.reportLang || spoken;
+      const rep    = (msg.data && msg.data.reportLang) || CTX.reportLang || spoken;
 
-CTX.lang = spoken;
-CTX.reportLang = rep;
-      primeStrictLanguage(rep);
+      CTX.lang = spoken;
+      CTX.reportLang = rep;
+
+      // WICHTIG: primeStrictLanguage mit spoken (nicht rep)
+      primeStrictLanguage(spoken);
       speakPrepThenWelcome();
     }
     else if (type === 'clarity.live.start'){
