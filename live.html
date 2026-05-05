@@ -141,55 +141,16 @@
   let remoteTrackReadyResolve;
   const remoteTrackReady = new Promise(r => remoteTrackReadyResolve = r);
 
-  // ===== Soft-End (Auto Finish) =====
-  let assistantTextBuf = '';
-  let softEndTimer = null;
-  let softEndArmed = false;
-  const SOFT_END_SECONDS = 10;
+  // ===== Tool-Call End Interview =====
+  let END_CALLED = false;
+  let endCallArgsBuf = '';
 
-  function armSoftEnd(){
-    if (softEndTimer) clearTimeout(softEndTimer);
-    softEndArmed = true;
-    softEndTimer = setTimeout(() => {
-      log('[AUTO-END] soft end timeout reached -> hangup');
-      hangup();
-    }, SOFT_END_SECONDS * 1000);
-  }
-  function cancelSoftEnd(reason){
-    if (softEndTimer) clearTimeout(softEndTimer);
-    softEndTimer = null;
-    if (softEndArmed){
-      log('[AUTO-END] cancelled', reason || '');
-    }
-    softEndArmed = false;
-  }
-  function looksLikeEnding(text){
-    const t = String(text || '').toLowerCase();
-
-    // DE
-    const de =
-      t.includes('vielen dank') ||
-      (t.includes('interview') && t.includes('beendet')) ||
-      t.includes('damit beenden') ||
-      (t.includes('ich beende') && t.includes('interview')) ||
-      t.includes('alles gute') ||
-      t.includes('einen schönen tag') ||
-      t.includes('auf wiedersehen');
-
-    // EN
-    const en =
-      t.includes('thank you') ||
-      t.includes('this concludes') ||
-      t.includes('we are finished') ||
-      t.includes('the interview is over') ||
-      t.includes('that concludes') ||
-      t.includes('have a great day') ||
-      t.includes('goodbye');
-
-    // neutral
-    const neutral = t.includes('conclude') || t.includes('end of the interview');
-
-    return de || en || neutral;
+  function requestEndNow(source){
+    if (END_CALLED) return;
+    END_CALLED = true;
+    log('[END] end_interview triggered by', source || 'unknown');
+    // grace: tiny delay so goodbye audio finishes cleanly
+    setTimeout(()=> hangup(), 800);
   }
 
   /* ===== DC Queue ===== */
@@ -307,21 +268,41 @@
       parent?.postMessage?.({ type:'clarity.avatar', data:{ state:data.state } }, '*');
     }
 
-    // ===== Assistant Text sammeln (für Soft-End Erkennung) =====
-    if (data.type === 'response.output_text.delta' && data.delta){
-      assistantTextBuf += String(data.delta);
-    }
-    if (data.type === 'response.output_text.done' || data.type === 'response.completed'){
-      if (assistantTextBuf && looksLikeEnding(assistantTextBuf)){
-        log('[AUTO-END] ending phrase detected -> arming soft end');
-        armSoftEnd();
+    // === Tool-call detection (robust across event variants) ===
+    // Variant A: conversation.item.created with function_call item
+    if (data.type === 'conversation.item.created' && data.item){
+      const it = data.item;
+      if (it.type === 'function_call' && it.name === 'end_interview'){
+        requestEndNow('conversation.item.created');
+        return;
       }
-      assistantTextBuf = '';
     }
 
-    // ready keyword + candidate spoke cancels soft-end
+    // Variant B: response.output_item.added / response.output_item.done
+    if ((data.type === 'response.output_item.added' || data.type === 'response.output_item.done') && data.item){
+      const it = data.item;
+      if (it.type === 'function_call' && it.name === 'end_interview'){
+        requestEndNow(data.type);
+        return;
+      }
+    }
+
+    // Variant C: response.function_call_arguments.* events
+    if (data.type === 'response.function_call_arguments.delta' && typeof data.delta === 'string'){
+      endCallArgsBuf += data.delta;
+    }
+    if (data.type === 'response.function_call_arguments.done'){
+      // sometimes includes name/tool
+      const name = data.name || data.tool_name || data.function_name || data?.function_call?.name;
+      if (name === 'end_interview'){
+        requestEndNow('function_call_arguments.done');
+        return;
+      }
+      endCallArgsBuf = '';
+    }
+
+    // ready keyword (Candidate)
     if (data.type === 'input_audio_transcription.completed'){
-      cancelSoftEnd('candidate spoke');
       const txt = (data?.transcription?.text || '').toLowerCase();
       if (/(^|\b)(bereit|ready)(\b|$)/.test(txt)){
         READY_DETECTED = true;
@@ -361,18 +342,24 @@
       ? 'Sprich ausschließlich DEUTSCH. Wechsle nie die Sprache.'
       : 'Speak strictly in ENGLISH. Do not switch languages.';
     const structure = isDE
-      ? 'Führe ein strukturiertes Job-Interview: nur EINE Frage zur Zeit, max. 1 Nachfrage, strikt am Jobprofil bleiben.'
-      : 'Conduct a structured job interview: one question at a time, max one follow-up, stick to the job profile.';
+      ? 'Führe ein strukturiertes Job-Interview: nur EINE Frage zur Zeit, max. 1 Nachfrage, strikt am Jobprofil bleiben. Stelle keine zwei Fragen in einer Nachricht.'
+      : 'Conduct a structured job interview: one question at a time, max one follow-up, stick to the job profile. Never ask two questions in one message.';
     const waiting = isDE
       ? 'Nach jeder Frage warten, bis die Kandidatin/der Kandidat fertig ist.'
       : 'After each question, wait until the candidate is finished.';
     const kbRule = isDE
-      ? 'Nutze ausschließlich die FIRMENKENNTNISSE aus „KONTEXT“ für Antworten zu Firma, Stelle, Prozessen, Benefits usw. Wenn etwas nicht im KONTEXT steht, sage freundlich, dass dies mit der Firma direkt zu klären ist.'
-      : 'Use only the COMPANY KNOWLEDGE from “CONTEXT” to answer company/job/process/benefits questions. If it is not in CONTEXT, politely say the candidate should check with the company.';
+      ? 'Nutze ausschließlich die FIRMENKENNTNISSE aus „KONTEXT“ für Antworten zu Firma, Stelle, Prozesse, Benefits usw. Wenn etwas nicht im KONTEXT steht, sage freundlich, dass dies direkt mit der Firma zu klären ist.'
+      : 'Use only the COMPANY KNOWLEDGE from “CONTEXT” for company/job/process/benefits. If something is not in CONTEXT, politely say the candidate should check with the company.';
     const readyGate = isDE
       ? 'Starte die erste Frage erst, nachdem die Person „bereit“ gesagt hat (oder nach Fallback-Timeout).'
       : 'Ask the first question only after the user says “ready” (or after a fallback timeout).';
-    return [langLine, structure, waiting, kbRule, readyGate].join(' ');
+
+    // >>> IMPORTANT: deterministic end trigger via tool-call
+    const endRule = isDE
+      ? 'Wenn du alle Fragen gestellt hast und dich verabschiedet hast, rufe SOFORT das Tool end_interview auf. Stelle danach keine weiteren Fragen.'
+      : 'When you have asked all questions and said goodbye, IMMEDIATELY call the tool end_interview. Do not ask further questions afterwards.';
+
+    return [langLine, structure, waiting, kbRule, readyGate, endRule].join(' ');
   }
 
   // --- Knowledge inject ---
@@ -401,8 +388,23 @@
     const spoken = String(reportLang || 'de').toLowerCase().startsWith('de') ? 'de' : 'en';
     const sys = buildSystemInstructions(CTX);
 
+    // Tool definition for deterministic end
+    const tools = [{
+      type: "function",
+      name: "end_interview",
+      description: "Ends the interview immediately after the assistant has finished and said goodbye. Use only when interview is fully complete.",
+      parameters: {
+        type: "object",
+        properties: {
+          reason: { type: "string", description: "Short reason why the interview is ending (e.g. completed)" }
+        },
+        required: []
+      }
+    }];
+
     dcSend({
-      type: 'session.update', session: {
+      type: 'session.update',
+      session: {
         voice: VOICE,
         instructions: sys,
         spoken_language: spoken,
@@ -410,10 +412,12 @@
         output_audio_format: 'pcm16',
         input_audio_transcription: { model: 'whisper-1', language: spoken },
         turn_detection: { type: 'none' },       // noch kein Zuhören
-        modalities: ['audio']
+        modalities: ['audio'],
+        tools,
+        tool_choice: "auto"
       }
     });
-    log('[PRIME] session.update (lang+none VAD)', spoken);
+    log('[PRIME] session.update (lang+tools+none VAD)', spoken);
 
     dcSend({ type: 'conversation.clear' });
     log('[CONV] cleared');
@@ -438,7 +442,6 @@
       ? `Willkommen! Dieses Interview wird im Auftrag von ${CTX.companyName || 'Clarity'} geführt. Sind Sie bereit zu starten? Bitte sagen Sie „bereit“.`
       : `Welcome! This interview is conducted on behalf of ${CTX.companyName || 'Clarity'}. Are you ready to begin? Please say “ready”.`;
 
-    // alles Alte stoppen, dann Prep + Welcome
     dcSend({ type: 'response.cancel' });
     log('[CONV] responses cancelled');
 
@@ -455,7 +458,6 @@
       });
       log('[WELCOME] welcome spoken');
 
-      // VAD AN, Mic AN (erst nach Welcome)
       setTimeout(() => {
         dcSend({
           type: 'session.update',
@@ -471,14 +473,11 @@
         log('[PRIME] VAD enabled');
         enableMicUplink();
 
-        // Recorder erst jetzt starten (um Welcome-Playback nicht zu stören)
         WELCOMED = true;
         maybeStartRecorder();
 
-        // Parent benachrichtigen (Overlay ausblenden)
         parent?.postMessage?.({ type:'clarity.live.prepared', data:{} }, '*');
 
-        // Fallback: falls niemand „bereit“ sagt → erste Frage nach 8s möglich
         setTimeout(()=>{ firstQuestionFallbackElapsed = true; maybeAskFirstQuestion(); }, 8000);
       }, 250);
     }, 900);
@@ -629,25 +628,21 @@
       await connectRealtime(secret);
       prepareRecording();
 
-      // Kontext-Infos
       CTX = { ...CTX, ...ctx };
-      // Remote-Audio muss laufen
       await remoteTrackReady;
       await ensureAudioUnlocked();
 
-      // Parent informieren: live ist bereit → Parent sendet 'clarity.live.prime'
       parent?.postMessage?.({ type:'clarity.live.ready', data:{} }, '*');
 
       setStatus('ok','Verbunden • Interview läuft');
     }catch(e){
       setStatus('err','Startfehler: '+errMsg(e));
       log('[Start error]', errMsg(e));
-      parent?.postMessage?.({ type:'clarity.live.error', data:{ message:String(e?.message||e) } }, '*');
+      parent?.postMessage?.({ type:'clarity.live.error', data:{ message: errMsg(e) } }, '*');
     }
   }
 
   async function hangup(){
-    cancelSoftEnd('hangup');
     destroyed = true;
     try{ DC?.close(); }catch(_){}
     try{ pc?.getSenders()?.forEach(s=>s.track && s.track.stop()); }catch(_){}
@@ -677,7 +672,6 @@
       maybeStartRecorder();
     }
     else if (type === 'clarity.live.prime'){
-      // Parent gibt reportLang vor → dann Welcome fahren
       const rep = (msg.data && msg.data.reportLang) || CTX.reportLang || LANG;
       primeStrictLanguage(rep);
       speakPrepThenWelcome();
@@ -700,7 +694,6 @@
 
   document.getElementById('btnStop').addEventListener('click', hangup);
 
-  // WICHTIG im Parent-iframe: allow="microphone; camera; autoplay"
   })();
   </script>
 </body>
