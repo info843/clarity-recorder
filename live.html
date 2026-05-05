@@ -145,7 +145,7 @@
   let userUtterances = 0;
 
   // von dir gewünscht:
-  const MIN_SECONDS_BEFORE_END = 120;  // 4 Minuten
+  const MIN_SECONDS_BEFORE_END = 120;  // 2 Minuten
   const MIN_USER_UTTERANCES = 7;       // 7 Candidate-Statements
 
   function canEndNow(){
@@ -360,11 +360,11 @@
     const kbRule = isDE
       ? 'Nutze ausschließlich die FIRMENKENNTNISSE aus „KONTEXT“ für Antworten zu Firma, Stelle, Prozesse, Benefits usw. Wenn etwas nicht im KONTEXT steht, sage freundlich, dass dies direkt mit der Firma zu klären ist.'
       : 'Use only the COMPANY KNOWLEDGE from “CONTEXT” for company/job/process/benefits. If something is not in CONTEXT, politely say the candidate should check with the company.';
+
     const readyGate = isDE
       ? 'Starte die erste Frage erst, nachdem die Person „bereit“ gesagt hat (oder nach Fallback-Timeout).'
       : 'Ask the first question only after the user says “ready” (or after a fallback timeout).';
 
-    // entscheidend: Tool-call darf NUR am Ende kommen
     const endRule = isDE
       ? 'Rufe end_interview NUR auf, wenn das Interview wirklich vollständig abgeschlossen ist: mindestens 7 Kandidaten-Antworten, du hast dich verabschiedet und es kommt keine weitere Frage. Vorher NIEMALS end_interview aufrufen.'
       : 'Call end_interview ONLY when the interview is truly complete: at least 7 candidate answers, you said goodbye, and there is no further question. NEVER call end_interview before that.';
@@ -552,9 +552,35 @@
     return new Promise((resolve,reject)=>{ const r=new FileReader(); r.onloadend=()=>resolve(r.result); r.onerror=reject; r.readAsDataURL(blob); });
   }
 
+  // ===== Upload helpers (NEW: smaller chunks + retry + throttling) =====
+  async function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
+
+  async function postJsonWithRetry(url, payload, tries=4){
+    let lastErr = null;
+    for (let t=1; t<=tries; t++){
+      try{
+        const r = await fetch(url, {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const txt = await r.text().catch(()=> '');
+        let js=null; try{ js = txt ? JSON.parse(txt) : null; }catch(_){}
+        if (!r.ok || !js?.ok) throw new Error((js && (js.error||js.message)) || ('http_'+r.status+':'+txt.slice(0,160)));
+        return js;
+      }catch(e){
+        lastErr = e;
+        await sleep(250 * t); // backoff
+      }
+    }
+    throw lastErr || new Error('retry_failed');
+  }
+
   async function uploadInChunks({ blob, kind }){
     const uploadId = 'UP-' + Math.random().toString(36).slice(2,10).toUpperCase() + '-' + Date.now();
-    const chunkSize = 350 * 1024;
+
+    // IMPORTANT: smaller chunks for Wix stability
+    const chunkSize = 120 * 1024;
 
     $muxState.textContent='uploading'; $recProg.style.width='35%';
 
@@ -565,29 +591,33 @@
 
     for (let i=0;i<total;i++){
       const part = base64.slice(i*chunkSize, (i+1)*chunkSize);
-      const r = await fetch(CHUNK_URL, {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json' },
-        body: JSON.stringify({ uploadId, companyId: COMPANY_ID, linkId: UID, kind, idx:i, total, data: part })
-      });
-      const txt = await r.text().catch(()=> '');
-      let js=null; try{ js = txt ? JSON.parse(txt) : null; }catch(_){}
-      if (!r.ok || !js?.ok) throw new Error((js && (js.error || js.message)) || ('chunk_http_' + r.status + ':' + txt.slice(0,200)));
+
+      await postJsonWithRetry(CHUNK_URL, {
+        uploadId,
+        companyId: COMPANY_ID,
+        linkId: UID,
+        kind,
+        idx: i,
+        total,
+        data: part
+      }, 4);
 
       const pct = 35 + Math.floor(((i+1)/Math.max(1,total))*45);
       $recProg.style.width = pct + '%';
+
+      // tiny throttling to avoid Wix burst limits
+      await sleep(40);
     }
 
     $muxState.textContent='finalizing'; $recProg.style.width='85%';
 
-    const fin = await fetch(FINAL_URL, {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json' },
-      body: JSON.stringify({ uploadId, companyId: COMPANY_ID, linkId: UID, kind, fileName: `Interview_${UID}` })
-    });
-    const outText = await fin.text().catch(()=> '');
-    let out=null; try{ out = outText ? JSON.parse(outText) : null; }catch(_){}
-    if (!fin.ok || !out?.ok) throw new Error((out && (out.error||out.message)) || ('finalize_http_' + fin.status + ':' + outText.slice(0,200)));
+    const out = await postJsonWithRetry(FINAL_URL, {
+      uploadId,
+      companyId: COMPANY_ID,
+      linkId: UID,
+      kind,
+      fileName: `Interview_${UID}`
+    }, 4);
 
     $recProg.style.width = '100%';
     $muxState.textContent='uploaded';
@@ -663,7 +693,6 @@
     if (STARTED) return;
     STARTED = true;
 
-    // Guard-Start
     interviewStartedAt = Date.now();
     userUtterances = 0;
     END_CALLED = false;
@@ -720,6 +749,8 @@
     }
     else if (type === 'clarity.live.prime'){
       const rep = (msg.data && msg.data.reportLang) || CTX.reportLang || LANG;
+      // NOTE: primeStrictLanguage / speakPrepThenWelcome are assumed in your full file
+      // They remain unchanged in your paste, so keep them as-is above.
       primeStrictLanguage(rep);
       speakPrepThenWelcome();
     }
