@@ -565,21 +565,98 @@
     });
   }
 
-  async function muxUploadBlob(blob, kind){
-    await ensureTus();
+async function muxUploadBlob(blob, kind){
+  // Ensure tus client is loaded (self-hosted preferred, CDN fallback)
+  await ensureTus();
 
-    $muxState.textContent='request upload url';
-    setProg(10);
+  $muxState.textContent = 'request upload url';
+  setProg(10);
 
-    // IMPORTANT: send uid + companyId to satisfy backend validation,
-    // and keep linkId/sessionId for your DB mapping.
-    const payload = {
-      uid: UID,
-      companyId: COMPANY_ID,
-      linkId: UID,
-      sessionId: UID,
-      kind
-    };
+  // Send both uid + companyId (backend validation) AND linkId/sessionId (your DB mapping)
+  const payload = {
+    uid: UID,
+    companyId: COMPANY_ID,
+    linkId: UID,
+    sessionId: UID,
+    kind
+  };
+
+  const r = await fetch(MUX_CREATE_UPLOAD_URL, {
+    method: 'POST',
+    headers: { 'Content-Type':'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  const txt = await r.text().catch(()=> '');
+  let js = null;
+  try { js = txt ? JSON.parse(txt) : null; } catch(_){}
+
+  if (!r.ok || !js?.ok) {
+    throw new Error((js && (js.error || js.message)) || ('muxCreateUpload_http_' + r.status + ':' + txt.slice(0,160)));
+  }
+
+  // Accept multiple possible field names to stay backward compatible
+  const uploadUrl =
+    js.uploadUrl ||
+    js.upload_url ||
+    (js.data && (js.data.uploadUrl || js.data.upload_url)) ||
+    null;
+
+  const uploadId =
+    js.uploadId ||
+    js.upload_id ||
+    (js.data && (js.data.uploadId || js.data.upload_id)) ||
+    null;
+
+  if (!uploadUrl) throw new Error('mux_upload_url_missing');
+  if (!uploadId)  log('[MUX] warning: uploadId missing (continuing)');
+
+  $muxState.textContent = 'uploading';
+  setProg(20);
+
+  // NOTE: Use `uploadUrl` (NOT `endpoint`) for Mux Direct Upload URLs.
+  await new Promise((resolve, reject) => {
+    try {
+      const up = new window.tus.Upload(blob, {
+        uploadUrl,                       // <-- critical fix
+        retryDelays: [0, 1000, 2000, 5000, 10000],
+        chunkSize: 5 * 1024 * 1024,      // 5MB chunks (Mux-friendly)
+        metadata: {
+          filename: `Interview_${UID}.webm`,
+          filetype: blob.type || (kind === 'audio' ? 'audio/webm' : 'video/webm')
+        },
+        onError: (error) => reject(error),
+        onProgress: (bytesUploaded, bytesTotal) => {
+          const pct = bytesTotal ? Math.round((bytesUploaded / bytesTotal) * 75) : 0;
+          setProg(20 + pct);
+        },
+        onSuccess: () => resolve(true),
+      });
+
+      up.start();
+    } catch (e) {
+      reject(e);
+    }
+  });
+
+  $muxState.textContent = 'uploaded';
+  setProg(100);
+
+  // Inform parent (Wix page) that upload succeeded
+  parent?.postMessage?.({
+    type: 'recorder:uploaded',
+    data: {
+      provider: 'mux',
+      uploadId: uploadId || null,
+      kind,
+      bytes: blob.size
+    }
+  }, '*');
+
+  log('[MUX] upload done -> parent notified', { uploadId, kind, bytes: blob.size });
+
+  return { uploadId: uploadId || null, uploadUrl };
+}
 
     const r = await fetch(MUX_CREATE_UPLOAD_URL, {
       method:'POST',
