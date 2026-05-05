@@ -672,11 +672,17 @@
     });
 
     const outText = await fin.text().catch(()=> '');
-    let out=null; try{ out = outText ? JSON.parse(outText) : null; }catch(_){}
-    if (!fin.ok || !out?.ok) throw new Error((out && (out.error||out.message)) || ('finalize_http_'+fin.status+':'+outText.slice(0,160)));
+let out = null;
+try { out = outText ? JSON.parse(outText) : null; } catch(_) {}
 
-    return out; // { ok:true, uploadId, muxUploadId }
-  }
+if (!fin.ok || !out?.ok) {
+  const err = out?.error || ('finalize_http_' + fin.status);
+  const msg = out?.message ? (' | ' + out.message) : '';
+  const peek = outText ? (' | resp: ' + outText.slice(0, 200)) : '';
+  throw new Error(err + msg + peek);
+}
+
+return out; // { ok:true, uploadId, muxUploadId } (oder was dein Backend liefert)
 
   /* ===== Start/Stop ===== */
   async function startInterview(){
