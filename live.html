@@ -108,8 +108,10 @@
     $status.style.borderColor = kind==='err' ? '#7f1d1d' : (kind==='ok' ? '#14532d' : (kind==='warn' ? '#7f6a1d' : '#24314f'));
   }
 
-  /* ===== Endpunkt ===== */
+  /* ===== Endpunkte ===== */
   const TOKEN_URL = 'https://www.clarity-nvl.com/_functions/realtimeToken';
+  const CHUNK_URL = 'https://www.clarity-nvl.com/_functions/interviewUploadChunk';
+  const FINAL_URL = 'https://www.clarity-nvl.com/_functions/interviewUploadFinalize';
 
   /* ===== State ===== */
   let pc, DC;
@@ -122,20 +124,15 @@
 
   let destroyed = false;
 
-  let PARENT_UPLOAD = true;
-  let RECORD_ENABLED = false;          // Flag vom Parent
-  let RECORD_ARMED = false;            // erst nach Welcome wirklich starten
-  const WELCOME_RECORD_DELAY_MS = 600; // 0 = Welcome voll mitschneiden
+  let RECORD_ENABLED = false;
+  const WELCOME_RECORD_DELAY_MS = 600;
 
   let CTX = {};
-
   let FIRST_Q_SENT = false;
   let READY_DETECTED = false;
-
   let STARTED = false;
   let audioUnlocked = false;
   let WELCOMED = false;
-
   let firstQuestionFallbackElapsed = false;
 
   let remoteTrackReadyResolve;
@@ -149,7 +146,7 @@
     if (END_CALLED) return;
     END_CALLED = true;
     log('[END] end_interview triggered by', source || 'unknown');
-    // grace: tiny delay so goodbye audio finishes cleanly
+    // grace delay so goodbye audio finishes cleanly
     setTimeout(()=> hangup(), 800);
   }
 
@@ -179,12 +176,13 @@
   async function getRealtimeToken(payload){
     log('[Live] Fetching token…', TOKEN_URL, JSON.stringify(payload));
     const r = await fetch(TOKEN_URL,{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
-    if (!r.ok){ const t=await r.text().catch(()=>r.statusText); throw new Error('token_http_'+r.status+': '+t); }
-    const data = await r.json().catch(e=>{ throw new Error('token_json_parse: '+e); });
-    if (!data?.ok) throw new Error('token_error: '+(data?.error||'unknown')+' '+(data?.message||'')); 
+    const txt = await r.text().catch(()=> '');
+    let data=null; try{ data = txt ? JSON.parse(txt) : null; }catch(_){}
+    if (!r.ok) throw new Error('token_http_'+r.status+': '+(txt||r.statusText));
+    if (!data?.ok) throw new Error('token_error: '+(data?.error||'unknown')+' '+(data?.message||''));
     const sec = data.client_secret || data?.clientSecret || data?.token || (data?.client_secret?.value);
     if (!sec) throw new Error('client_secret_missing');
-    log('[Live] effective', { lang:data.reportLang||payload.lang, voice:data.voice, model:data.model });
+    log('[Live] effective', { lang:data.lang, reportLang:data.reportLang, voice:data.voice, model:data.model });
     return { secret: sec, ctx: data };
   }
 
@@ -269,7 +267,6 @@
     }
 
     // === Tool-call detection (robust across event variants) ===
-    // Variant A: conversation.item.created with function_call item
     if (data.type === 'conversation.item.created' && data.item){
       const it = data.item;
       if (it.type === 'function_call' && it.name === 'end_interview'){
@@ -277,8 +274,6 @@
         return;
       }
     }
-
-    // Variant B: response.output_item.added / response.output_item.done
     if ((data.type === 'response.output_item.added' || data.type === 'response.output_item.done') && data.item){
       const it = data.item;
       if (it.type === 'function_call' && it.name === 'end_interview'){
@@ -286,13 +281,10 @@
         return;
       }
     }
-
-    // Variant C: response.function_call_arguments.* events
     if (data.type === 'response.function_call_arguments.delta' && typeof data.delta === 'string'){
       endCallArgsBuf += data.delta;
     }
     if (data.type === 'response.function_call_arguments.done'){
-      // sometimes includes name/tool
       const name = data.name || data.tool_name || data.function_name || data?.function_call?.name;
       if (name === 'end_interview'){
         requestEndNow('function_call_arguments.done');
@@ -354,7 +346,6 @@
       ? 'Starte die erste Frage erst, nachdem die Person „bereit“ gesagt hat (oder nach Fallback-Timeout).'
       : 'Ask the first question only after the user says “ready” (or after a fallback timeout).';
 
-    // >>> IMPORTANT: deterministic end trigger via tool-call
     const endRule = isDE
       ? 'Wenn du alle Fragen gestellt hast und dich verabschiedet hast, rufe SOFORT das Tool end_interview auf. Stelle danach keine weiteren Fragen.'
       : 'When you have asked all questions and said goodbye, IMMEDIATELY call the tool end_interview. Do not ask further questions afterwards.';
@@ -388,7 +379,6 @@
     const spoken = String(reportLang || 'de').toLowerCase().startsWith('de') ? 'de' : 'en';
     const sys = buildSystemInstructions(CTX);
 
-    // Tool definition for deterministic end
     const tools = [{
       type: "function",
       name: "end_interview",
@@ -411,7 +401,7 @@
         input_audio_format: 'pcm16',
         output_audio_format: 'pcm16',
         input_audio_transcription: { model: 'whisper-1', language: spoken },
-        turn_detection: { type: 'none' },       // noch kein Zuhören
+        turn_detection: { type: 'none' },
         modalities: ['audio'],
         tools,
         tool_choice: "auto"
@@ -428,7 +418,6 @@
     });
     log('[CONV] system item created (instructions)');
 
-    // Firmen-/Stellenwissen als System-Kontext pushen
     pushCompanyKnowledge();
     log('[CONV] company knowledge injected (kbText/jobAd, if provided)');
   }
@@ -569,6 +558,49 @@
     return new Promise((resolve,reject)=>{ const r=new FileReader(); r.onloadend=()=>resolve(r.result); r.onerror=reject; r.readAsDataURL(blob); });
   }
 
+  async function uploadInChunks({ blob, kind }){
+    const uploadId = 'UP-' + Math.random().toString(36).slice(2,10).toUpperCase() + '-' + Date.now();
+    const chunkSize = 350 * 1024;
+
+    $muxState.textContent='uploading'; $recProg.style.width='35%';
+
+    const dataUrl = await blobToDataURL(blob);
+    const base64 = String(dataUrl).split(',')[1] || '';
+    const total = Math.ceil(base64.length / chunkSize);
+    log('[UPLOAD] chunks total=', total);
+
+    for (let i=0;i<total;i++){
+      const part = base64.slice(i*chunkSize, (i+1)*chunkSize);
+      const r = await fetch(CHUNK_URL, {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ uploadId, companyId: COMPANY_ID, linkId: UID, kind, idx:i, total, data: part })
+      });
+      const txt = await r.text().catch(()=> '');
+      let js=null; try{ js = txt ? JSON.parse(txt) : null; }catch(_){}
+      if (!r.ok || !js?.ok) throw new Error((js && (js.error || js.message)) || ('chunk_http_' + r.status + ':' + txt.slice(0,200)));
+
+      const pct = 35 + Math.floor(((i+1)/Math.max(1,total))*45);
+      $recProg.style.width = pct + '%';
+    }
+
+    $muxState.textContent='finalizing'; $recProg.style.width='85%';
+
+    const fin = await fetch(FINAL_URL, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ uploadId, companyId: COMPANY_ID, linkId: UID, kind, fileName: `Interview_${UID}` })
+    });
+    const outText = await fin.text().catch(()=> '');
+    let out=null; try{ out = outText ? JSON.parse(outText) : null; }catch(_){}
+    if (!fin.ok || !out?.ok) throw new Error((out && (out.error||out.message)) || ('finalize_http_' + fin.status + ':' + outText.slice(0,200)));
+
+    $recProg.style.width = '100%';
+    $muxState.textContent='uploaded';
+
+    return { fileUrl: out.fileUrl, mediaId: out.mediaId, bytes: out.sizeBytes || blob.size, fileName: out.fileName || '' };
+  }
+
   function prepareRecording(){
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const dest = ctx.createMediaStreamDestination();
@@ -585,27 +617,47 @@
       videoBitsPerSecond: hasVideo ? 1_200_000 : undefined,
       audioBitsPerSecond: 128_000
     });
+
     const chunks = [];
     mediaRecorder.onstart = ()=>{ $recState.textContent='recording'; log('[REC] started'); };
     mediaRecorder.ondataavailable = (e)=>{ if (e.data && e.data.size>0) chunks.push(e.data); };
+
     mediaRecorder.onstop = async ()=>{
       $recState.textContent='stopped';
       const hasVid = !!mixedStream.getVideoTracks().length;
       const blob = new Blob(chunks, { type: hasVid ? 'video/webm' : 'audio/webm' });
       log('[REC] stop, size=', blob.size);
+
       try{
-        $muxState.textContent='exporting'; $recProg.style.width='60%';
-        const dataUrl = await blobToDataURL(blob);
-        parent?.postMessage?.({ type:'recorder:export', data:{ dataUrl, kind:(hasVid?'video':'audio'), bytes: blob.size } }, '*');
-        $recProg.style.width='100%'; $muxState.textContent='export sent';
-      }catch(e){ $muxState.textContent='export failed'; log('[REC] export failed', errMsg(e)); }
-      finally{ chunks.length=0; }
+        const kind = hasVid ? 'video' : 'audio';
+        const uploaded = await uploadInChunks({ blob, kind });
+
+        parent?.postMessage?.({
+          type:'recorder:uploaded',
+          data:{ kind, fileUrl: uploaded.fileUrl, mediaId: uploaded.mediaId, bytes: uploaded.bytes, fileName: uploaded.fileName }
+        }, '*');
+
+        log('[UPLOAD] done -> parent notified');
+
+      }catch(e){
+        $muxState.textContent='upload failed';
+        log('[UPLOAD] failed', errMsg(e));
+        parent?.postMessage?.({ type:'recorder:upload_error', data:{ message: errMsg(e) } }, '*');
+      } finally {
+        chunks.length = 0;
+      }
     };
+
     $recState.textContent='ready';
   }
-  function startRecorder(){ try{ if (mediaRecorder && mediaRecorder.state==='inactive') mediaRecorder.start(); }catch(e){ log('[REC] start error', errMsg(e)); } }
-  function stopRecording(){ try{ if (mediaRecorder && mediaRecorder.state!=='inactive') mediaRecorder.stop(); }catch(_){}
-    try{ mixedStream?.getTracks()?.forEach(t=>t.stop()); }catch(_){} }
+
+  function startRecorder(){
+    try{ if (mediaRecorder && mediaRecorder.state==='inactive') mediaRecorder.start(); }catch(e){ log('[REC] start error', errMsg(e)); }
+  }
+  function stopRecording(){
+    try{ if (mediaRecorder && mediaRecorder.state!=='inactive') mediaRecorder.stop(); }catch(_){}
+    try{ mixedStream?.getTracks()?.forEach(t=>t.stop()); }catch(_){}
+  }
 
   function maybeStartRecorder(){
     if (!WELCOMED) { RECORD_ARMED = true; return; }
@@ -663,7 +715,6 @@
 
     if (type === 'clarity.live.context'){
       CTX = { ...CTX, ...(msg.data || {}) };
-      PARENT_UPLOAD = (CTX.uploadMode === 'parent');
       log('[CTX]', CTX);
     }
     else if (type === 'clarity.live.record'){
