@@ -624,21 +624,29 @@ async function muxUploadBlob(blob, kind){
   await new Promise((resolve, reject) => {
     try {
       const up = new window.tus.Upload(blob, {
-        uploadUrl, // ✅ richtig für Mux Direct Upload
-        retryDelays: [0, 1000, 2000, 5000, 10000],
-        chunkSize: 5 * 1024 * 1024,
-        metadata: {
-          filename: `Interview_${UID}.webm`,
-          filetype: blob.type || (kind === 'audio' ? 'audio/webm' : 'video/webm')
-        },
-        onError: (error) => reject(error),
-        onProgress: (bytesUploaded, bytesTotal) => {
-          const pct = bytesTotal ? Math.round((bytesUploaded / bytesTotal) * 75) : 0;
-          setProg(20 + pct);
-        },
-        onSuccess: () => resolve(true),
-      });
-      up.start();
+  uploadUrl,
+  retryDelays: [0, 1000, 2000, 5000, 10000],
+  chunkSize: 5 * 1024 * 1024,
+
+  // 🔥 Wichtig: keine Resume-Logik
+  resume: false,
+  storeFingerprintForResuming: false,
+  removeFingerprintOnSuccess: true,
+  uploadDataDuringCreation: true,
+
+  metadata: {
+    filename: `Interview_${UID}.webm`,
+    filetype: blob.type || (kind === 'audio' ? 'audio/webm' : 'video/webm')
+  },
+
+  onError: (error) => reject(error),
+  onProgress: (bytesUploaded, bytesTotal) => {
+    const pct = bytesTotal ? Math.round((bytesUploaded / bytesTotal) * 75) : 0;
+    setProg(20 + pct);
+  },
+  onSuccess: () => resolve(true),
+});
+up.start();
     } catch (e) {
       reject(e);
     }
