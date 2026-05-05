@@ -23,9 +23,7 @@
     .ghost{opacity:.65}
   </style>
 
-  <!-- Prefer self-hosted tus client (recommended):
-       Put tus.min.js on your interview domain: https://interview.clarity-nvl.com/tus.min.js
-       This avoids browser tracking-prevention issues with CDNs. -->
+  <!-- Self-hosted preferred (upload tus.min.js to your interview domain) -->
   <script src="https://interview.clarity-nvl.com/tus.min.js"></script>
 </head>
 
@@ -75,11 +73,9 @@
   <script>
   ;(()=>{ "use strict";
 
-  // Single-instance guard
   if (window.__clarity_live_active) { console.warn('[LIVE] duplicate script ignored'); return; }
   window.__clarity_live_active = true;
 
-  /* ===== Query / UI ===== */
   const Q = new URLSearchParams(location.search);
   const UID = (Q.get('uid')||'').trim();
   const COMPANY_ID = (Q.get('companyId')||'').trim();
@@ -88,7 +84,6 @@
   const AUTOSTART = Q.get('autostart') !== '0';
 
   const $status = document.getElementById('status');
-  const $badge  = document.getElementById('audioBadge');
   const $mic    = document.getElementById('micLevel');
   const $sys    = document.getElementById('sysLevel');
   const $log    = document.getElementById('log');
@@ -116,11 +111,9 @@
     try { $recProg.style.width = `${Math.max(0, Math.min(100, Number(pct)||0))}%`; } catch(_){}
   }
 
-  /* ===== Endpoints ===== */
   const TOKEN_URL = 'https://www.clarity-nvl.com/_functions/realtimeToken';
   const MUX_CREATE_UPLOAD_URL = 'https://www.clarity-nvl.com/_functions/muxCreateUpload';
 
-  /* ===== State ===== */
   let pc, DC;
   let dcIsOpen = false;
   const dcQueue = [];
@@ -150,9 +143,7 @@
   let END_CALLED = false;
   let interviewStartedAt = 0;
   let userUtterances = 0;
-
-  // Guard defaults (you can tune these)
-  const MIN_SECONDS_BEFORE_END = 120; // seconds
+  const MIN_SECONDS_BEFORE_END = 120;
   const MIN_USER_UTTERANCES = 7;
 
   function canEndNow(){
@@ -164,7 +155,6 @@
   }
   function requestEndNow(source){
     if (END_CALLED) return;
-
     if (!canEndNow()){
       log('[END] end_interview IGNORED (too early)', {
         source: source || 'unknown',
@@ -173,14 +163,11 @@
       });
       return;
     }
-
     END_CALLED = true;
     log('[END] end_interview ACCEPTED', source || 'unknown');
-    // small grace to finish audio playback
     setTimeout(()=> hangup('model_end'), 900);
   }
 
-  /* ===== DC Queue ===== */
   function dcSend(obj){
     try{
       if (dcIsOpen && DC?.readyState === 'open'){
@@ -202,7 +189,6 @@
     }catch(e){ log('[DC] flush error', errMsg(e)); }
   }
 
-  /* ===== Token ===== */
   async function getRealtimeToken(payload){
     log('[Live] Fetching token…', TOKEN_URL, JSON.stringify(payload));
     const r = await fetch(TOKEN_URL,{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
@@ -216,7 +202,6 @@
     return { secret: sec, ctx: data };
   }
 
-  /* ===== WebRTC ===== */
   async function connectRealtime(clientSecret){
     if (pc) return;
     pc = new RTCPeerConnection({ iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }] });
@@ -265,7 +250,6 @@
       remoteTrackReadyResolve?.();
     };
 
-    // local tracks (mic initially disabled)
     if (localStream){
       localStream.getAudioTracks().forEach(t => { t.enabled=false; pc.addTrack(t, localStream); });
       localStream.getVideoTracks().forEach(t => pc.addTrack(t, localStream));
@@ -277,6 +261,7 @@
 
     const offer = await pc.createOffer({ offerToReceiveAudio:true, offerToReceiveVideo:false });
     await pc.setLocalDescription(offer);
+
     const r = await fetch('https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${clientSecret}`, 'Content-Type': 'application/sdp' },
@@ -296,30 +281,27 @@
       parent?.postMessage?.({ type:'clarity.avatar', data:{ state:data.state } }, '*');
     }
 
-    // Tool-call detection (robust)
+    // end_interview tool detection
     if (data.type === 'conversation.item.created' && data.item){
       const it = data.item;
       if (it.type === 'function_call' && it.name === 'end_interview'){
-        requestEndNow('conversation.item.created');
-        return;
+        requestEndNow('conversation.item.created'); return;
       }
     }
     if ((data.type === 'response.output_item.added' || data.type === 'response.output_item.done') && data.item){
       const it = data.item;
       if (it.type === 'function_call' && it.name === 'end_interview'){
-        requestEndNow(data.type);
-        return;
+        requestEndNow(data.type); return;
       }
     }
     if (data.type === 'response.function_call_arguments.done'){
       const name = data.name || data.tool_name || data.function_name || data?.function_call?.name;
       if (name === 'end_interview'){
-        requestEndNow('function_call_arguments.done');
-        return;
+        requestEndNow('function_call_arguments.done'); return;
       }
     }
 
-    // Candidate speech count + READY keyword
+    // candidate speech count + READY keyword
     if (data.type === 'input_audio_transcription.completed'){
       const txtRaw = String(data?.transcription?.text || '').trim();
       const txt = txtRaw.toLowerCase();
@@ -332,7 +314,6 @@
     }
   }
 
-  /* ===== Audio Unlock Gate ===== */
   async function ensureAudioUnlocked(){
     if (audioUnlocked) return true;
     try{ await $remoteA.play(); audioUnlocked=true; parent?.postMessage?.({type:'clarity.live.audio_ready'}, '*'); log('[AUDIO] unlocked via play()'); return true; }catch(_){}
@@ -356,7 +337,6 @@
     });
   }
 
-  /* ===== Priming & Welcome ===== */
   function buildSystemInstructions(ctx){
     const isDE = String(ctx.reportLang||'de').toLowerCase().startsWith('de');
     const langLine = isDE
@@ -374,8 +354,6 @@
     const readyGate = isDE
       ? 'Starte die erste Frage erst, nachdem die Person „bereit“ gesagt hat (oder nach Fallback-Timeout).'
       : 'Ask the first question only after the user says “ready” (or after a fallback timeout).';
-
-    // Tool-call rule (very strict)
     const endRule = isDE
       ? `Rufe end_interview NUR auf, wenn das Interview wirklich abgeschlossen ist. Vorher NIEMALS. Mindestanforderung: mindestens ${MIN_USER_UTTERANCES} Kandidaten-Antworten und ein sinnvoller Abschluss/Verabschiedung.`
       : `Call end_interview ONLY when the interview is truly complete. NEVER before. Minimum: at least ${MIN_USER_UTTERANCES} candidate answers and a proper closing/goodbye.`;
@@ -388,7 +366,6 @@
     while (i < t.length) { out.push(t.slice(i, i + max)); i += max; }
     return out;
   }
-
   function pushCompanyKnowledge() {
     const kb  = (CTX.kbText  || '').trim();
     const job = (CTX.jobAd   || '').trim();
@@ -541,7 +518,6 @@
     if (READY_DETECTED || firstQuestionFallbackElapsed) askFirstQuestion();
   }
 
-  /* ===== Media / Recorder ===== */
   async function setupLocalMedia(){
     try{
       localStream = await navigator.mediaDevices.getUserMedia({
@@ -578,11 +554,9 @@
     try{ localStream?.getAudioTracks()?.forEach(t => t.enabled=true); log('[MIC] uplink enabled'); }catch(_){}
   }
 
-  // --- tus loader (fallback to CDN if self-hosted missing) ---
   function ensureTus(){
     return new Promise((resolve, reject)=>{
       if (window.tus && window.tus.Upload) return resolve(true);
-
       const s = document.createElement('script');
       s.src = 'https://cdn.jsdelivr.net/npm/tus-js-client@4.2.3/dist/tus.min.js';
       s.onload = ()=> resolve(true);
@@ -597,10 +571,20 @@
     $muxState.textContent='request upload url';
     setProg(10);
 
+    // IMPORTANT: send uid + companyId to satisfy backend validation,
+    // and keep linkId/sessionId for your DB mapping.
+    const payload = {
+      uid: UID,
+      companyId: COMPANY_ID,
+      linkId: UID,
+      sessionId: UID,
+      kind
+    };
+
     const r = await fetch(MUX_CREATE_UPLOAD_URL, {
       method:'POST',
       headers:{ 'Content-Type':'application/json' },
-      body: JSON.stringify({ companyId: COMPANY_ID, linkId: UID, sessionId: UID, kind })
+      body: JSON.stringify(payload)
     });
 
     const txt = await r.text().catch(()=> '');
@@ -635,7 +619,6 @@
     $muxState.textContent='uploaded';
     setProg(100);
 
-    // Notify parent: upload is done (asset becomes ready via webhook)
     parent?.postMessage?.({
       type:'recorder:uploaded',
       data:{ provider:'mux', uploadId, kind, bytes: blob.size }
@@ -658,7 +641,6 @@
     const hasVideo = !!mixedStream.getVideoTracks().length;
     mediaRecorder = new MediaRecorder(mixedStream, {
       mimeType: hasVideo ? 'video/webm;codecs=vp8,opus' : 'audio/webm;codecs=opus',
-      // reduce size for reliability
       videoBitsPerSecond: hasVideo ? 600_000 : undefined,
       audioBitsPerSecond: 64_000
     });
@@ -703,12 +685,10 @@
     setTimeout(()=> startRecorder(), WELCOME_RECORD_DELAY_MS);
   }
 
-  /* ===== Start / Stop ===== */
   async function startInterview(){
     if (STARTED) return;
     STARTED = true;
 
-    // Guard start
     interviewStartedAt = Date.now();
     userUtterances = 0;
     END_CALLED = false;
@@ -728,7 +708,6 @@
       await remoteTrackReady;
       await ensureAudioUnlocked();
 
-      // Parent: live ready → parent sends 'clarity.live.prime'
       parent?.postMessage?.({ type:'clarity.live.ready', data:{} }, '*');
 
       setStatus('ok','Verbunden • Interview läuft');
@@ -750,7 +729,6 @@
     try{ localStream?.getTracks()?.forEach(t => t.stop()); }catch(_){}
     try{ remoteStream?.getTracks()?.forEach(t => t.stop()); }catch(_){}
 
-    // stop recording -> will trigger mux upload
     stopRecording();
 
     setStatus('warn','Beendet');
@@ -758,7 +736,6 @@
     parent?.postMessage?.({ type:'clarity.live.ended', data:{ reason: reason || 'unknown' } }, '*');
   }
 
-  /* ===== Parent Messaging ===== */
   window.addEventListener('message', (ev)=>{
     const msg = ev?.data || {};
     const type = msg.type;
