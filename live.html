@@ -601,7 +601,11 @@
       maybeStartRecorder();
     }
     else if (type === 'clarity.live.prime'){
-      const rep = (msg.data && msg.data.reportLang) || CTX.reportLang || LANG;
+      const spoken = (msg.data && (msg.data.lang || msg.data.userCommLang)) || CTX.lang || LANG;
+const rep    = (msg.data && msg.data.reportLang) || CTX.reportLang || spoken;
+
+CTX.lang = spoken;
+CTX.reportLang = rep;
       primeStrictLanguage(rep);
       speakPrepThenWelcome();
     }
