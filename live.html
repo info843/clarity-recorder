@@ -11,7 +11,7 @@
     .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
     .row{display:flex;gap:10px;align-items:center}
     .bar{height:6px;background:#0f172a;border-radius:999px;overflow:hidden}
-    .bar > i{display:block;height:100%;width:0;background:#4f46e5;transition:width 80ms linear}
+    .bar > i{display:block;height:100%;width:0;background:#4f46e5;transition:width 50ms linear}
     .badge{display:inline-block;padding:2px 6px;border-radius:8px;background:#0f172a;border:1px solid #24314f;color:#cbd5e1;font-size:12px}
     .muted{color:var(--muted)}
     .btn{appearance:none;border:1px solid #2b3244;background:#141827;color:#f8fafc;border-radius:8px;padding:8px 10px;cursor:pointer}
@@ -29,7 +29,7 @@
       <div class="row" style="justify-content:space-between">
         <div>
           <div id="status" class="badge">Init…</div>
-          <div id="audioBadge" class="badge" style="margin-left:6px">• (Audio?)</div>
+          <div id="audioBadge" class="badge" style="margin-left:6px">• (stumm?)</div>
         </div>
         <div class="row">
           <button id="btnStop" class="btn">Interview abbrechen</button>
@@ -57,7 +57,7 @@
       <div style="font-weight:600;margin-bottom:8px">Recorder / Upload</div>
       <div class="row">
         <div class="badge ghost" id="recState">idle</div>
-        <div class="badge ghost" id="uplState" style="margin-left:6px">no upload</div>
+        <div class="badge ghost" id="muxState" style="margin-left:6px">no upload</div>
       </div>
       <div class="muted" style="margin:8px 0 4px">Fortschritt</div>
       <div class="bar"><i id="recProgress"></i></div>
@@ -66,12 +66,14 @@
     </aside>
   </div>
 
-<script>
-;(()=>{ "use strict";
+  <script>
+  ;(()=>{ "use strict";
+
+  // Single-instance guard
   if (window.__clarity_live_active) { console.warn('[LIVE] duplicate script ignored'); return; }
   window.__clarity_live_active = true;
 
-  /* ===== Query / UI ===== */
+  /* ===== Query ===== */
   const Q = new URLSearchParams(location.search);
   const UID = (Q.get('uid')||'').trim();
   const COMPANY_ID = (Q.get('companyId')||'').trim();
@@ -79,8 +81,8 @@
   const VOICE = (Q.get('voice')||'verse').toLowerCase();
   const AUTOSTART = Q.get('autostart') !== '0';
 
+  /* ===== UI ===== */
   const $status = document.getElementById('status');
-  const $badge  = document.getElementById('audioBadge');
   const $mic    = document.getElementById('micLevel');
   const $sys    = document.getElementById('sysLevel');
   const $log    = document.getElementById('log');
@@ -88,10 +90,11 @@
   const $remoteA= document.getElementById('remoteAudio');
 
   const $recState = document.getElementById('recState');
-  const $uplState = document.getElementById('uplState');
+  const $muxState = document.getElementById('muxState');
   const $recProg  = document.getElementById('recProgress');
 
   function errMsg(e){ return (e && (e.message || e.toString())) || String(e||''); }
+
   function log(...a){
     console.log(...a);
     const s = a.map(x => typeof x==='object' ? JSON.stringify(x) : String(x)).join(' ');
@@ -108,10 +111,10 @@
     try { $recProg.style.width = `${Math.max(0, Math.min(100, Number(pct)||0))}%`; } catch(_){}
   }
 
-  /* ===== Endpoints (Wix) ===== */
-  const TOKEN_URL   = 'https://www.clarity-nvl.com/_functions/realtimeToken';
-  const CHUNK_URL   = 'https://www.clarity-nvl.com/_functions/interviewUploadChunk';
-  const FINAL_URL   = 'https://www.clarity-nvl.com/_functions/interviewUploadFinalize';
+  /* ===== Endpunkte ===== */
+  const TOKEN_URL = 'https://www.clarity-nvl.com/_functions/realtimeToken';
+  const CHUNK_URL = 'https://www.clarity-nvl.com/_functions/interviewUploadChunk';
+  const FINAL_URL = 'https://www.clarity-nvl.com/_functions/interviewUploadFinalize';
 
   /* ===== State ===== */
   let pc, DC;
@@ -123,7 +126,6 @@
   let audioCtx, remoteSource;
 
   let destroyed = false;
-
   let RECORD_ENABLED = false;
   const WELCOME_RECORD_DELAY_MS = 600;
 
@@ -139,12 +141,12 @@
   let remoteTrackReadyResolve;
   const remoteTrackReady = new Promise(r => remoteTrackReadyResolve = r);
 
-  // ===== end_interview tool-call + Guard =====
+  /* ===== end_interview tool-call + Guard ===== */
   let END_CALLED = false;
   let interviewStartedAt = 0;
   let userUtterances = 0;
-  const MIN_SECONDS_BEFORE_END = 120;   // 2min (stabil)
-  const MIN_USER_UTTERANCES = 2;        // bei Bedarf höher stellen
+  const MIN_SECONDS_BEFORE_END = 120;
+  const MIN_USER_UTTERANCES = 7;
 
   function canEndNow(){
     if (!interviewStartedAt) return false;
@@ -168,7 +170,7 @@
     setTimeout(()=> hangup('model_end'), 900);
   }
 
-  /* ===== DC queue ===== */
+  /* ===== DC Queue ===== */
   function dcSend(obj){
     try{
       if (dcIsOpen && DC?.readyState === 'open'){
@@ -309,6 +311,7 @@
       const txtRaw = String(data?.transcription?.text || '').trim();
       const txt = txtRaw.toLowerCase();
       if (txtRaw) userUtterances += 1;
+
       if (/(^|\b)(bereit|ready)(\b|$)/.test(txt)){
         READY_DETECTED = true;
         maybeAskFirstQuestion();
@@ -316,9 +319,10 @@
     }
   }
 
+  /* ===== Audio unlock ===== */
   async function ensureAudioUnlocked(){
     if (audioUnlocked) return true;
-    try{ await $remoteA.play(); audioUnlocked=true; parent?.postMessage?.({type:'clarity.live.audio_ready'}, '*'); log('[AUDIO] unlocked via play()'); return true; }catch(_){}
+    try{ await $remoteA.play(); audioUnlocked=true; parent?.postMessage?.({type:'clarity.live.audio_ready'}, '*'); return true; }catch(_){}
     parent?.postMessage?.({type:'clarity.live.audio_wait'}, '*');
     setStatus('warn','Bitte einmal hier klicken, um Audio zu aktivieren.');
     return new Promise((resolve)=>{
@@ -328,7 +332,6 @@
           await $remoteA.play();
           audioUnlocked = true;
           parent?.postMessage?.({type:'clarity.live.audio_ready'}, '*');
-          log('[AUDIO] unlocked by user gesture');
           window.removeEventListener('pointerdown', unlock);
           window.removeEventListener('keydown', unlock);
           resolve(true);
@@ -339,18 +342,14 @@
     });
   }
 
-  /* ===== Priming & Welcome ===== */
+  /* ===== Instructions / Knowledge ===== */
   function buildSystemInstructions(ctx){
     const isDE = String(ctx.reportLang||'de').toLowerCase().startsWith('de');
-    const langLine = isDE
-      ? 'Sprich ausschließlich DEUTSCH. Wechsle nie die Sprache.'
-      : 'Speak strictly in ENGLISH. Do not switch languages.';
+    const langLine = isDE ? 'Sprich ausschließlich DEUTSCH. Wechsle nie die Sprache.' : 'Speak strictly in ENGLISH. Do not switch languages.';
     const structure = isDE
       ? 'Führe ein strukturiertes Job-Interview: nur EINE Frage zur Zeit, max. 1 Nachfrage, strikt am Jobprofil bleiben. Stelle keine zwei Fragen in einer Nachricht.'
       : 'Conduct a structured job interview: one question at a time, max one follow-up, stick to the job profile. Never ask two questions in one message.';
-    const waiting = isDE
-      ? 'Nach jeder Frage warten, bis die Kandidatin/der Kandidat fertig ist.'
-      : 'After each question, wait until the candidate is finished.';
+    const waiting = isDE ? 'Nach jeder Frage warten, bis die Kandidatin/der Kandidat fertig ist.' : 'After each question, wait until the candidate is finished.';
     const kbRule = isDE
       ? 'Nutze ausschließlich die FIRMENKENNTNISSE aus „KONTEXT“ für Antworten zu Firma, Stelle, Prozessen, Benefits usw. Wenn etwas nicht im KONTEXT steht, sage freundlich, dass dies mit der Firma direkt zu klären ist.'
       : 'Use only the COMPANY KNOWLEDGE from “CONTEXT” to answer company/job/process/benefits questions. If it is not in CONTEXT, politely say the candidate should check with the company.';
@@ -360,6 +359,7 @@
     const endRule = isDE
       ? `Rufe end_interview NUR auf, wenn das Interview wirklich abgeschlossen ist. Vorher NIEMALS. Mindestanforderung: mindestens ${MIN_USER_UTTERANCES} Kandidaten-Antworten und ein sinnvoller Abschluss/Verabschiedung.`
       : `Call end_interview ONLY when the interview is truly complete. NEVER before. Minimum: at least ${MIN_USER_UTTERANCES} candidate answers and a proper closing/goodbye.`;
+
     return [langLine, structure, waiting, kbRule, readyGate, endRule].join(' ');
   }
 
@@ -427,9 +427,7 @@
 
   function speakPrepThenWelcome() {
     const isDE = String(CTX.reportLang || 'de').toLowerCase().startsWith('de');
-    const prep = isDE
-      ? 'Einen Moment bitte, ich bereite das Interview vor …'
-      : 'One moment please, I am preparing the interview …';
+    const prep = isDE ? 'Einen Moment bitte, ich bereite das Interview vor …' : 'One moment please, I am preparing the interview …';
     const welcome = isDE
       ? `Willkommen! Dieses Interview wird im Auftrag von ${CTX.companyName || 'Clarity'} geführt. Sind Sie bereit zu starten? Bitte sagen Sie „bereit“.`
       : `Welcome! This interview is conducted on behalf of ${CTX.companyName || 'Clarity'}. Are you ready to begin? Please say “ready”.`;
@@ -445,10 +443,7 @@
       log('[WELCOME] welcome spoken');
 
       setTimeout(() => {
-        dcSend({
-          type: 'session.update',
-          session: { turn_detection: { type: 'server_vad', threshold: 0.9, prefix_padding_ms: 200, silence_duration_ms: 700 } }
-        });
+        dcSend({ type: 'session.update', session: { turn_detection: { type: 'server_vad', threshold: 0.9, prefix_padding_ms: 200, silence_duration_ms: 700 } }});
         log('[PRIME] VAD enabled');
         enableMicUplink();
 
@@ -499,11 +494,12 @@
     dcSend({ type:'response.create', response:{ conversation:'default', modalities:['audio'], instructions: (isDE ? `Erste Frage: ${first}` : `First question: ${first}`) }});
     log('[QUESTION] first sent');
   }
+
   function maybeAskFirstQuestion(){
     if (READY_DETECTED || firstQuestionFallbackElapsed) askFirstQuestion();
   }
 
-  /* ===== Media / Recorder ===== */
+  /* ===== Media ===== */
   async function setupLocalMedia(){
     try{
       localStream = await navigator.mediaDevices.getUserMedia({
@@ -540,6 +536,74 @@
     try{ localStream?.getAudioTracks()?.forEach(t => t.enabled=true); log('[MIC] uplink enabled'); }catch(_){}
   }
 
+  async function blobToDataURL(blob){
+    return new Promise((resolve,reject)=>{ const r=new FileReader(); r.onloadend=()=>resolve(r.result); r.onerror=reject; r.readAsDataURL(blob); });
+  }
+
+  /* ===== Chunk upload ===== */
+  async function uploadInChunks({ blob, kind }){
+    const uploadId = 'UP-' + Math.random().toString(36).slice(2,10).toUpperCase() + '-' + Date.now();
+    const chunkSize = 350 * 1024;
+
+    $muxState.textContent='uploading';
+    setProg(25);
+
+    const dataUrl = await blobToDataURL(blob);
+    const base64 = String(dataUrl).split(',')[1] || '';
+    const total = Math.ceil(base64.length / chunkSize);
+    log('[UPLOAD] chunks total=', total);
+
+    for (let i=0;i<total;i++){
+      const part = base64.slice(i*chunkSize, (i+1)*chunkSize);
+
+      const r = await fetch(CHUNK_URL, {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ uploadId, companyId: COMPANY_ID, linkId: UID, kind, idx:i, total, data: part })
+      });
+
+      const txt = await r.text().catch(()=> '');
+      let js=null; try{ js = txt ? JSON.parse(txt) : null; }catch(_){}
+      if (!r.ok || !js?.ok) throw new Error((js && (js.error || js.message)) || ('chunk_http_' + r.status + ':' + txt.slice(0,200)));
+
+      setProg(25 + Math.round(((i+1)/Math.max(1,total))*55));
+    }
+
+    $muxState.textContent='finalizing';
+    setProg(85);
+
+    const fin = await fetch(FINAL_URL, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ uploadId, companyId: COMPANY_ID, linkId: UID, kind, fileName: `Interview_${UID}` })
+    });
+
+    // >>> verbesserter Fehlerblock (dein gewünschter Fix)
+    const outText = await fin.text().catch(()=> '');
+    let out = null;
+    try { out = outText ? JSON.parse(outText) : null; } catch(_) {}
+
+    if (!fin.ok || !out?.ok) {
+      const err = out?.error || ('finalize_http_' + fin.status);
+      const msg = out?.message ? (' | ' + out.message) : '';
+      const peek = outText ? (' | resp: ' + outText.slice(0, 200)) : '';
+      throw new Error(err + msg + peek);
+    }
+    // <<<
+
+    $muxState.textContent='uploaded';
+    setProg(100);
+
+    parent?.postMessage?.({
+      type:'recorder:uploaded',
+      data:{ provider:'wixChunks', uploadId, kind, fileUrl: out.fileUrl || null, mediaId: out.mediaId || null, bytes: out.sizeBytes || blob.size }
+    }, '*');
+
+    log('[UPLOAD] done -> parent notified', { uploadId, kind, bytes: blob.size });
+    return out;
+  }
+
+  /* ===== Recorder ===== */
   function prepareRecording(){
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const dest = ctx.createMediaStreamDestination();
@@ -563,30 +627,16 @@
 
     mediaRecorder.onstop = async ()=>{
       $recState.textContent='stopped';
+
       const hasVid = !!mixedStream.getVideoTracks().length;
       const blob = new Blob(chunks, { type: hasVid ? 'video/webm' : 'audio/webm' });
-      const kind = hasVid ? 'video' : 'audio';
       log('[REC] stop, size=', blob.size);
 
       try{
-        $uplState.textContent = 'chunking';
-        setProg(5);
-
-        const res = await uploadBlobViaWixChunks(blob, kind);
-
-        $uplState.textContent = 'uploaded';
-        setProg(100);
-
-        parent?.postMessage?.({ type:'recorder:uploaded', data:{
-          provider:'mux',
-          uploadId: res.uploadId,
-          kind,
-          bytes: blob.size
-        }}, '*');
-
-        log('[UPLOAD] done -> parent notified', res);
+        const kind = hasVid ? 'video' : 'audio';
+        await uploadInChunks({ blob, kind });
       }catch(e){
-        $uplState.textContent = 'upload failed';
+        $muxState.textContent='upload failed';
         setProg(0);
         log('[UPLOAD] failed', errMsg(e));
         parent?.postMessage?.({ type:'recorder:upload_error', data:{ message: errMsg(e) } }, '*');
@@ -605,86 +655,14 @@
     try{ if (mediaRecorder && mediaRecorder.state!=='inactive') mediaRecorder.stop(); }catch(_){}
     try{ mixedStream?.getTracks()?.forEach(t=>t.stop()); }catch(_){}
   }
+
   function maybeStartRecorder(){
     if (!WELCOMED) return;
     if (!RECORD_ENABLED) return;
     setTimeout(()=> startRecorder(), WELCOME_RECORD_DELAY_MS);
   }
 
-  /* ===== Chunk upload (Client -> Wix) ===== */
-  async function blobToDataURL(blob){
-    return new Promise((resolve,reject)=>{ const r=new FileReader(); r.onloadend=()=>resolve(r.result); r.onerror=reject; r.readAsDataURL(blob); });
-  }
-
-  async function uploadBlobViaWixChunks(blob, kind){
-    if (!UID || !COMPANY_ID) throw new Error('uid_or_companyId_missing');
-
-    const uploadId = 'UP-' + Math.random().toString(36).slice(2,10).toUpperCase() + '-' + Date.now();
-    const chunkChars = 320 * 1024; // base64 chars per chunk (safe)
-    const dataUrl = await blobToDataURL(blob);
-    const base64 = String(dataUrl).split(',')[1] || '';
-    const total = Math.ceil(base64.length / chunkChars);
-
-    log('[UPLOAD] chunks total=', total);
-    $uplState.textContent = 'uploading';
-    setProg(10);
-
-    for (let i=0;i<total;i++){
-      const part = base64.slice(i*chunkChars, (i+1)*chunkChars);
-
-      const r = await fetch(CHUNK_URL, {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json' },
-        body: JSON.stringify({
-          uploadId,
-          companyId: COMPANY_ID,
-          linkId: UID,
-          sessionId: UID,
-          kind,
-          idx: i,
-          total,
-          data: part
-        })
-      });
-
-      const txt = await r.text().catch(()=> '');
-      let js=null; try{ js = txt ? JSON.parse(txt) : null; }catch(_){}
-      if (!r.ok || !js?.ok) throw new Error((js && (js.error || js.message)) || ('chunk_http_'+r.status+':'+txt.slice(0,160)));
-
-      const pct = 10 + Math.floor(((i+1)/Math.max(1,total))*70);
-      setProg(pct);
-    }
-
-    $uplState.textContent = 'finalizing';
-    setProg(85);
-
-    const fin = await fetch(FINAL_URL, {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json' },
-      body: JSON.stringify({
-        uploadId,
-        companyId: COMPANY_ID,
-        linkId: UID,
-        sessionId: UID,
-        kind,
-        fileName: `Interview_${UID}`
-      })
-    });
-
-    const outText = await fin.text().catch(()=> '');
-let out = null;
-try { out = outText ? JSON.parse(outText) : null; } catch(_) {}
-
-if (!fin.ok || !out?.ok) {
-  const err = out?.error || ('finalize_http_' + fin.status);
-  const msg = out?.message ? (' | ' + out.message) : '';
-  const peek = outText ? (' | resp: ' + outText.slice(0, 200)) : '';
-  throw new Error(err + msg + peek);
-}
-
-return out; // { ok:true, uploadId, muxUploadId } (oder was dein Backend liefert)
-
-  /* ===== Start/Stop ===== */
+  /* ===== Start / Stop ===== */
   async function startInterview(){
     if (STARTED) return;
     STARTED = true;
@@ -704,7 +682,6 @@ return out; // { ok:true, uploadId, muxUploadId } (oder was dein Backend liefert
       prepareRecording();
 
       CTX = { ...CTX, ...ctx };
-
       await remoteTrackReady;
       await ensureAudioUnlocked();
 
@@ -735,7 +712,7 @@ return out; // { ok:true, uploadId, muxUploadId } (oder was dein Backend liefert
     parent?.postMessage?.({ type:'clarity.live.ended', data:{ reason: reason || 'unknown' } }, '*');
   }
 
-  /* ===== Parent messaging ===== */
+  /* ===== Parent Messaging ===== */
   window.addEventListener('message', (ev)=>{
     const msg = ev?.data || {};
     const type = msg.type;
@@ -771,7 +748,7 @@ return out; // { ok:true, uploadId, muxUploadId } (oder was dein Backend liefert
 
   document.getElementById('btnStop').addEventListener('click', ()=> hangup('user_abort'));
 
-})();
-</script>
+  })();
+  </script>
 </body>
 </html>
