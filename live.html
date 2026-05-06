@@ -158,6 +158,43 @@
   let recordingStartedAt = 0;
   let lastPutStatus = null;
 
+         /* ===== Transcript State ===== */
+let transcriptSeq = 0;
+const transcriptSeen = new Set();
+
+function transcriptKey(speaker, text, itemId) {
+  return [
+    String(speaker || '').toLowerCase(),
+    String(itemId || ''),
+    String(text || '').trim().slice(0, 180)
+  ].join('|');
+}
+
+function emitTranscript(speaker, text, extra = {}) {
+  const clean = String(text || '').trim();
+  if (!clean) return;
+
+  const key = transcriptKey(speaker, clean, extra.itemId || extra.item_id || extra.responseId || extra.response_id || '');
+  if (transcriptSeen.has(key)) return;
+  transcriptSeen.add(key);
+
+  transcriptSeq += 1;
+
+  const payload = {
+    speaker: speaker || 'unknown',
+    text: clean,
+    seq: transcriptSeq,
+    itemId: extra.itemId || extra.item_id || '',
+    responseId: extra.responseId || extra.response_id || '',
+    sourceEvent: extra.sourceEvent || '',
+    final: extra.final !== false,
+    ts: new Date().toISOString()
+  };
+
+  log('[TRANSCRIPT]', payload);
+  postToParent('rt.transcript.partial', payload);
+}
+
   function canEndNow(){
     if (!interviewStartedAt) return false;
     const elapsed = (Date.now() - interviewStartedAt) / 1000;
@@ -295,84 +332,163 @@
     await pc.setRemoteDescription(answer);
   }
 
-  function onRealtimeEvent(ev){
-    let data = ev && ev.data;
-    try{ if (typeof data === 'string') data = JSON.parse(data); }catch(_){}
-    if (!data) return;
+function onRealtimeEvent(ev){
+  let data = ev && ev.data;
 
-    if (data.type === 'response.state' && data.state){
-      postToParent('clarity.avatar', { state:data.state });
+  try {
+    if (typeof data === 'string') data = JSON.parse(data);
+  } catch(_) {}
+
+  if (!data) return;
+
+  const eventType = data.type || '';
+
+  if (eventType === 'response.state' && data.state){
+    postToParent('clarity.avatar', { state:data.state });
+  }
+
+  /**
+   * USER TRANSCRIPT
+   * Offizielles Event bei aktivierter input_audio_transcription.
+   * Alte/abweichende Event-Namen bleiben als Fallback erhalten.
+   */
+  if (
+    eventType === 'conversation.item.input_audio_transcription.completed' ||
+    eventType === 'input_audio_transcription.completed'
+  ) {
+    const txtRaw = String(
+      data?.transcript ||
+      data?.transcription?.text ||
+      data?.text ||
+      ''
+    ).trim();
+
+    const txt = txtRaw.toLowerCase();
+
+    if (txtRaw) {
+      userUtterances += 1;
+
+      emitTranscript('user', txtRaw, {
+        itemId: data.item_id || data.itemId || '',
+        responseId: data.response_id || data.responseId || '',
+        sourceEvent: eventType,
+        final: true
+      });
     }
 
-    if (data.type === 'conversation.item.created' && data.item){
-      const it = data.item;
-      if (it.type === 'function_call' && it.name === 'end_interview'){
-        requestEndNow('conversation.item.created'); return;
+    if (/(^|\b)(bereit|ready)(\b|$)/.test(txt)){
+      READY_DETECTED = true;
+      maybeAskFirstQuestion();
+    }
+
+    return;
+  }
+
+  /**
+   * ASSISTANT TRANSCRIPT — Audio output transcript.
+   * Dieses Event ist für gesprochene Realtime-Antworten am wichtigsten.
+   */
+  if (eventType === 'response.audio_transcript.done') {
+    const txt = String(data?.transcript || '').trim();
+
+    if (txt) {
+      emitTranscript('assistant', txt, {
+        itemId: data.item_id || data.itemId || '',
+        responseId: data.response_id || data.responseId || '',
+        sourceEvent: eventType,
+        final: true
+      });
+    }
+
+    return;
+  }
+
+  /**
+   * ASSISTANT TRANSCRIPT — Text output fallback.
+   */
+  if (eventType === 'response.text.done') {
+    const txt = String(data?.text || '').trim();
+
+    if (txt) {
+      emitTranscript('assistant', txt, {
+        itemId: data.item_id || data.itemId || '',
+        responseId: data.response_id || data.responseId || '',
+        sourceEvent: eventType,
+        final: true
+      });
+    }
+
+    return;
+  }
+
+  /**
+   * ASSISTANT TRANSCRIPT — output_item.done fallback.
+   * Manche Realtime-Ausgaben enthalten finale Inhalte in item.content.
+   */
+  if (eventType === 'response.output_item.done' && data.item) {
+    const it = data.item;
+
+    if (it.type === 'function_call' && it.name === 'end_interview'){
+      requestEndNow(eventType);
+      return;
+    }
+
+    if (Array.isArray(it.content)) {
+      const texts = [];
+
+      for (const part of it.content) {
+        const t =
+          part?.transcript ||
+          part?.text ||
+          part?.audio?.transcript ||
+          '';
+
+        if (String(t || '').trim()) texts.push(String(t).trim());
+      }
+
+      const finalText = texts.join('\n').trim();
+
+      if (finalText) {
+        emitTranscript('assistant', finalText, {
+          itemId: it.id || data.item_id || '',
+          responseId: data.response_id || '',
+          sourceEvent: eventType,
+          final: true
+        });
       }
     }
 
-    if ((data.type === 'response.output_item.added' || data.type === 'response.output_item.done') && data.item){
-      const it = data.item;
-      if (it.type === 'function_call' && it.name === 'end_interview'){
-        requestEndNow(data.type); return;
-      }
-    }
+    return;
+  }
 
-    if (data.type === 'response.function_call_arguments.done'){
-      const name = data.name || data.tool_name || data.function_name || data?.function_call?.name;
-      if (name === 'end_interview'){
-        requestEndNow('function_call_arguments.done'); return;
-      }
-    }
-
-    if (data.type === 'input_audio_transcription.completed'){
-      const txtRaw = String(data?.transcription?.text || '').trim();
-      const txt = txtRaw.toLowerCase();
-
-      if (txtRaw) {
-        userUtterances += 1;
-        postToParent('rt.transcript.partial', { speaker:'user', text: txtRaw });
-      }
-
-      if (/(^|\b)(bereit|ready)(\b|$)/.test(txt)){
-        READY_DETECTED = true;
-        maybeAskFirstQuestion();
-      }
+  /**
+   * end_interview tool detection
+   */
+  if (eventType === 'conversation.item.created' && data.item){
+    const it = data.item;
+    if (it.type === 'function_call' && it.name === 'end_interview'){
+      requestEndNow('conversation.item.created');
+      return;
     }
   }
 
-  /* ===== Audio unlock ===== */
-  async function ensureAudioUnlocked(){
-    if (audioUnlocked) return true;
-
-    try{
-      await $remoteA.play();
-      audioUnlocked=true;
-      postToParent('clarity.live.audio_ready', {});
-      return true;
-    }catch(_){}
-
-    postToParent('clarity.live.audio_wait', {});
-    setStatus('warn','Bitte einmal hier klicken, um Audio zu aktivieren.');
-
-    return new Promise((resolve)=>{
-      const unlock = async ()=>{
-        try{
-          if (audioCtx && audioCtx.state!=='running'){
-            try{ await audioCtx.resume(); }catch(_){}
-          }
-          await $remoteA.play();
-          audioUnlocked = true;
-          postToParent('clarity.live.audio_ready', {});
-          window.removeEventListener('pointerdown', unlock);
-          window.removeEventListener('keydown', unlock);
-          resolve(true);
-        }catch(_){}
-      };
-      window.addEventListener('pointerdown', unlock, { once:true });
-      window.addEventListener('keydown', unlock, { once:true });
-    });
+  if (eventType === 'response.output_item.added' && data.item){
+    const it = data.item;
+    if (it.type === 'function_call' && it.name === 'end_interview'){
+      requestEndNow(eventType);
+      return;
+    }
   }
+
+  if (eventType === 'response.function_call_arguments.done'){
+    const name = data.name || data.tool_name || data.function_name || data?.function_call?.name;
+
+    if (name === 'end_interview'){
+      requestEndNow('function_call_arguments.done');
+      return;
+    }
+  }
+}
 
   /* ===== Instructions / Knowledge ===== */
   function buildSystemInstructions(ctx){
