@@ -1,10 +1,5 @@
 // /api/mux-asset.js
 // CLARITY Interview – Mux Upload/Asset Status Endpoint
-// Zweck:
-// 1. Fragt echte Mux uploadId ab
-// 2. Holt daraus assetId
-// 3. Holt Asset-Status, playbackId, duration, static renditions
-// 4. Gibt stabile Daten für Wix DB + Dashboard zurück
 
 function setCors(req, res) {
   const allowed = (process.env.MUX_CORS_ORIGIN ||
@@ -61,7 +56,6 @@ async function muxGet(path) {
 
 function pickPlaybackId(asset) {
   const ids = Array.isArray(asset?.playback_ids) ? asset.playback_ids : [];
-
   const publicId = ids.find((x) => x.policy === 'public')?.id;
   const firstId = ids[0]?.id;
 
@@ -102,8 +96,6 @@ function pickStaticRenditionUrls(playbackId, asset) {
     }
   }
 
-  // Standard-Mux-Pfade für static renditions.
-  // Falls Mux im Asset bereits konkrete Namen liefert, nutzen wir diese.
   const videoName = videoFile?.name || 'highest.mp4';
   const audioName = audioFile?.name || 'audio.m4a';
 
@@ -134,12 +126,12 @@ module.exports = async function handler(req, res) {
 
     const uploadJson = await muxGet(`/video/v1/uploads/${encodeURIComponent(uploadId)}`);
     const upload = uploadJson?.data || {};
-
     const assetId = upload.asset_id || null;
 
     if (!assetId) {
       return res.status(200).json({
         ok: true,
+        provider: 'mux',
         uploadId,
         uploadStatus: upload.status || 'waiting',
         assetStatus: 'waiting',
