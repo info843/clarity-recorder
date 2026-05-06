@@ -1,10 +1,5 @@
 // /api/mux-upload.js
 // CLARITY Interview – Mux Direct Upload Endpoint
-// Zweck:
-// 1. Erzeugt eine echte Mux Direct Upload URL
-// 2. Gibt echte uploadId + uploadUrl an den Browser zurück
-// 3. Kein Datei-Upload über Vercel mehr
-// 4. Aktiviert Static Renditions für Download/Audio-Ausgabe
 
 function pickOrigin(req) {
   const allowed = (process.env.MUX_CORS_ORIGIN ||
@@ -72,15 +67,8 @@ async function createMuxDirectUpload({ uid, companyId, sessionId, mode }) {
     cors_origin: corsOrigin,
     new_asset_settings: {
       playback_policy: ['public'],
-
-      // Für sichere Zuordnung im Mux Dashboard und bei späteren Webhooks.
       passthrough: buildPassthrough({ uid, companyId, sessionId, mode }),
-
-      // Für Kosten/Verarbeitung zuerst basic. Später bei Bedarf auf plus/premium.
       video_quality: 'basic',
-
-      // Wichtig für Dashboard-Download:
-      // highest = MP4, audio-only = M4A, falls möglich.
       static_renditions: [
         { resolution: 'highest' },
         { resolution: 'audio-only' }
