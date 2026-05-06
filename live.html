@@ -489,6 +489,43 @@ function onRealtimeEvent(ev){
     }
   }
 }
+         /* ===== Audio unlock ===== */
+async function ensureAudioUnlocked(){
+  if (audioUnlocked) return true;
+
+  try{
+    await $remoteA.play();
+    audioUnlocked = true;
+    postToParent('clarity.live.audio_ready', {});
+    return true;
+  }catch(_){}
+
+  postToParent('clarity.live.audio_wait', {});
+  setStatus('warn','Bitte einmal hier klicken, um Audio zu aktivieren.');
+
+  return new Promise((resolve)=>{
+    const unlock = async ()=>{
+      try{
+        if (audioCtx && audioCtx.state !== 'running'){
+          try{ await audioCtx.resume(); }catch(_){}
+        }
+
+        await $remoteA.play();
+
+        audioUnlocked = true;
+        postToParent('clarity.live.audio_ready', {});
+
+        window.removeEventListener('pointerdown', unlock);
+        window.removeEventListener('keydown', unlock);
+
+        resolve(true);
+      }catch(_){}
+    };
+
+    window.addEventListener('pointerdown', unlock, { once:true });
+    window.addEventListener('keydown', unlock, { once:true });
+  });
+}
 
   /* ===== Instructions / Knowledge ===== */
   function buildSystemInstructions(ctx){
