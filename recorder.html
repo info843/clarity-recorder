@@ -6,42 +6,56 @@
 <title>Clarity Interview Recorder</title>
 <style>
   html,body{height:100%}
-  /* ✨ komplett transparent */
   body{
     margin:0;
     background:transparent;
     color:#eaf2ff;
     font:15px/1.4 ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial;
-    display:grid; place-items:center;
+    display:grid;
+    place-items:center;
   }
 
-  .wrap{display:grid; gap:14px; justify-items:center}
-  .controls{display:flex; gap:10px; align-items:center}
+  .wrap{display:grid;gap:14px;justify-items:center;width:min(920px,96vw)}
+  .controls{display:flex;gap:10px;align-items:center}
 
-  /* runde, schwebende Buttons */
   .btn{
-    --bg1:#1f9cf0; --bg2:#0ea5e9;
-    appearance:none; outline:none; border:0; cursor:pointer;
-    color:#fff; font-weight:700; letter-spacing:.2px;
-    padding:12px 18px; border-radius:999px;
+    --bg1:#1f9cf0;--bg2:#0ea5e9;
+    appearance:none;outline:none;border:0;cursor:pointer;
+    color:#fff;font-weight:700;letter-spacing:.2px;
+    padding:12px 18px;border-radius:999px;
     background:linear-gradient(180deg,var(--bg1),var(--bg2));
     box-shadow:0 10px 24px rgba(2,12,24,.35);
-    transition:.2s transform ease, .2s filter ease, .2s opacity ease;
+    transition:.2s transform ease,.2s filter ease,.2s opacity ease;
   }
-  .btn:hover{transform:translateY(-1px); filter:brightness(1.03)}
+  .btn:hover{transform:translateY(-1px);filter:brightness(1.03)}
   .btn:active{transform:translateY(0)}
-  .btn[disabled]{opacity:.5; cursor:not-allowed}
+  .btn[disabled]{opacity:.5;cursor:not-allowed}
 
   .btn--red{--bg1:#ef4444;--bg2:#dc2626}
   .btn--green{--bg1:#22c55e;--bg2:#16a34a}
 
-  .status{font-size:13px; opacity:.9}
-  .ok{color:#22c55e} .warn{color:#f59e0b} .err{color:#ef4444}
+  .status{font-size:13px;opacity:.95;text-align:center}
+  .ok{color:#22c55e}.warn{color:#f59e0b}.err{color:#ef4444}
 
-  /* Medien schweben ohne Rahmen */
-  .view{width:min(720px,92vw); display:grid; gap:8px; justify-items:center}
-  video{width:100%; height:auto; background:#000; border-radius:14px}
+  .view{width:min(900px,94vw);display:grid;gap:8px;justify-items:center}
+  video{width:100%;height:auto;max-height:420px;background:#000;border-radius:14px}
   audio{width:100%}
+
+  #debug{
+    width:min(900px,94vw);
+    max-height:260px;
+    overflow:auto;
+    white-space:pre-wrap;
+    font-size:11px;
+    opacity:.82;
+    color:#94a3b8;
+    text-align:left;
+    background:rgba(2,6,23,.72);
+    border:1px solid rgba(148,163,184,.25);
+    border-radius:12px;
+    padding:10px;
+    box-sizing:border-box;
+  }
 </style>
 </head>
 <body>
@@ -51,7 +65,10 @@
       <button class="btn btn--red" id="btnStop" disabled>Stop</button>
       <button class="btn btn--green" id="btnUpload" disabled>Upload</button>
     </div>
+
     <div class="status" id="status">Ready.</div>
+    <pre id="debug"></pre>
+
     <div class="view">
       <video id="video" playsinline muted></video>
       <audio id="audio" controls style="display:none"></audio>
@@ -60,164 +77,489 @@
 
 <script>
 (function(){
-  const $=(s)=>document.querySelector(s);
-  const btnStart=$('#btnStart'), btnStop=$('#btnStop'), btnUpload=$('#btnUpload');
-  const statusEl=$('#status'); const v=$('#video'), a=$('#audio');
+  "use strict";
 
-  // API base bleibt wie bei dir
-  const params   = new URLSearchParams(location.search);
-  const API_BASE = params.get('api') || window.location.origin;
+  const $ = (s) => document.querySelector(s);
 
-  let mode='video', uid='', companyId='', lang='de', maxSeconds=0;
-  let stream=null, rec=null, chunks=[], startedAt=0, lastBlob=null, timer=null, lastUploadId=null;
+  const btnStart = $('#btnStart');
+  const btnStop = $('#btnStop');
+  const btnUpload = $('#btnUpload');
+  const statusEl = $('#status');
+  const debugEl = $('#debug');
+  const v = $('#video');
+  const a = $('#audio');
 
-  function say(m, cls){ statusEl.textContent=m; statusEl.className='status '+(cls||''); }
-  function post(type, payload){ parent?.postMessage?.(Object.assign({type},payload||{}),'*'); }
-  function stopTimer(){ if(timer){clearInterval(timer); timer=null;} }
-  const fmt=(ms)=>{ const s=Math.floor(ms/1000); const mm=String(Math.floor(s/60)).padStart(2,'0'); const ss=String(s%60).padStart(2,'0'); return `${mm}:${ss}`; };
+  const params = new URLSearchParams(location.search);
+
+  const API_BASE = (params.get('api') || window.location.origin).replace(/\/+$/, '');
+
+  let mode = (params.get('mode') || 'video').toLowerCase();
+  let uid = (params.get('uid') || params.get('linkId') || '').trim();
+  let companyId = (params.get('companyId') || '').trim();
+  let lang = (params.get('lang') || 'de').toLowerCase();
+  let maxSeconds = Number(params.get('maxSeconds') || 0);
+
+  let stream = null;
+  let rec = null;
+  let chunks = [];
+  let startedAt = 0;
+  let lastBlob = null;
+  let timer = null;
+  let lastUploadId = null;
+  let lastPutStatus = null;
+
+  function say(message, cls){
+    statusEl.textContent = message;
+    statusEl.className = 'status ' + (cls || '');
+  }
+
+  function post(type, payload){
+    try {
+      parent?.postMessage?.(Object.assign({ type }, payload || {}), '*');
+    } catch (_) {}
+  }
+
+  function dbg(label, data){
+    const safe = data || {};
+    const line = `[${new Date().toISOString()}] ${label}: ${JSON.stringify(safe, null, 2)}`;
+    console.log('[RECORDER]', label, safe);
+    if (debugEl) {
+      debugEl.textContent = line + "\n\n" + debugEl.textContent;
+    }
+  }
+
+  function stopTimer(){
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+  }
+
+  const fmt = (ms) => {
+    const s = Math.floor(ms / 1000);
+    const mm = String(Math.floor(s / 60)).padStart(2, '0');
+    const ss = String(s % 60).padStart(2, '0');
+    return `${mm}:${ss}`;
+  };
+
+  function pickMimeType(){
+    if (mode === 'audio') {
+      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) return 'audio/webm;codecs=opus';
+      return 'audio/webm';
+    }
+
+    if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) return 'video/webm;codecs=vp9,opus';
+    if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) return 'video/webm;codecs=vp8,opus';
+    return 'video/webm';
+  }
 
   async function startRecording(){
-    try{
-      say('Zugriff auf Kamera/Mikro …');
-      const cons = (mode==='video')
-        ? { audio:{echoCancellation:true,noiseSuppression:true}, video:{width:{ideal:1280},height:{ideal:720}} }
-        : { audio:{echoCancellation:true,noiseSuppression:true}, video:false };
-      stream = await navigator.mediaDevices.getUserMedia(cons);
+    try {
+      dbg('init:params', { API_BASE, uid, companyId, mode, lang, maxSeconds });
 
-      if(mode==='video'){ v.srcObject=stream; v.muted=true; v.style.display='block'; a.style.display='none'; await v.play().catch(()=>{}); }
-      else{ v.style.display='none'; a.style.display='block'; }
+      if (!uid) throw new Error('UID fehlt. URL braucht ?uid=...');
+      if (!companyId) throw new Error('companyId fehlt. URL braucht ?companyId=...');
 
-      chunks=[]; lastBlob=null;
-      const mrType = (mode==='video')
-        ? (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')?'video/webm;codecs=vp9,opus':(MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')?'video/webm;codecs=vp8,opus':'video/webm'))
-        : (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus':'audio/webm');
-      rec = new MediaRecorder(stream,{ mimeType: mrType });
-      rec.ondataavailable=(e)=>{ if(e.data?.size>0) chunks.push(e.data); };
-      rec.onstop=handleStop;
+      say('Zugriff auf Kamera/Mikro …', 'warn');
 
-      rec.start(250); startedAt=Date.now();
-      say('Recording …','ok'); post('recorder:started'); btnStart.disabled=true; btnStop.disabled=false; btnUpload.disabled=true;
+      const constraints = (mode === 'audio')
+        ? { audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true }, video:false }
+        : {
+            audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true },
+            video:{ width:{ ideal:1280 }, height:{ ideal:720 } }
+          };
+
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+      if (mode === 'video') {
+        v.srcObject = stream;
+        v.muted = true;
+        v.controls = false;
+        v.style.display = 'block';
+        a.style.display = 'none';
+        await v.play().catch(() => {});
+      } else {
+        v.style.display = 'none';
+        a.style.display = 'block';
+      }
+
+      chunks = [];
+      lastBlob = null;
+      lastUploadId = null;
+      lastPutStatus = null;
+
+      const mimeType = pickMimeType();
+      dbg('recording:mime', { mimeType });
+
+      rec = new MediaRecorder(stream, { mimeType });
+
+      rec.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          chunks.push(event.data);
+        }
+      };
+
+      rec.onstop = handleStop;
+
+      rec.start(250);
+      startedAt = Date.now();
+
+      say('Recording …', 'ok');
+      post('recorder:started', { uid, companyId, mode, lang });
+
+      btnStart.disabled = true;
+      btnStop.disabled = false;
+      btnUpload.disabled = true;
 
       stopTimer();
-      if(maxSeconds>0){
-        timer=setInterval(()=>{ say(`Recording … ${fmt(Date.now()-startedAt)} / ${maxSeconds}s`,'ok'); if(((Date.now()-startedAt)/1000)>=maxSeconds) stopRecording(); },250);
-      }else{
-        timer=setInterval(()=>{ say(`Recording … ${fmt(Date.now()-startedAt)}`,'ok'); },250);
+
+      if (maxSeconds > 0) {
+        timer = setInterval(() => {
+          const elapsedSec = (Date.now() - startedAt) / 1000;
+          say(`Recording … ${fmt(Date.now() - startedAt)} / ${maxSeconds}s`, 'ok');
+          if (elapsedSec >= maxSeconds) stopRecording();
+        }, 250);
+      } else {
+        timer = setInterval(() => {
+          say(`Recording … ${fmt(Date.now() - startedAt)}`, 'ok');
+        }, 250);
       }
-    }catch(err){
-      say('Zugriff verweigert oder Gerät nicht verfügbar.','err');
-      post('recorder:error',{message:String(err?.message||err)});
+    } catch (err) {
+      const msg = String(err?.message || err);
+      say(msg, 'err');
+      dbg('recording:error', { error: msg });
+      post('recorder:error', { message: msg });
     }
   }
 
   async function stopRecording(){
-    try{
+    try {
       stopTimer();
-      if(rec && rec.state!=='inactive'){ rec.stop(); }
-      if(stream){ stream.getTracks().forEach(t=>t.stop()); }
-      btnStop.disabled=true;
-      say('Verarbeite …','warn');
-    }catch(err){
-      say('Stop fehlgeschlagen.','err');
-      post('recorder:error',{message:String(err?.message||err)});
+
+      if (rec && rec.state !== 'inactive') {
+        rec.stop();
+      }
+
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+      }
+
+      btnStop.disabled = true;
+      say('Verarbeite …', 'warn');
+    } catch (err) {
+      const msg = String(err?.message || err);
+      say('Stop fehlgeschlagen.', 'err');
+      dbg('stop:error', { error: msg });
+      post('recorder:error', { message: msg });
     }
   }
 
   async function handleStop(){
-    try{
-      lastBlob = new Blob(chunks,{ type:(mode==='video'?'video/webm':'audio/webm') });
-      const url = URL.createObjectURL(lastBlob);
-      if(mode==='video'){ v.srcObject=null; v.src=url; v.muted=false; v.controls=true; v.play().catch(()=>{}); }
-      else { a.src=url; a.load(); }
-      say('Bereit zum Upload.','ok'); btnUpload.disabled=false;
+    try {
+      lastBlob = new Blob(chunks, {
+        type: mode === 'audio' ? 'audio/webm' : 'video/webm'
+      });
 
-      // Auto-Upload (wie gehabt)
+      dbg('recording:blob', {
+        type: lastBlob.type,
+        size: lastBlob.size,
+        durationMs: Date.now() - startedAt
+      });
+
+      const localUrl = URL.createObjectURL(lastBlob);
+
+      if (mode === 'video') {
+        v.srcObject = null;
+        v.src = localUrl;
+        v.muted = false;
+        v.controls = true;
+        v.play().catch(() => {});
+      } else {
+        a.src = localUrl;
+        a.load();
+      }
+
+      say('Bereit zum Upload …', 'ok');
+      btnUpload.disabled = false;
+
       await doMuxUpload();
-    }catch(err){
-      say('Verarbeitung fehlgeschlagen.','err');
-      post('recorder:error',{message:String(err?.message||err)});
+    } catch (err) {
+      const msg = String(err?.message || err);
+      say('Verarbeitung fehlgeschlagen.', 'err');
+      dbg('handleStop:error', { error: msg });
+      post('recorder:error', { message: msg });
     }
   }
 
   async function readJsonSafe(res){
-    const ct=res.headers.get('content-type')||'';
-    if(ct.includes('json')) return res.json();
-    const t=await res.text(); throw new Error(`Non-JSON (${res.status}): ${t.slice(0,200)}…`);
+    const contentType = res.headers.get('content-type') || '';
+
+    if (contentType.includes('json')) {
+      return res.json();
+    }
+
+    const text = await res.text();
+    throw new Error(`Non-JSON (${res.status}): ${text.slice(0, 300)}…`);
   }
 
-  async function pollAsset(uploadId, maxMs=90_000){
-    const start=Date.now();
-    while(Date.now()-start<maxMs){
-      await new Promise(r=>setTimeout(r,2500));
-      const r=await fetch(`${API_BASE}/api/mux-asset?uploadId=${encodeURIComponent(uploadId)}`);
-      const j=await readJsonSafe(r);
-      if (j?.assetStatus==='ready' && (j?.playbackId || j?.mp4Url)) return j;
+  async function pollAsset(uploadId, maxMs = 120000){
+    const start = Date.now();
+    let last = null;
+
+    while (Date.now() - start < maxMs) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+
+      const response = await fetch(`${API_BASE}/api/mux-asset?uploadId=${encodeURIComponent(uploadId)}`);
+      const json = await readJsonSafe(response);
+      last = json;
+
+      dbg('mux-asset:poll', {
+        uploadId,
+        assetStatus: json?.assetStatus || '',
+        assetId: json?.assetId || '',
+        playbackId: json?.playbackId || '',
+        playbackUrlPresent: !!json?.playbackUrl,
+        downloadUrlPresent: !!json?.downloadUrl,
+        audioOnlyUrlPresent: !!json?.audioOnlyUrl,
+        staticRenditionsStatus: json?.staticRenditionsStatus || '',
+        error: json?.error || ''
+      });
+
+      if (json?.assetStatus === 'ready' && json?.playbackId) {
+        return json;
+      }
+
+      if (json?.assetStatus === 'errored') {
+        return json;
+      }
     }
-    return null;
+
+    return last;
   }
 
   async function doMuxUpload(){
-    if(!lastBlob){ say('Nichts zum Hochladen.','warn'); return; }
-    try{
-      say('Upload vorbereiten …'); btnUpload.disabled=true;
+    if (!lastBlob) {
+      say('Nichts zum Hochladen.', 'warn');
+      return;
+    }
 
-      const r1=await fetch(`${API_BASE}/api/mux-upload`,{
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({ uid, companyId, mode })
+    try {
+      say('Upload vorbereiten …', 'warn');
+      btnUpload.disabled = true;
+
+      dbg('mux-upload:start', {
+        API_BASE,
+        uid,
+        companyId,
+        sessionId: uid,
+        mode,
+        size: lastBlob.size,
+        type: lastBlob.type
       });
-      const j1=await readJsonSafe(r1);
-      if(!j1?.uploadUrl) throw new Error(j1?.error || 'No uploadUrl');
-      lastUploadId=j1.uploadId||null;
 
-      say('Lade zu Mux hoch …','warn');
-      const up=await fetch(j1.uploadUrl,{ method:'PUT', body:lastBlob });
-      if(!up.ok) throw new Error(`Upload failed (${up.status})`);
+      if (!uid) throw new Error('UID fehlt im Recorder. Prüfe URL-Parameter ?uid=...');
+      if (!companyId) throw new Error('companyId fehlt im Recorder. Prüfe URL-Parameter ?companyId=...');
 
-      say('Upload fertig – prüfe Asset …','warn');
-      let j2=(await (await fetch(`${API_BASE}/api/mux-asset?uploadId=${encodeURIComponent(lastUploadId)}`)).json());
-      if(!(j2?.assetStatus==='ready' && (j2?.playbackId || j2?.mp4Url))){
-        const p=await pollAsset(lastUploadId); if(p) j2=p;
+      const createResponse = await fetch(`${API_BASE}/api/mux-upload`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid,
+          companyId,
+          sessionId: uid,
+          mode
+        })
+      });
+
+      const createJson = await readJsonSafe(createResponse);
+
+      dbg('mux-upload:response', {
+        ok: createJson?.ok,
+        error: createJson?.error || '',
+        message: createJson?.message || '',
+        uploadId: createJson?.uploadId || '',
+        uploadUrlPresent: !!createJson?.uploadUrl,
+        uploadUrlPrefix: createJson?.uploadUrl ? String(createJson.uploadUrl).slice(0, 48) : ''
+      });
+
+      if (!createJson?.ok) {
+        throw new Error(createJson?.message || createJson?.error || 'Mux upload create failed');
       }
 
-      if (j2?.mp4Url) { if(mode==='video'){ v.src=j2.mp4Url; v.controls=true; } else { a.src=j2.mp4Url; a.load(); } }
+      if (!createJson?.uploadUrl) {
+        throw new Error(createJson?.error || 'No uploadUrl');
+      }
 
-      say('✅ Upload erfolgreich.','ok');
-      post('recorder:finished', {
-        durationMs: Date.now()-startedAt,
-        size: lastBlob.size,
-        uploadUrl: j2?.mp4Url || '',
-        mux: { uploadId: lastUploadId, playbackId: j2?.playbackId || null, mp4Url: j2?.mp4Url || null }
+      lastUploadId = createJson.uploadId || null;
+
+      say('Lade zu Mux hoch …', 'warn');
+
+      dbg('mux-put:start', {
+        uploadId: lastUploadId,
+        blobType: lastBlob.type,
+        blobSize: lastBlob.size
       });
-    }catch(err){
+
+      const putResponse = await fetch(createJson.uploadUrl, {
+        method: 'PUT',
+        body: lastBlob,
+        headers: {
+          'Content-Type': lastBlob.type || (mode === 'audio' ? 'audio/webm' : 'video/webm')
+        }
+      });
+
+      lastPutStatus = putResponse.status;
+
+      dbg('mux-put:done', {
+        putStatus: putResponse.status,
+        ok: putResponse.ok
+      });
+
+      if (!putResponse.ok) {
+        const putText = await putResponse.text().catch(() => '');
+        throw new Error(`Upload failed (${putResponse.status}) ${putText.slice(0, 300)}`);
+      }
+
+      say('Upload fertig – prüfe Mux Asset …', 'warn');
+
+      const firstStatusResponse = await fetch(`${API_BASE}/api/mux-asset?uploadId=${encodeURIComponent(lastUploadId)}`);
+      let assetJson = await readJsonSafe(firstStatusResponse);
+
+      dbg('mux-asset:first', {
+        uploadId: lastUploadId,
+        assetStatus: assetJson?.assetStatus || '',
+        assetId: assetJson?.assetId || '',
+        playbackId: assetJson?.playbackId || '',
+        playbackUrlPresent: !!assetJson?.playbackUrl,
+        downloadUrlPresent: !!assetJson?.downloadUrl,
+        audioOnlyUrlPresent: !!assetJson?.audioOnlyUrl,
+        staticRenditionsStatus: assetJson?.staticRenditionsStatus || '',
+        error: assetJson?.error || ''
+      });
+
+      if (!(assetJson?.assetStatus === 'ready' && assetJson?.playbackId)) {
+        const polled = await pollAsset(lastUploadId);
+        if (polled) assetJson = polled;
+      }
+
+      dbg('mux-asset:final', {
+        uploadId: lastUploadId,
+        assetStatus: assetJson?.assetStatus || '',
+        assetId: assetJson?.assetId || '',
+        playbackId: assetJson?.playbackId || '',
+        playbackUrlPresent: !!assetJson?.playbackUrl,
+        downloadUrlPresent: !!assetJson?.downloadUrl,
+        audioOnlyUrlPresent: !!assetJson?.audioOnlyUrl,
+        staticRenditionsStatus: assetJson?.staticRenditionsStatus || '',
+        error: assetJson?.error || ''
+      });
+
+      const playableUrl = assetJson?.downloadUrl || assetJson?.playbackUrl || '';
+
+      if (playableUrl) {
+        if (mode === 'video') {
+          v.src = playableUrl;
+          v.controls = true;
+        } else {
+          a.src = assetJson?.audioOnlyUrl || playableUrl;
+          a.load();
+        }
+      }
+
+      const finalPayload = {
+        durationMs: Date.now() - startedAt,
+        size: lastBlob.size,
+        uploadUrl: assetJson?.downloadUrl || assetJson?.playbackUrl || '',
+        mux: {
+          provider: 'mux',
+          uploadId: lastUploadId || '',
+          putStatus: lastPutStatus,
+          assetStatus: assetJson?.assetStatus || '',
+          assetId: assetJson?.assetId || '',
+          playbackId: assetJson?.playbackId || '',
+          playbackUrl: assetJson?.playbackUrl || '',
+          downloadUrl: assetJson?.downloadUrl || '',
+          audioOnlyUrl: assetJson?.audioOnlyUrl || '',
+          staticRenditionsStatus: assetJson?.staticRenditionsStatus || '',
+          error: assetJson?.error || ''
+        }
+      };
+
+      dbg('recorder:finished', finalPayload);
+
+      if (assetJson?.assetStatus === 'ready') {
+        say('✅ Upload erfolgreich. Mux Asset bereit.', 'ok');
+      } else if (assetJson?.assetStatus === 'processing' || assetJson?.assetStatus === 'waiting') {
+        say('Upload erfolgreich. Mux verarbeitet noch.', 'warn');
+      } else if (assetJson?.assetStatus === 'errored') {
+        say('Upload angekommen, aber Mux-Verarbeitung fehlerhaft.', 'err');
+      } else {
+        say('Upload abgeschlossen. Status unklar.', 'warn');
+      }
+
+      post('recorder:finished', finalPayload);
+    } catch (err) {
+      const msg = String(err?.message || err);
+
+      say('Upload-Fehler – Bericht kann trotzdem gebaut werden.', 'err');
+
+      const errorPayload = {
+        durationMs: Date.now() - startedAt,
+        size: lastBlob?.size || 0,
+        uploadUrl: '',
+        mux: {
+          provider: 'mux',
+          uploadId: lastUploadId || '',
+          putStatus: lastPutStatus,
+          assetStatus: '',
+          assetId: '',
+          playbackId: '',
+          playbackUrl: '',
+          downloadUrl: '',
+          audioOnlyUrl: '',
+          staticRenditionsStatus: '',
+          error: msg
+        }
+      };
+
+      dbg('mux-upload:error', errorPayload);
       console.error('Mux upload error:', err);
-      say('Upload-Fehler – Bericht kann trotzdem gebaut werden.','err');
-      post('recorder:finished',{
-        durationMs: Date.now()-startedAt,
-        size: lastBlob.size,
-        uploadUrl:'',
-        mux:{ uploadId: lastUploadId || null }
-      });
+
+      post('recorder:finished', errorPayload);
     }
   }
 
-  // UI
-  btnStart.addEventListener('click', ()=> startRecording());
-  btnStop.addEventListener('click',  stopRecording);
+  btnStart.addEventListener('click', startRecording);
+  btnStop.addEventListener('click', stopRecording);
   btnUpload.addEventListener('click', doMuxUpload);
 
-  // iFrame-Steuerung wie gehabt
-  window.addEventListener('message', (ev)=>{
-    const d=ev?.data||{};
-    if (d.type==='ping') ev.source?.postMessage?.({ type:'recorder:ready' }, '*');
-    if (d.type==='start') {
-      mode=(d.mode||'video').toLowerCase();
-      uid=d.uid||''; lang=d.lang||'de'; companyId=d.companyId||''; maxSeconds=Number(d.maxSeconds||0);
+  // Parent/Wix Steuerung bleibt erhalten.
+  window.addEventListener('message', (event) => {
+    const data = event?.data || {};
+    const type = data.type || '';
+
+    if (type === 'start') {
+      mode = (data.mode || mode || 'video').toLowerCase();
+      uid = String(data.uid || uid || '').trim();
+      companyId = String(data.companyId || companyId || '').trim();
+      lang = String(data.lang || lang || 'de').toLowerCase();
+      maxSeconds = Number(data.maxSeconds || maxSeconds || 0);
+
+      dbg('parent:start', { uid, companyId, mode, lang, maxSeconds });
       startRecording();
     }
-    if (d.type==='stop') stopRecording();
+
+    if (type === 'stop') {
+      stopRecording();
+    }
+
+    if (type === 'export') {
+      doMuxUpload();
+    }
   });
 
-  setTimeout(()=> parent?.postMessage?.({ type:'recorder:ready' }, '*'), 40);
+  dbg('page:ready', { API_BASE, uid, companyId, mode, lang, maxSeconds });
+  post('recorder:ready', { uid, companyId, mode, lang });
 })();
 </script>
 </body>
