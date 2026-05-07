@@ -793,130 +793,165 @@
   }
 
   function primeStrictLanguage(reportLang) {
-    const spoken = String(CTX.lang || LANG || reportLang || 'de').toLowerCase().startsWith('de') ? 'de' : 'en';
-    const sys = buildSystemInstructions(CTX);
+  const spoken = String(CTX.lang || LANG || 'de').toLowerCase().startsWith('de') ? 'de' : 'en';
+  const sys = buildSystemInstructions({
+    ...CTX,
+    lang: CTX.lang || LANG || 'de',
+    reportLang: CTX.reportLang || reportLang || 'de'
+  });
 
-    const tools = [{
-      type: 'function',
-      name: 'end_interview',
-      description: 'Ends the interview. Use ONLY when interview is truly finished and you have said goodbye.',
-      parameters: {
-        type: 'object',
-        properties: {
-          reason: { type: 'string' }
-        },
-        required: []
-      }
-    }];
+  const tools = [{
+    type: 'function',
+    name: 'end_interview',
+    description: 'Ends the interview. Use ONLY when interview is truly finished and you have said goodbye.',
+    parameters: {
+      type: 'object',
+      properties: {
+        reason: { type: 'string' }
+      },
+      required: []
+    }
+  }];
 
-    dcSend({
-      type: 'session.update',
-      session: {
-        voice: VOICE,
-        instructions: sys,
-        spoken_language: spoken,
-        input_audio_format: 'pcm16',
-        output_audio_format: 'pcm16',
-        input_audio_transcription: {
-          model: 'whisper-1',
-          language: spoken
-        },
-        turn_detection: {
-          type: 'none'
-        },
-        modalities: ['audio'],
-        tools,
-        tool_choice: 'auto'
-      }
-    });
+  dcSend({
+    type: 'session.update',
+    session: {
+      voice: VOICE,
+      instructions: sys,
+      spoken_language: spoken,
+      input_audio_format: 'pcm16',
+      output_audio_format: 'pcm16',
+      input_audio_transcription: {
+        model: 'whisper-1',
+        language: spoken
+      },
+      turn_detection: {
+        type: 'none'
+      },
+      modalities: ['audio'],
+      tools,
+      tool_choice: 'auto'
+    }
+  });
 
-    log('[PRIME] session.update (lang+tools+none VAD)', spoken);
+  log('[PRIME] session.update (lang+tools+none VAD)', {
+    spoken,
+    interviewLang: CTX.lang || LANG || 'de',
+    reportLang: CTX.reportLang || reportLang || 'de'
+  });
 
-    dcSend({ type: 'conversation.clear' });
-    log('[CONV] cleared');
+  dcSend({ type: 'conversation.clear' });
+  log('[CONV] cleared');
 
+  dcSend({
+    type: 'conversation.item.create',
+    item: {
+      type: 'message',
+      role: 'system',
+      content: [{ type: 'input_text', text: sys }]
+    }
+  });
+
+  log('[CONV] system item created (instructions)');
+
+  pushCompanyKnowledge();
+  log('[CONV] company knowledge injected (kbText/jobAd, if provided)');
+}
+
+
+function speakPrepThenWelcome() {
+  const isDE = isInterviewDe(CTX);
+
+  const prep = isDE
+    ? 'Einen Moment bitte, ich bereite das Interview vor.'
+    : 'One moment please, I am preparing the interview.';
+
+  const welcome = isDE
+    ? `Willkommen! Dieses Interview wird im Auftrag von ${CTX.companyName || 'Clarity'} geführt. Sind Sie bereit zu starten? Bitte sagen Sie „bereit“.`
+    : `Welcome! This interview is conducted on behalf of ${CTX.companyName || 'Clarity'}. Are you ready to begin? Please say “ready”.`;
+
+  dcSend({ type: 'response.cancel' });
+  log('[CONV] responses cancelled');
+
+  // Robuster als response.instructions allein:
+  dcSend({
+    type: 'conversation.item.create',
+    item: {
+      type: 'message',
+      role: 'user',
+      content: [{
+        type: 'input_text',
+        text: isDE
+          ? `Bitte sage jetzt hörbar und freundlich: ${prep}`
+          : `Please say this out loud in a friendly way: ${prep}`
+      }]
+    }
+  });
+
+  dcSend({
+    type: 'response.create',
+    response: {
+      conversation: 'default',
+      modalities: ['audio']
+    }
+  });
+
+  log('[WELCOME] prep response requested');
+
+  setTimeout(() => {
     dcSend({
       type: 'conversation.item.create',
       item: {
         type: 'message',
-        role: 'system',
-        content: [{ type: 'input_text', text: sys }]
+        role: 'user',
+        content: [{
+          type: 'input_text',
+          text: isDE
+            ? `Bitte sage jetzt hörbar und freundlich: ${welcome}`
+            : `Please say this out loud in a friendly way: ${welcome}`
+        }]
       }
     });
-
-    log('[CONV] system item created (instructions)');
-
-    pushCompanyKnowledge();
-    log('[CONV] company knowledge injected (kbText/jobAd, if provided)');
-  }
-
-  function speakPrepThenWelcome() {
-    const isDE = isInterviewDe(CTX);
-
-    const prep = isDE
-      ? 'Einen Moment bitte, ich bereite das Interview vor …'
-      : 'One moment please, I am preparing the interview …';
-
-    const welcome = isDE
-      ? `Willkommen! Dieses Interview wird im Auftrag von ${CTX.companyName || 'Clarity'} geführt. Sind Sie bereit zu starten? Bitte sagen Sie „bereit“.`
-      : `Welcome! This interview is conducted on behalf of ${CTX.companyName || 'Clarity'}. Are you ready to begin? Please say “ready”.`;
-
-    dcSend({ type: 'response.cancel' });
-    log('[CONV] responses cancelled');
 
     dcSend({
       type: 'response.create',
       response: {
         conversation: 'default',
-        modalities: ['audio'],
-        instructions: prep
+        modalities: ['audio']
       }
     });
 
-    log('[WELCOME] prep spoken');
+    log('[WELCOME] welcome response requested');
 
     setTimeout(() => {
       dcSend({
-        type: 'response.create',
-        response: {
-          conversation: 'default',
-          modalities: ['audio'],
-          instructions: welcome
+        type: 'session.update',
+        session: {
+          turn_detection: {
+            type: 'server_vad',
+            threshold: 0.9,
+            prefix_padding_ms: 200,
+            silence_duration_ms: 700
+          }
         }
       });
 
-      log('[WELCOME] welcome spoken');
+      log('[PRIME] VAD enabled');
+
+      enableMicUplink();
+
+      WELCOMED = true;
+      maybeStartRecorder();
+
+      postToParent('clarity.live.prepared', {});
 
       setTimeout(() => {
-        dcSend({
-          type: 'session.update',
-          session: {
-            turn_detection: {
-              type: 'server_vad',
-              threshold: 0.9,
-              prefix_padding_ms: 200,
-              silence_duration_ms: 700
-            }
-          }
-        });
-
-        log('[PRIME] VAD enabled');
-
-        enableMicUplink();
-
-        WELCOMED = true;
-        maybeStartRecorder();
-
-        postToParent('clarity.live.prepared', {});
-
-        setTimeout(() => {
-          firstQuestionFallbackElapsed = true;
-          maybeAskFirstQuestion();
-        }, 8000);
-      }, 250);
-    }, 900);
-  }
-
+        firstQuestionFallbackElapsed = true;
+        maybeAskFirstQuestion();
+      }, 8000);
+    }, 600);
+  }, 1400);
+}
   function buildInterviewPlan(ctx){
     const isDE = isInterviewDe(ctx);
 
@@ -961,42 +996,41 @@
   }
 
   function askFirstQuestion(){
-    if (FIRST_Q_SENT || !WELCOMED) return;
-    if (!READY_DETECTED && !firstQuestionFallbackElapsed) return;
+  if (FIRST_Q_SENT || !WELCOMED) return;
+  if (!READY_DETECTED && !firstQuestionFallbackElapsed) return;
 
-    FIRST_Q_SENT = true;
+  FIRST_Q_SENT = true;
 
-    const plan = buildInterviewPlan(CTX);
-    const isDE = isInterviewDe(CTX);
-    const first = plan[0] || (isDE ? 'Bitte stellen Sie sich kurz vor.' : 'Please introduce yourself.');
+  const plan = buildInterviewPlan(CTX);
+  const isDE = isInterviewDe(CTX);
+  const first = plan[0] || (isDE ? 'Bitte stellen Sie sich kurz vor.' : 'Please introduce yourself.');
 
-    dcSend({
-      type: 'conversation.item.create',
-      item: {
-        type: 'message',
-        role: 'system',
-        content: [{
-          type: 'input_text',
-          text: isDE
-            ? 'Starte jetzt die erste Interviewfrage. Kurze, präzise Fragen. Danach warten.'
-            : 'Start the first interview question now. Keep it short and precise. Then wait.'
-        }]
-      }
-    });
+  dcSend({
+    type: 'conversation.item.create',
+    item: {
+      type: 'message',
+      role: 'user',
+      content: [{
+        type: 'input_text',
+        text: isDE
+          ? `Bitte stelle jetzt hörbar genau diese erste Interviewfrage und warte danach auf die Antwort des Kandidaten: ${first}`
+          : `Please now ask exactly this first interview question out loud and then wait for the candidate's answer: ${first}`
+      }]
+    }
+  });
 
-    log('[CONV] system item created');
+  log('[QUESTION] first item created', first);
 
-    dcSend({
-      type: 'response.create',
-      response: {
-        conversation: 'default',
-        modalities: ['audio'],
-        instructions: isDE ? `Erste Frage: ${first}` : `First question: ${first}`
-      }
-    });
+  dcSend({
+    type: 'response.create',
+    response: {
+      conversation: 'default',
+      modalities: ['audio']
+    }
+  });
 
-    log('[QUESTION] first sent');
-  }
+  log('[QUESTION] first response requested');
+}
 
   function maybeAskFirstQuestion(){
     if (READY_DETECTED || firstQuestionFallbackElapsed) {
