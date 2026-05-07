@@ -178,6 +178,12 @@
   let recordingStartedAt = 0;
   let lastPutStatus = null;
 
+/* ===== Candidate-only Audio Fallback Recorder ===== */
+let candidateRecorder = null;
+let candidateChunks = [];
+let candidateRecordingStartedAt = 0;
+let candidateAudioReady = false; 
+
   /* ===== Transcript State ===== */
   let transcriptSeq = 0;
   const transcriptSeen = new Set();
@@ -1477,6 +1483,141 @@ function speakPrepThenWelcome() {
     }
   }
 
+         function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    try {
+      const reader = new FileReader();
+
+      reader.onloadend = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(new Error('blob_to_dataurl_failed'));
+
+      reader.readAsDataURL(blob);
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+/* ===== Candidate-only Audio Recorder ===== */
+function prepareCandidateAudioRecording() {
+  candidateAudioReady = false;
+  candidateChunks = [];
+
+  try {
+    const audioTracks = localStream?.getAudioTracks?.() || [];
+
+    if (!audioTracks.length) {
+      log('[CANDIDATE-AUDIO] no local audio track available');
+      return;
+    }
+
+    const candidateStream = new MediaStream();
+    audioTracks.forEach(track => candidateStream.addTrack(track));
+
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      ? 'audio/webm;codecs=opus'
+      : 'audio/webm';
+
+    candidateRecorder = new MediaRecorder(candidateStream, {
+      mimeType,
+      audioBitsPerSecond: 96_000
+    });
+
+    candidateRecorder.onstart = () => {
+      candidateRecordingStartedAt = Date.now();
+      candidateAudioReady = true;
+
+      log('[CANDIDATE-AUDIO] started', {
+        mimeType
+      });
+    };
+
+    candidateRecorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) {
+        candidateChunks.push(e.data);
+      }
+    };
+
+    candidateRecorder.onstop = async () => {
+      try {
+        const durationMs = candidateRecordingStartedAt
+          ? Date.now() - candidateRecordingStartedAt
+          : 0;
+
+        const blob = new Blob(candidateChunks, {
+          type: mimeType
+        });
+
+        log('[CANDIDATE-AUDIO] stopped', {
+          size: blob.size,
+          durationMs,
+          chunks: candidateChunks.length,
+          mimeType
+        });
+
+        if (!blob.size) {
+          postToParent('candidate-audio:error', {
+            message: 'candidate_audio_empty',
+            durationMs,
+            size: 0
+          });
+          return;
+        }
+
+        const dataUrl = await blobToDataUrl(blob);
+
+        postToParent('candidate-audio:finished', {
+          durationMs,
+          size: blob.size,
+          mimeType,
+          dataUrl
+        });
+
+        log('[CANDIDATE-AUDIO] sent to parent', {
+          durationMs,
+          size: blob.size,
+          dataUrlPresent: !!dataUrl
+        });
+      } catch (e) {
+        const msg = errMsg(e);
+
+        log('[CANDIDATE-AUDIO] export failed', msg);
+
+        postToParent('candidate-audio:error', {
+          message: msg
+        });
+      } finally {
+        candidateChunks = [];
+      }
+    };
+
+    log('[CANDIDATE-AUDIO] ready');
+  } catch (e) {
+    log('[CANDIDATE-AUDIO] prepare failed', errMsg(e));
+  }
+}
+
+function startCandidateAudioRecording() {
+  try {
+    if (candidateRecorder && candidateRecorder.state === 'inactive') {
+      candidateRecorder.start(1000);
+    }
+  } catch (e) {
+    log('[CANDIDATE-AUDIO] start failed', errMsg(e));
+  }
+}
+
+function stopCandidateAudioRecording() {
+  try {
+    if (candidateRecorder && candidateRecorder.state !== 'inactive') {
+      candidateRecorder.stop();
+    }
+  } catch (e) {
+    log('[CANDIDATE-AUDIO] stop failed', errMsg(e));
+  }
+}
+         
+
   /* ===== Recorder ===== */
   function prepareRecording(){
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1566,29 +1707,37 @@ function speakPrepThenWelcome() {
     $recState.textContent = 'ready';
   }
 
-  function startRecorder(){
-    try {
-      if (mediaRecorder && mediaRecorder.state === 'inactive') {
-        mediaRecorder.start(1000);
-      }
-    } catch(e) {
-      log('[REC] start error', errMsg(e));
-    }
-  }
-
-  function stopRecording(){
-    try {
-      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
-      }
-    } catch(e) {
-      log('[REC] stop error', errMsg(e));
+function startRecorder(){
+  try{
+    if (mediaRecorder && mediaRecorder.state === 'inactive') {
+      mediaRecorder.start(1000);
     }
 
-    try {
-      mixedStream?.getTracks()?.forEach(t => t.stop());
-    } catch(_) {}
+    startCandidateAudioRecording();
+  }catch(e){
+    log('[REC] start error', errMsg(e));
   }
+}
+
+function stopRecording(){
+  try{
+    stopCandidateAudioRecording();
+  }catch(e){
+    log('[CANDIDATE-AUDIO] stop wrapper failed', errMsg(e));
+  }
+
+  try{
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+    }
+  }catch(e){
+    log('[REC] stop error', errMsg(e));
+  }
+
+  try{
+    mixedStream?.getTracks()?.forEach(t=>t.stop());
+  }catch(_){}
+}
 
   function maybeStartRecorder(){
     if (!WELCOMED) return;
@@ -1625,10 +1774,11 @@ function speakPrepThenWelcome() {
         allowNoInvite: true
       });
 
-      await connectRealtime(secret);
-      prepareRecording();
+await connectRealtime(secret);
+prepareRecording();
+prepareCandidateAudioRecording();
 
-      CTX = { ...CTX, ...ctx };
+CTX = { ...CTX, ...ctx };
 
       await remoteTrackReady;
       await ensureAudioUnlocked();
