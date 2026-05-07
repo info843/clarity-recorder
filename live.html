@@ -1566,12 +1566,12 @@ function prepareCandidateAudioRecording() {
 
         const dataUrl = await blobToDataUrl(blob);
 
-        postToParent('candidate-audio:finished', {
-          durationMs,
-          size: blob.size,
-          mimeType,
-          dataUrl
-        });
+postToParent('candidate-audio:finished', {
+  durationMs,
+  size: blob.size,
+  mimeType: blob.type || 'audio/webm',
+  dataUrl
+});
 
         log('[CANDIDATE-AUDIO] sent to parent', {
           durationMs,
