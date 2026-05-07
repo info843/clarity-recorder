@@ -1553,11 +1553,19 @@ function speakPrepThenWelcome() {
       maybeStartRecorder();
     }
 
-    else if (type === 'clarity.live.prime'){
-      const rep = (msg.data && msg.data.reportLang) || CTX.reportLang || LANG;
-      primeStrictLanguage(rep);
-      speakPrepThenWelcome();
-    }
+else if (type === 'clarity.live.prime'){
+  CTX = { ...CTX, ...(msg.data || {}) };
+
+  const rep = CTX.reportLang || LANG;
+  log('[PRIME] received from parent', {
+    lang: CTX.lang || LANG,
+    reportLang: rep,
+    companyName: CTX.companyName || ''
+  });
+
+  primeStrictLanguage(rep);
+  speakPrepThenWelcome();
+}
 
     else if (type === 'clarity.live.start'){
       startInterview();
