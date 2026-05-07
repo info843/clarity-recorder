@@ -462,175 +462,304 @@
     return texts.join('\n').trim();
   }
 
-  function onRealtimeEvent(ev){
-    let data = ev && ev.data;
+function onRealtimeEvent(ev){
+  let data = ev && ev.data;
 
-    try {
-      if (typeof data === 'string') data = JSON.parse(data);
-    } catch(_) {}
+  try {
+    if (typeof data === 'string') data = JSON.parse(data);
+  } catch(_) {}
 
-    if (!data) return;
+  if (!data) return;
 
-    const eventType = data.type || '';
+  const eventType = data.type || '';
 
-    /* Temporäres Debugging für Phase 4.1c */
-    if (
-      eventType.includes('transcript') ||
-      eventType.includes('transcription') ||
-      eventType.includes('audio') ||
-      eventType.includes('speech') ||
-      eventType.includes('conversation.item')
-    ) {
-      log('[RT-EVENT-TYPE]', eventType);
-    }
+  // Sehr wichtig für Diagnose: jedes relevante Realtime-Event sichtbar machen
+  if (
+    eventType.includes('transcript') ||
+    eventType.includes('transcription') ||
+    eventType.includes('input_audio') ||
+    eventType === 'conversation.item.created' ||
+    eventType === 'conversation.item.done' ||
+    eventType === 'response.output_item.done' ||
+    eventType === 'response.output_item.added' ||
+    eventType === 'response.function_call_arguments.done'
+  ) {
+    log('[RT-EVENT-TYPE]', eventType);
 
-    if (
-      eventType.includes('transcript') ||
-      eventType.includes('transcription') ||
-      eventType.includes('input_audio') ||
-      eventType === 'conversation.item.created' ||
-      eventType === 'conversation.item.done'
-    ) {
-      log('[RT-EVENT-CHECK]', {
-        type: eventType,
-        hasTranscript: !!data?.transcript,
-        hasText: !!data?.text,
-        itemRole: data?.item?.role || '',
-        itemType: data?.item?.type || '',
-        itemContentTypes: Array.isArray(data?.item?.content)
-          ? data.item.content.map(p => p?.type || '').join(',')
-          : ''
+    log('[RT-EVENT-CHECK]', {
+      type: eventType,
+      hasTranscript: !!data?.transcript,
+      hasText: !!data?.text,
+      hasDelta: !!data?.delta,
+      hasError: !!data?.error,
+      itemId: data?.item_id || data?.itemId || data?.item?.id || '',
+      itemRole: data?.item?.role || '',
+      itemType: data?.item?.type || '',
+      itemStatus: data?.item?.status || '',
+      itemContentTypes: Array.isArray(data?.item?.content)
+        ? data.item.content.map(p => p?.type || '').join(',')
+        : '',
+      error: data?.error?.message || data?.error || ''
+    });
+  }
+
+  if (eventType === 'response.state' && data.state){
+    postToParent('clarity.avatar', { state:data.state });
+  }
+
+  /*
+   * USER TRANSCRIPT — Hauptweg 1:
+   * Offizielle neue Event-Namen.
+   */
+  if (
+    eventType === 'conversation.item.input_audio_transcription.completed' ||
+    eventType === 'input_audio_transcription.completed'
+  ) {
+    const txtRaw = String(
+      data?.transcript ||
+      data?.transcription?.text ||
+      data?.text ||
+      ''
+    ).trim();
+
+    const txt = txtRaw.toLowerCase();
+
+    log('[USER-TRANSCRIPT-COMPLETED]', {
+      eventType,
+      itemId: data?.item_id || data?.itemId || '',
+      hasText: !!txtRaw,
+      textPreview: txtRaw.slice(0, 160)
+    });
+
+    if (txtRaw) {
+      userUtterances += 1;
+
+      emitTranscript('user', txtRaw, {
+        itemId: data.item_id || data.itemId || '',
+        responseId: data.response_id || data.responseId || '',
+        sourceEvent: eventType,
+        final: true
       });
     }
 
-    if (eventType === 'response.state' && data.state){
-      postToParent('clarity.avatar', { state: data.state });
+    if (/(^|\b)(bereit|ready|oui|yes|ja)(\b|$)/.test(txt)){
+      READY_DETECTED = true;
+      maybeAskFirstQuestion();
     }
 
-    /**
-     * USER TRANSCRIPT
-     * Offizielles Event bei aktivierter input_audio_transcription.
+    return;
+  }
+
+  /*
+   * USER TRANSCRIPT — Hauptweg 2:
+   * Delta/Segment-Events sichtbar machen.
+   * Wichtig: Wir speichern delta/segment nicht sofort als finale Antwort,
+   * aber loggen sie, damit wir sehen, ob OpenAI überhaupt Zwischenstücke liefert.
+   */
+  if (
+    eventType === 'conversation.item.input_audio_transcription.delta' ||
+    eventType === 'input_audio_transcription.delta' ||
+    eventType === 'conversation.item.input_audio_transcription.segment' ||
+    eventType === 'input_audio_transcription.segment'
+  ) {
+    const piece = String(
+      data?.delta ||
+      data?.transcript ||
+      data?.text ||
+      data?.segment?.text ||
+      ''
+    ).trim();
+
+    log('[USER-TRANSCRIPT-PIECE]', {
+      eventType,
+      itemId: data?.item_id || data?.itemId || '',
+      hasPiece: !!piece,
+      piecePreview: piece.slice(0, 160)
+    });
+
+    return;
+  }
+
+  /*
+   * USER TRANSCRIPT — Failed-Events:
+   * Wenn diese erscheinen, wissen wir sicher: Live-User-Transcript geht nicht zuverlässig.
+   */
+  if (
+    eventType === 'conversation.item.input_audio_transcription.failed' ||
+    eventType === 'input_audio_transcription.failed'
+  ) {
+    log('[USER-TRANSCRIPT-FAILED]', {
+      eventType,
+      itemId: data?.item_id || data?.itemId || '',
+      error: data?.error?.message || data?.error || 'unknown'
+    });
+
+    postToParent('rt.transcript.partial', {
+      speaker: 'system',
+      text: '[user_transcription_failed]',
+      sourceEvent: eventType,
+      final: true,
+      ts: new Date().toISOString()
+    });
+
+    return;
+  }
+
+  /*
+   * USER AUDIO ITEM:
+   * Das ist noch kein Text. Nur Diagnose.
+   * Wenn wir viele input_audio items sehen, aber kein completed/failed,
+   * bauen wir danach Candidate-only-Audio-Fallback.
+   */
+  if (
+    (eventType === 'conversation.item.created' || eventType === 'conversation.item.done') &&
+    data.item &&
+    data.item.role === 'user'
+  ) {
+    const it = data.item;
+    const contentTypes = Array.isArray(it.content)
+      ? it.content.map(p => p?.type || '').join(',')
+      : '';
+
+    const hasInputAudio = contentTypes.includes('input_audio');
+    const hasInputText = contentTypes.includes('input_text');
+
+    if (hasInputAudio) {
+      log('[TRANSCRIPT] user input_audio item observed, waiting for transcription.completed', {
+        itemId: it.id || data.item_id || '',
+        contentTypes
+      });
+      return;
+    }
+
+    /*
+     * Interne User-input_text-Prompts ignorieren.
+     * Diese entstehen durch unsere eigenen conversation.item.create-Aufrufe.
      */
-    if (
-      eventType === 'conversation.item.input_audio_transcription.completed' ||
-      eventType === 'input_audio_transcription.completed'
-    ) {
-      const txtRaw = String(
-        data?.transcript ||
-        data?.transcription?.text ||
-        data?.text ||
-        ''
-      ).trim();
+    if (hasInputText) {
+      log('[TRANSCRIPT] skipped internal user input_text', {
+        itemId: it.id || data.item_id || '',
+        contentTypes
+      });
+      return;
+    }
 
-      const txt = txtRaw.toLowerCase();
+    // Fallback: Falls doch echter User-Text in content liegt
+    const texts = [];
 
-      if (txtRaw) {
-        userUtterances += 1;
+    if (Array.isArray(it.content)) {
+      for (const part of it.content) {
+        const t =
+          part?.transcript ||
+          part?.text ||
+          part?.input_text ||
+          part?.audio?.transcript ||
+          '';
 
-        emitTranscript('user', txtRaw, {
-          itemId: data.item_id || data.itemId || '',
-          responseId: data.response_id || data.responseId || '',
-          sourceEvent: eventType,
-          final: true
-        });
+        if (String(t || '').trim()) texts.push(String(t).trim());
       }
+    }
 
-      if (/(^|\b)(bereit|ready)(\b|$)/.test(txt)){
+    const userText = texts.join('\n').trim();
+
+    if (userText) {
+      userUtterances += 1;
+
+      emitTranscript('user', userText, {
+        itemId: it.id || data.item_id || '',
+        responseId: data.response_id || '',
+        sourceEvent: eventType,
+        final: true
+      });
+
+      const low = userText.toLowerCase();
+      if (/(^|\b)(bereit|ready|oui|yes|ja)(\b|$)/.test(low)) {
         READY_DETECTED = true;
         maybeAskFirstQuestion();
       }
-
-      return;
     }
 
-    /**
-     * USER TRANSCRIPT FALLBACK:
-     * Manche Realtime-Events liefern User-Inhalte über conversation.item.created/done.
-     */
-   if (
-  (eventType === 'conversation.item.created' || eventType === 'conversation.item.done') &&
-  data.item &&
-  data.item.role === 'user'
-) {
-  const it = data.item;
-
-  const contentTypes = Array.isArray(it.content)
-    ? it.content.map(p => p?.type || '').join(',')
-    : '';
-
-  // Wichtig:
-  // input_text bei role:user sind in unserem Setup interne Steuerprompts an das Modell.
-  // Diese dürfen NICHT als Kandidatenantwort ins Transkript.
-  if (contentTypes.includes('input_text')) {
-    log('[TRANSCRIPT] skipped internal user input_text', {
-      itemId: it.id || data.item_id || '',
-      contentTypes
-    });
     return;
   }
 
-  // input_audio zeigt: Kandidat hat gesprochen.
-  // Aber ohne Transkripttext speichern wir noch keinen Turn.
-  // Der eigentliche Text muss über conversation.item.input_audio_transcription.completed kommen.
-  if (contentTypes.includes('input_audio')) {
-    log('[TRANSCRIPT] user input_audio item observed, waiting for transcription.completed', {
-      itemId: it.id || data.item_id || '',
-      contentTypes
-    });
+  /*
+   * ASSISTANT TRANSCRIPT — gesprochene Antwort final.
+   */
+  if (eventType === 'response.audio_transcript.done') {
+    const txt = String(data?.transcript || '').trim();
+
+    if (txt) {
+      emitTranscript('assistant', txt, {
+        itemId: data.item_id || data.itemId || '',
+        responseId: data.response_id || data.responseId || '',
+        sourceEvent: eventType,
+        final: true
+      });
+    }
+
     return;
   }
 
-  return;
-}
+  /*
+   * ASSISTANT TRANSCRIPT — Delta sichtbar machen, aber nicht speichern.
+   */
+  if (eventType === 'response.audio_transcript.delta') {
+    const piece = String(data?.delta || '').trim();
 
-    /**
-     * ASSISTANT TRANSCRIPT — Audio output transcript.
-     */
-    if (eventType === 'response.audio_transcript.done') {
-      const txt = String(data?.transcript || '').trim();
+    if (piece) {
+      log('[ASSISTANT-TRANSCRIPT-DELTA]', {
+        itemId: data.item_id || data.itemId || '',
+        responseId: data.response_id || data.responseId || '',
+        piecePreview: piece.slice(0, 80)
+      });
+    }
 
-      if (txt) {
-        emitTranscript('assistant', txt, {
-          itemId: data.item_id || data.itemId || '',
-          responseId: data.response_id || data.responseId || '',
-          sourceEvent: eventType,
-          final: true
-        });
-      }
+    return;
+  }
 
+  /*
+   * ASSISTANT TRANSCRIPT — Text-Fallback.
+   */
+  if (eventType === 'response.text.done') {
+    const txt = String(data?.text || '').trim();
+
+    if (txt) {
+      emitTranscript('assistant', txt, {
+        itemId: data.item_id || data.itemId || '',
+        responseId: data.response_id || data.responseId || '',
+        sourceEvent: eventType,
+        final: true
+      });
+    }
+
+    return;
+  }
+
+  /*
+   * ASSISTANT TRANSCRIPT — output_item.done Fallback.
+   */
+  if (eventType === 'response.output_item.done' && data.item) {
+    const it = data.item;
+
+    if (it.type === 'function_call' && it.name === 'end_interview'){
+      requestEndNow(eventType);
       return;
     }
 
-    /**
-     * ASSISTANT TRANSCRIPT — Text output fallback.
-     */
-    if (eventType === 'response.text.done') {
-      const txt = String(data?.text || '').trim();
+    if (Array.isArray(it.content)) {
+      const texts = [];
 
-      if (txt) {
-        emitTranscript('assistant', txt, {
-          itemId: data.item_id || data.itemId || '',
-          responseId: data.response_id || data.responseId || '',
-          sourceEvent: eventType,
-          final: true
-        });
+      for (const part of it.content) {
+        const t =
+          part?.transcript ||
+          part?.text ||
+          part?.audio?.transcript ||
+          '';
+
+        if (String(t || '').trim()) texts.push(String(t).trim());
       }
 
-      return;
-    }
-
-    /**
-     * ASSISTANT TRANSCRIPT — output_item.done fallback.
-     */
-    if (eventType === 'response.output_item.done' && data.item) {
-      const it = data.item;
-
-      if (it.type === 'function_call' && it.name === 'end_interview'){
-        requestEndNow(eventType);
-        return;
-      }
-
-      const finalText = extractTextFromContentParts(it.content);
+      const finalText = texts.join('\n').trim();
 
       if (finalText) {
         emitTranscript('assistant', finalText, {
@@ -640,44 +769,45 @@
           final: true
         });
       }
+    }
 
+    return;
+  }
+
+  /*
+   * end_interview tool detection
+   */
+  if (eventType === 'conversation.item.created' && data.item){
+    const it = data.item;
+
+    if (it.type === 'function_call' && it.name === 'end_interview'){
+      requestEndNow('conversation.item.created');
       return;
     }
+  }
 
-    /**
-     * end_interview tool detection
-     */
-    if (eventType === 'conversation.item.created' && data.item){
-      const it = data.item;
+  if (eventType === 'response.output_item.added' && data.item){
+    const it = data.item;
 
-      if (it.type === 'function_call' && it.name === 'end_interview'){
-        requestEndNow('conversation.item.created');
-        return;
-      }
-    }
-
-    if (eventType === 'response.output_item.added' && data.item){
-      const it = data.item;
-
-      if (it.type === 'function_call' && it.name === 'end_interview'){
-        requestEndNow(eventType);
-        return;
-      }
-    }
-
-    if (eventType === 'response.function_call_arguments.done'){
-      const name =
-        data.name ||
-        data.tool_name ||
-        data.function_name ||
-        data?.function_call?.name;
-
-      if (name === 'end_interview'){
-        requestEndNow('function_call_arguments.done');
-        return;
-      }
+    if (it.type === 'function_call' && it.name === 'end_interview'){
+      requestEndNow(eventType);
+      return;
     }
   }
+
+  if (eventType === 'response.function_call_arguments.done'){
+    const name =
+      data.name ||
+      data.tool_name ||
+      data.function_name ||
+      data?.function_call?.name;
+
+    if (name === 'end_interview'){
+      requestEndNow('function_call_arguments.done');
+      return;
+    }
+  }
+}
 
   /* ===== Audio unlock ===== */
   async function ensureAudioUnlocked(){
