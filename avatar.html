@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Clarity Avatar v1 Final Business</title>
+<title>Clarity Business Host Avatar v1</title>
 <style>
   html, body {
     margin: 0;
@@ -18,8 +18,8 @@
     inset: 0;
     width: 100%;
     height: 100%;
-    background: transparent;
     overflow: hidden;
+    background: transparent;
   }
 
   canvas {
@@ -39,75 +39,90 @@
 (() => {
   "use strict";
 
-  // ============================================================
-  // CLARITY AVATAR v1 FINAL BUSINESS
-  // ------------------------------------------------------------
-  // State API (backward compatible):
-  // - { type:'avatar:set', state:'idle|listening|thinking|speaking' }
-  // - { type:'avatar:level', value:0..1 }
-  // - { type:'ping' } -> responds with { type:'avatar:ready' }
-  //
-  // Query params:
-  // - ?nobreath=1   => disable idle breathing
-  // - ?scale=1.0    => avatar size multiplier
-  // ============================================================
+  /*
+    CLARITY BUSINESS HOST AVATAR v1
+    --------------------------------
+    Backward-compatible Message API:
+
+    parent -> iframe:
+    { type: "avatar:set", state: "idle" }
+    { type: "avatar:set", state: "listening" }
+    { type: "avatar:set", state: "thinking" }
+    { type: "avatar:set", state: "speaking" }
+    { type: "avatar:level", value: 0.0 - 1.0 }
+    { type: "ping" }
+
+    iframe -> parent:
+    { type: "avatar:ready" }
+
+    Optional URL params:
+    ?nobreath=1
+    ?scale=1.0
+  */
 
   const root = document.getElementById("root");
   const canvas = document.getElementById("avatarCanvas");
   const ctx = canvas.getContext("2d", { alpha: true });
 
-  const dprMax = 2;
-  const baseDesign = 800;
-  const nobreath = new URLSearchParams(location.search).get("nobreath") === "1";
-  const scaleParam = Math.max(0.5, Math.min(1.5, parseFloat(new URLSearchParams(location.search).get("scale") || "1") || 1));
+  const params = new URLSearchParams(location.search);
+  const nobreath = params.get("nobreath") === "1";
+  const scaleParam = Math.max(0.55, Math.min(1.45, parseFloat(params.get("scale") || "1") || 1));
 
   let width = 1;
   let height = 1;
   let dpr = 1;
-  let centerX = 0;
-  let centerY = 0;
+  let cx = 0;
+  let cy = 0;
   let unit = 100;
 
   const STYLES = {
     idle: {
-      baseGlow: 0.55,
-      haloStrength: 0.52,
+      glow: 0.45,
       pulseSpeed: 1.0,
-      eyeIntensity: 0.88,
-      orbitSpeed: 0.18,
-      floatAmount: 0.75,
-      speechPower: 0.0,
-      seriousness: 1.0
+      eye: 0.78,
+      blinkSpeed: 1.0,
+      headNod: 0.45,
+      lean: 0.0,
+      mouth: 0.0,
+      listening: 0.0,
+      thinking: 0.0,
+      suitGlow: 0.22
     },
     listening: {
-      baseGlow: 0.72,
-      haloStrength: 0.78,
-      pulseSpeed: 1.32,
-      eyeIntensity: 0.98,
-      orbitSpeed: 0.28,
-      floatAmount: 0.9,
-      speechPower: 0.0,
-      seriousness: 1.02
+      glow: 0.62,
+      pulseSpeed: 1.28,
+      eye: 0.95,
+      blinkSpeed: 0.88,
+      headNod: 0.75,
+      lean: 0.028,
+      mouth: 0.0,
+      listening: 1.0,
+      thinking: 0.0,
+      suitGlow: 0.34
     },
     thinking: {
-      baseGlow: 0.63,
-      haloStrength: 0.62,
-      pulseSpeed: 0.82,
-      eyeIntensity: 0.80,
-      orbitSpeed: 0.13,
-      floatAmount: 0.65,
-      speechPower: 0.0,
-      seriousness: 1.04
+      glow: 0.52,
+      pulseSpeed: 0.72,
+      eye: 0.70,
+      blinkSpeed: 0.75,
+      headNod: 0.25,
+      lean: -0.012,
+      mouth: 0.0,
+      listening: 0.0,
+      thinking: 1.0,
+      suitGlow: 0.25
     },
     speaking: {
-      baseGlow: 0.96,
-      haloStrength: 1.0,
-      pulseSpeed: 1.78,
-      eyeIntensity: 1.02,
-      orbitSpeed: 0.36,
-      floatAmount: 1.0,
-      speechPower: 1.0,
-      seriousness: 1.0
+      glow: 0.85,
+      pulseSpeed: 1.72,
+      eye: 0.9,
+      blinkSpeed: 1.1,
+      headNod: 0.95,
+      lean: 0.012,
+      mouth: 1.0,
+      listening: 0.0,
+      thinking: 0.0,
+      suitGlow: 0.48
     }
   };
 
@@ -118,11 +133,11 @@
   let lastMsg = performance.now();
   let lastStateChange = performance.now();
 
-  const particles = Array.from({ length: 22 }, (_, i) => ({
-    angle: (Math.PI * 2 * i) / 22 + Math.random() * 0.35,
-    radius: 1.16 + Math.random() * 0.28,
-    speed: 0.08 + Math.random() * 0.18,
-    size: 0.009 + Math.random() * 0.012,
+  const particles = Array.from({ length: 18 }, (_, i) => ({
+    angle: (Math.PI * 2 * i) / 18 + Math.random() * 0.25,
+    radius: 1.04 + Math.random() * 0.25,
+    speed: 0.06 + Math.random() * 0.13,
+    size: 0.006 + Math.random() * 0.009,
     phase: Math.random() * Math.PI * 2,
     tint: Math.random() > 0.55 ? "cyan" : "magenta"
   }));
@@ -135,8 +150,8 @@
     return a + (b - a) * t;
   }
 
-  function easeInOut(t) {
-    return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+  function easeOutCubic(t) {
+    return 1 - Math.pow(1 - t, 3);
   }
 
   function setState(state = "idle") {
@@ -145,16 +160,17 @@
     lastStateChange = performance.now();
   }
 
-  function setLevel(v = 0) {
-    targetLevel = clamp(Number(v) || 0, 0, 1);
+  function setLevel(value = 0) {
+    targetLevel = clamp(Number(value) || 0, 0, 1);
     lastMsg = performance.now();
   }
 
-  function updateMetrics() {
+  function resize() {
     const rect = root.getBoundingClientRect();
+
     width = Math.max(1, rect.width || window.innerWidth || 1);
     height = Math.max(1, rect.height || window.innerHeight || 1);
-    dpr = Math.min(window.devicePixelRatio || 1, dprMax);
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
 
     canvas.width = Math.round(width * dpr);
     canvas.height = Math.round(height * dpr);
@@ -163,27 +179,56 @@
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    centerX = width / 2;
-    centerY = height / 2;
-    unit = Math.min(width, height) * 0.225 * scaleParam;
+    cx = width / 2;
+    cy = height / 2;
+
+    unit = Math.min(width, height) * 0.235 * scaleParam;
   }
 
-  function createLinearGradient(x1, y1, x2, y2, stops) {
+  function linearGradient(x1, y1, x2, y2, stops) {
     const g = ctx.createLinearGradient(x1, y1, x2, y2);
-    for (const stop of stops) g.addColorStop(stop[0], stop[1]);
+    for (const s of stops) g.addColorStop(s[0], s[1]);
     return g;
   }
 
-  function createRadialGradient(x1, y1, r1, x2, y2, r2, stops) {
+  function radialGradient(x1, y1, r1, x2, y2, r2, stops) {
     const g = ctx.createRadialGradient(x1, y1, r1, x2, y2, r2);
-    for (const stop of stops) g.addColorStop(stop[0], stop[1]);
+    for (const s of stops) g.addColorStop(s[0], s[1]);
     return g;
   }
 
-  function drawEllipse(x, y, rx, ry, rotation, fillStyle, alpha = 1, shadowColor = null, shadowBlur = 0) {
+  function fillPath(drawFn, fillStyle, alpha = 1, shadowColor = null, shadowBlur = 0) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    if (shadowColor) ctx.shadowColor = shadowColor;
+    if (shadowBlur) ctx.shadowBlur = shadowBlur;
+    ctx.beginPath();
+    drawFn();
+    ctx.fillStyle = fillStyle;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function strokePath(drawFn, options) {
+    ctx.save();
+    ctx.globalAlpha = options.alpha == null ? 1 : options.alpha;
+    ctx.lineWidth = options.lineWidth || 2;
+    ctx.lineCap = options.lineCap || "round";
+    ctx.lineJoin = options.lineJoin || "round";
+    ctx.strokeStyle = options.strokeStyle || "#fff";
+    if (options.shadowColor) ctx.shadowColor = options.shadowColor;
+    if (options.shadowBlur) ctx.shadowBlur = options.shadowBlur;
+    if (options.dash) ctx.setLineDash(options.dash);
+    ctx.beginPath();
+    drawFn();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function ellipse(x, y, rx, ry, rot, fillStyle, alpha = 1, shadowColor = null, shadowBlur = 0) {
     ctx.save();
     ctx.translate(x, y);
-    ctx.rotate(rotation || 0);
+    ctx.rotate(rot || 0);
     ctx.globalAlpha = alpha;
     if (shadowColor) ctx.shadowColor = shadowColor;
     if (shadowBlur) ctx.shadowBlur = shadowBlur;
@@ -194,552 +239,704 @@
     ctx.restore();
   }
 
-  function fillPath(drawFn, options) {
+  function roundRect(x, y, w, h, r, fillStyle, alpha = 1, shadowColor = null, shadowBlur = 0) {
     ctx.save();
-    ctx.globalAlpha = options.alpha == null ? 1 : options.alpha;
-    if (options.shadowColor) ctx.shadowColor = options.shadowColor;
-    if (options.shadowBlur) ctx.shadowBlur = options.shadowBlur;
+    ctx.globalAlpha = alpha;
+    if (shadowColor) ctx.shadowColor = shadowColor;
+    if (shadowBlur) ctx.shadowBlur = shadowBlur;
     ctx.beginPath();
-    drawFn();
-    ctx.fillStyle = options.fillStyle;
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+    ctx.fillStyle = fillStyle;
     ctx.fill();
     ctx.restore();
   }
 
-  function strokePath(drawFn, options) {
-    ctx.save();
-    ctx.globalAlpha = options.alpha == null ? 1 : options.alpha;
-    ctx.beginPath();
-    drawFn();
-    ctx.lineCap = options.lineCap || "round";
-    ctx.lineJoin = options.lineJoin || "round";
-    ctx.lineWidth = options.lineWidth || 10;
-    ctx.strokeStyle = options.strokeStyle || "#fff";
-    if (options.shadowColor) ctx.shadowColor = options.shadowColor;
-    if (options.shadowBlur) ctx.shadowBlur = options.shadowBlur;
-    if (options.dash) ctx.setLineDash(options.dash);
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  function drawAura(s, t, level, pulse) {
-    const haloPower = activeStyle.haloStrength;
-    const scale = 1 + pulse * 0.02 + level * 0.07;
-
-    const outerAura = createRadialGradient(
-      0, 0, s * 0.28,
-      0, 0, s * 1.62 * scale,
+  function drawBackgroundAura(s, t, level, pulse) {
+    const aura = radialGradient(
+      0, -s * 0.25, s * 0.15,
+      0, 0, s * 1.55,
       [
-        [0.00, "rgba(85,225,255,0.18)"],
-        [0.30, "rgba(45,140,255,0.12)"],
-        [0.60, "rgba(130,60,255,0.10)"],
-        [0.82, "rgba(255,30,165,0.09)"],
-        [1.00, "rgba(255,255,255,0.00)"]
+        [0.00, "rgba(70,220,255,0.16)"],
+        [0.35, "rgba(40,130,255,0.10)"],
+        [0.65, "rgba(110,60,255,0.07)"],
+        [0.86, "rgba(255,40,170,0.06)"],
+        [1.00, "rgba(0,0,0,0.00)"]
       ]
     );
-    drawEllipse(0, 0, s * 1.60 * scale, s * 1.56 * scale, 0, outerAura, 0.78 * haloPower);
+
+    ellipse(0, -s * 0.08, s * (1.35 + level * 0.08), s * (1.45 + level * 0.1), 0, aura, 0.95);
 
     strokePath(() => {
-      ctx.arc(0, 0, s * (1.17 + level * 0.03 + pulse * 0.015), -Math.PI * 0.95, Math.PI * 0.77);
+      ctx.arc(0, -s * 0.05, s * (1.12 + level * 0.03), -Math.PI * 0.88, Math.PI * 0.68);
     }, {
-      lineWidth: s * 0.016,
-      strokeStyle: "rgba(130,255,255,0.44)",
-      alpha: 0.55 * haloPower,
-      shadowColor: "rgba(70,245,255,0.72)",
-      shadowBlur: s * 0.08
+      lineWidth: s * 0.012,
+      strokeStyle: "rgba(120,255,255,0.34)",
+      alpha: 0.35 + activeStyle.glow * 0.25,
+      shadowColor: "rgba(70,245,255,0.55)",
+      shadowBlur: s * 0.07
     });
 
     strokePath(() => {
-      ctx.arc(0, 0, s * (1.31 + level * 0.035), -Math.PI * 0.06, Math.PI * 1.60);
+      ctx.arc(0, -s * 0.05, s * (1.24 + pulse * 0.015), -Math.PI * 0.05, Math.PI * 1.45);
     }, {
-      lineWidth: s * 0.013,
-      strokeStyle: "rgba(255,105,220,0.34)",
-      alpha: 0.5 * haloPower,
-      shadowColor: "rgba(255,70,190,0.65)",
-      shadowBlur: s * 0.075
-    });
-
-    strokePath(() => {
-      ctx.arc(0, 0, s * (1.235 + pulse * 0.008), -Math.PI * 0.70 + t * 0.11, Math.PI * 1.05 + t * 0.11);
-    }, {
-      lineWidth: s * 0.0075,
-      strokeStyle: "rgba(210,245,255,0.26)",
-      alpha: 0.55 * haloPower,
-      dash: [s * 0.024, s * 0.028],
-      shadowColor: "rgba(155,240,255,0.32)",
-      shadowBlur: s * 0.035
+      lineWidth: s * 0.01,
+      strokeStyle: "rgba(255,105,220,0.25)",
+      alpha: 0.30 + activeStyle.glow * 0.22,
+      shadowColor: "rgba(255,70,190,0.45)",
+      shadowBlur: s * 0.06
     });
   }
 
   function drawParticles(s, t, level) {
-    const speedBase = activeStyle.orbitSpeed;
-
     for (const p of particles) {
-      const a = p.angle + t * (speedBase + p.speed + level * 0.28);
-      const r = s * (p.radius + Math.sin(t * 1.1 + p.phase) * 0.02 + level * 0.03);
+      const a = p.angle + t * (p.speed + level * 0.18);
+      const r = s * (p.radius + Math.sin(t * 1.1 + p.phase) * 0.015);
       const x = Math.cos(a) * r;
-      const y = Math.sin(a) * r * 0.94;
-      const size = s * (p.size + level * 0.005);
+      const y = -s * 0.08 + Math.sin(a) * r * 0.92;
+      const size = s * (p.size + level * 0.003);
 
       const color = p.tint === "cyan"
-        ? "rgba(150,255,255,0.82)"
-        : "rgba(255,120,225,0.72)";
+        ? "rgba(140,255,255,0.72)"
+        : "rgba(255,120,225,0.62)";
 
-      drawEllipse(
-        x, y, size, size, 0,
-        color,
-        0.75,
-        color,
-        s * 0.042
-      );
+      ellipse(x, y, size, size, 0, color, 0.65, color, s * 0.035);
     }
   }
 
-  function drawBackShadow(s) {
-    drawEllipse(
-      -s * 0.04,
-      s * 0.13,
-      s * 0.95,
-      s * 0.80,
-      0.06,
-      "rgba(0,0,0,0.08)",
-      1,
-      "rgba(0,0,0,0.14)",
-      s * 0.08
-    );
-  }
+  function drawSuit(s, t, level, pulse) {
+    const suitGrad = linearGradient(-s * 0.75, s * 0.18, s * 0.75, s * 1.42, [
+      [0.00, "#16213b"],
+      [0.32, "#0d1730"],
+      [0.72, "#071023"],
+      [1.00, "#050a16"]
+    ]);
 
-  function drawCore(s, t, level) {
-    const faceGrad = createRadialGradient(
-      -s * 0.20, -s * 0.25, s * 0.02,
-      0, 0, s * 0.88,
-      [
-        [0.00, "#1b428d"],
-        [0.18, "#10357d"],
-        [0.45, "#072960"],
-        [0.75, "#041b45"],
-        [1.00, "#021230"]
-      ]
-    );
+    const leftSuitGrad = linearGradient(-s * 0.95, s * 0.25, 0, s * 1.35, [
+      [0.00, "#1b2a49"],
+      [0.55, "#0d1730"],
+      [1.00, "#050b17"]
+    ]);
 
-    drawEllipse(
-      0, s * 0.01,
-      s * 0.78,
-      s * 0.74,
-      -0.05,
-      faceGrad,
-      0.98,
-      "rgba(40,175,255,0.15)",
-      s * 0.055
-    );
+    const rightSuitGrad = linearGradient(0, s * 0.25, s * 0.95, s * 1.35, [
+      [0.00, "#121d3a"],
+      [0.52, "#0b1430"],
+      [1.00, "#050b17"]
+    ]);
 
+    const glowPower = activeStyle.suitGlow + level * 0.24;
+
+    // shoulders/back torso
+    fillPath(() => {
+      ctx.moveTo(-s * 0.92, s * 1.28);
+      ctx.bezierCurveTo(-s * 0.82, s * 0.66, -s * 0.58, s * 0.30, -s * 0.24, s * 0.20);
+      ctx.lineTo(s * 0.24, s * 0.20);
+      ctx.bezierCurveTo(s * 0.58, s * 0.30, s * 0.82, s * 0.66, s * 0.92, s * 1.28);
+      ctx.lineTo(-s * 0.92, s * 1.28);
+      ctx.closePath();
+    }, suitGrad, 1, "rgba(0,0,0,0.30)", s * 0.08);
+
+    // left lapel jacket
+    fillPath(() => {
+      ctx.moveTo(-s * 0.78, s * 1.28);
+      ctx.bezierCurveTo(-s * 0.76, s * 0.72, -s * 0.54, s * 0.38, -s * 0.21, s * 0.21);
+      ctx.lineTo(-s * 0.02, s * 0.50);
+      ctx.lineTo(-s * 0.32, s * 1.28);
+      ctx.closePath();
+    }, leftSuitGrad, 1);
+
+    // right lapel jacket
+    fillPath(() => {
+      ctx.moveTo(s * 0.78, s * 1.28);
+      ctx.bezierCurveTo(s * 0.76, s * 0.72, s * 0.54, s * 0.38, s * 0.21, s * 0.21);
+      ctx.lineTo(s * 0.02, s * 0.50);
+      ctx.lineTo(s * 0.32, s * 1.28);
+      ctx.closePath();
+    }, rightSuitGrad, 1);
+
+    // shirt
+    const shirtGrad = linearGradient(-s * 0.22, s * 0.24, s * 0.22, s * 1.22, [
+      [0.00, "#f7fbff"],
+      [0.42, "#e2eaf5"],
+      [1.00, "#becbda"]
+    ]);
+
+    fillPath(() => {
+      ctx.moveTo(-s * 0.25, s * 0.24);
+      ctx.lineTo(s * 0.25, s * 0.24);
+      ctx.lineTo(s * 0.18, s * 1.25);
+      ctx.lineTo(-s * 0.18, s * 1.25);
+      ctx.closePath();
+    }, shirtGrad, 1);
+
+    // shirt collar left
+    fillPath(() => {
+      ctx.moveTo(-s * 0.28, s * 0.22);
+      ctx.lineTo(-s * 0.02, s * 0.48);
+      ctx.lineTo(-s * 0.24, s * 0.55);
+      ctx.lineTo(-s * 0.40, s * 0.28);
+      ctx.closePath();
+    }, "#f4f8ff", 0.98);
+
+    // shirt collar right
+    fillPath(() => {
+      ctx.moveTo(s * 0.28, s * 0.22);
+      ctx.lineTo(s * 0.02, s * 0.48);
+      ctx.lineTo(s * 0.24, s * 0.55);
+      ctx.lineTo(s * 0.40, s * 0.28);
+      ctx.closePath();
+    }, "#edf4ff", 0.98);
+
+    // tie in restrained Clarity colors
+    const tieGrad = linearGradient(0, s * 0.40, 0, s * 1.22, [
+      [0.00, "#122a74"],
+      [0.38, "#083d9e"],
+      [0.70, "#6625c8"],
+      [1.00, "#b0007f"]
+    ]);
+
+    fillPath(() => {
+      ctx.moveTo(0, s * 0.45);
+      ctx.lineTo(s * 0.13, s * 0.58);
+      ctx.lineTo(s * 0.07, s * 1.18);
+      ctx.lineTo(0, s * 1.27);
+      ctx.lineTo(-s * 0.07, s * 1.18);
+      ctx.lineTo(-s * 0.13, s * 0.58);
+      ctx.closePath();
+    }, tieGrad, 0.98, "rgba(80,120,255,0.18)", s * 0.03);
+
+    // subtle tie highlight
     strokePath(() => {
-      ctx.ellipse(0, s * 0.01, s * 0.78, s * 0.74, -0.05, 0, Math.PI * 2);
+      ctx.moveTo(-s * 0.025, s * 0.56);
+      ctx.bezierCurveTo(-s * 0.01, s * 0.72, s * 0.005, s * 0.94, s * 0.015, s * 1.15);
     }, {
-      lineWidth: s * 0.016,
-      strokeStyle: "rgba(120,190,255,0.10)",
+      lineWidth: s * 0.012,
+      strokeStyle: "rgba(180,245,255,0.32)",
+      alpha: 0.55 + level * 0.2
+    });
+
+    // lapel outline
+    strokePath(() => {
+      ctx.moveTo(-s * 0.24, s * 0.22);
+      ctx.lineTo(-s * 0.02, s * 0.50);
+      ctx.lineTo(-s * 0.31, s * 1.22);
+    }, {
+      lineWidth: s * 0.012,
+      strokeStyle: "rgba(120,190,255,0.15)",
       alpha: 1
     });
 
-    const innerCyan = createRadialGradient(
-      -s * 0.48, -s * 0.02, 0,
-      -s * 0.48, -s * 0.02, s * 0.42,
+    strokePath(() => {
+      ctx.moveTo(s * 0.24, s * 0.22);
+      ctx.lineTo(s * 0.02, s * 0.50);
+      ctx.lineTo(s * 0.31, s * 1.22);
+    }, {
+      lineWidth: s * 0.012,
+      strokeStyle: "rgba(255,110,220,0.13)",
+      alpha: 1
+    });
+
+    // Clarity lapel pin
+    const pinX = s * 0.43;
+    const pinY = s * 0.55;
+    const pinPulse = 0.75 + 0.25 * Math.sin(t * activeStyle.pulseSpeed * 2.0);
+
+    ellipse(
+      pinX,
+      pinY,
+      s * 0.065,
+      s * 0.065,
+      0,
+      radialGradient(
+        pinX - s * 0.02, pinY - s * 0.02, 0,
+        pinX, pinY, s * 0.08,
+        [
+          [0.00, "#dfffff"],
+          [0.25, "#42f6f0"],
+          [0.58, "#185fff"],
+          [1.00, "#ff1aa4"]
+        ]
+      ),
+      0.92,
+      "rgba(80,240,255,0.35)",
+      s * 0.05 * glowPower * pinPulse
+    );
+
+    // small inner logo swirl on pin
+    strokePath(() => {
+      ctx.arc(pinX, pinY, s * 0.032, -Math.PI * 0.75, Math.PI * 0.95);
+    }, {
+      lineWidth: s * 0.008,
+      strokeStyle: "rgba(255,255,255,0.78)",
+      alpha: 0.88
+    });
+
+    // subtle neon edge on suit
+    strokePath(() => {
+      ctx.moveTo(-s * 0.83, s * 1.20);
+      ctx.bezierCurveTo(-s * 0.76, s * 0.72, -s * 0.52, s * 0.36, -s * 0.23, s * 0.22);
+    }, {
+      lineWidth: s * 0.011,
+      strokeStyle: "rgba(50,240,255,0.18)",
+      alpha: glowPower,
+      shadowColor: "rgba(50,240,255,0.30)",
+      shadowBlur: s * 0.03
+    });
+
+    strokePath(() => {
+      ctx.moveTo(s * 0.83, s * 1.20);
+      ctx.bezierCurveTo(s * 0.76, s * 0.72, s * 0.52, s * 0.36, s * 0.23, s * 0.22);
+    }, {
+      lineWidth: s * 0.011,
+      strokeStyle: "rgba(255,60,180,0.16)",
+      alpha: glowPower,
+      shadowColor: "rgba(255,60,180,0.25)",
+      shadowBlur: s * 0.03
+    });
+  }
+
+  function drawNeck(s) {
+    const neckGrad = linearGradient(-s * 0.16, -s * 0.10, s * 0.16, s * 0.36, [
+      [0.00, "#d2a27f"],
+      [0.46, "#c58f6f"],
+      [1.00, "#9e674e"]
+    ]);
+
+    fillPath(() => {
+      ctx.moveTo(-s * 0.16, -s * 0.12);
+      ctx.lineTo(s * 0.16, -s * 0.12);
+      ctx.lineTo(s * 0.20, s * 0.30);
+      ctx.bezierCurveTo(s * 0.12, s * 0.43, -s * 0.12, s * 0.43, -s * 0.20, s * 0.30);
+      ctx.closePath();
+    }, neckGrad, 1);
+  }
+
+  function drawHead(s, t, level, pulse) {
+    // hair back
+    const hairGrad = linearGradient(-s * 0.36, -s * 0.86, s * 0.36, -s * 0.22, [
+      [0.00, "#1a1f2b"],
+      [0.55, "#111725"],
+      [1.00, "#090d17"]
+    ]);
+
+    fillPath(() => {
+      ctx.moveTo(-s * 0.36, -s * 0.50);
+      ctx.bezierCurveTo(-s * 0.38, -s * 0.82, -s * 0.14, -s * 1.00, s * 0.08, -s * 0.96);
+      ctx.bezierCurveTo(s * 0.36, -s * 0.92, s * 0.45, -s * 0.66, s * 0.40, -s * 0.42);
+      ctx.lineTo(s * 0.36, -s * 0.30);
+      ctx.bezierCurveTo(s * 0.28, -s * 0.48, s * 0.10, -s * 0.56, -s * 0.10, -s * 0.54);
+      ctx.bezierCurveTo(-s * 0.25, -s * 0.53, -s * 0.32, -s * 0.42, -s * 0.36, -s * 0.30);
+      ctx.closePath();
+    }, hairGrad, 1, "rgba(0,0,0,0.28)", s * 0.04);
+
+    // ears
+    const earGrad = linearGradient(-s * 0.48, -s * 0.46, s * 0.48, -s * 0.08, [
+      [0.00, "#b97b60"],
+      [0.50, "#d19a78"],
+      [1.00, "#a86d55"]
+    ]);
+
+    ellipse(-s * 0.38, -s * 0.30, s * 0.07, s * 0.13, 0.05, earGrad, 0.95);
+    ellipse(s * 0.38, -s * 0.30, s * 0.07, s * 0.13, -0.05, earGrad, 0.95);
+
+    // face
+    const faceGrad = radialGradient(
+      -s * 0.16, -s * 0.58, s * 0.02,
+      0, -s * 0.37, s * 0.55,
       [
-        [0.00, "rgba(35,255,255,0.16)"],
-        [0.48, "rgba(35,160,255,0.09)"],
-        [1.00, "rgba(0,0,0,0.00)"]
+        [0.00, "#f2c4a2"],
+        [0.32, "#dfaa86"],
+        [0.70, "#c98c6d"],
+        [1.00, "#9f604b"]
       ]
     );
-    drawEllipse(-s * 0.18, 0, s * 0.72, s * 0.66, 0, innerCyan, 1);
 
-    const innerMag = createRadialGradient(
-      s * 0.22, s * 0.22, 0,
-      s * 0.22, s * 0.22, s * 0.56,
-      [
-        [0.00, "rgba(255,0,165,0.14)"],
-        [0.40, "rgba(135,40,255,0.08)"],
-        [1.00, "rgba(0,0,0,0.00)"]
-      ]
+    fillPath(() => {
+      ctx.moveTo(0, -s * 0.86);
+      ctx.bezierCurveTo(-s * 0.31, -s * 0.86, -s * 0.39, -s * 0.62, -s * 0.38, -s * 0.38);
+      ctx.bezierCurveTo(-s * 0.37, -s * 0.05, -s * 0.18, s * 0.10, 0, s * 0.12);
+      ctx.bezierCurveTo(s * 0.18, s * 0.10, s * 0.37, -s * 0.05, s * 0.38, -s * 0.38);
+      ctx.bezierCurveTo(s * 0.39, -s * 0.62, s * 0.31, -s * 0.86, 0, -s * 0.86);
+      ctx.closePath();
+    }, faceGrad, 1, "rgba(0,0,0,0.18)", s * 0.035);
+
+    // face highlights
+    ellipse(
+      -s * 0.12,
+      -s * 0.54,
+      s * 0.18,
+      s * 0.18,
+      -0.35,
+      radialGradient(
+        -s * 0.14, -s * 0.58, 0,
+        -s * 0.14, -s * 0.58, s * 0.25,
+        [
+          [0.00, "rgba(255,235,215,0.42)"],
+          [0.42, "rgba(255,235,215,0.14)"],
+          [1.00, "rgba(255,255,255,0.00)"]
+        ]
+      ),
+      0.9
     );
-    drawEllipse(0, 0, s * 0.64, s * 0.58, 0, innerMag, 1);
 
-    const gloss = createRadialGradient(
-      -s * 0.34, -s * 0.24, 0,
-      -s * 0.34, -s * 0.24, s * 0.28,
-      [
-        [0.00, "rgba(255,255,255,0.96)"],
-        [0.18, "rgba(215,230,255,0.72)"],
-        [0.45, "rgba(170,205,255,0.18)"],
-        [1.00, "rgba(255,255,255,0.00)"]
-      ]
-    );
-    drawEllipse(-s * 0.18, -s * 0.18, s * 0.20, s * 0.14, -0.55, gloss, 0.86);
+    // hair front
+    fillPath(() => {
+      ctx.moveTo(-s * 0.35, -s * 0.58);
+      ctx.bezierCurveTo(-s * 0.28, -s * 0.86, -s * 0.04, -s * 0.97, s * 0.20, -s * 0.86);
+      ctx.bezierCurveTo(s * 0.32, -s * 0.80, s * 0.40, -s * 0.68, s * 0.38, -s * 0.52);
+      ctx.bezierCurveTo(s * 0.19, -s * 0.64, -s * 0.02, -s * 0.62, -s * 0.18, -s * 0.58);
+      ctx.bezierCurveTo(-s * 0.26, -s * 0.56, -s * 0.32, -s * 0.56, -s * 0.35, -s * 0.58);
+      ctx.closePath();
+    }, hairGrad, 1);
+
+    // hair shine
+    strokePath(() => {
+      ctx.moveTo(-s * 0.20, -s * 0.77);
+      ctx.bezierCurveTo(-s * 0.04, -s * 0.88, s * 0.16, -s * 0.82, s * 0.28, -s * 0.66);
+    }, {
+      lineWidth: s * 0.018,
+      strokeStyle: "rgba(120,170,220,0.20)",
+      alpha: 0.7
+    });
+
+    drawFaceDetails(s, t, level, pulse);
   }
 
-  function drawLowerBlueRibbon(s, level, pulse) {
-    const grad = createLinearGradient(-s * 1.0, s * 0.72, s * 1.0, s * 0.14, [
-      [0.00, "#1167db"],
-      [0.26, "#0552c0"],
-      [0.58, "#013797"],
-      [1.00, "#041f69"]
-    ]);
-
-    strokePath(() => {
-      ctx.moveTo(-s * 0.63, s * 0.34);
-      ctx.bezierCurveTo(
-        -s * 0.82, s * 0.60,
-        -s * 0.48, s * 0.98,
-        s * 0.07, s * 0.93
-      );
-      ctx.bezierCurveTo(
-        s * 0.55, s * 0.89,
-        s * 0.83, s * 0.56,
-        s * 0.92, s * 0.18
-      );
-    }, {
-      lineWidth: s * (0.325 + level * 0.02 + pulse * 0.008),
-      strokeStyle: grad,
-      alpha: 0.99,
-      shadowColor: "rgba(0,110,255,0.50)",
-      shadowBlur: s * 0.07
-    });
-
-    const hi = createLinearGradient(-s * 0.44, s * 0.50, s * 0.60, s * 0.16, [
-      [0.00, "rgba(255,255,255,0.00)"],
-      [0.18, "rgba(145,225,255,0.42)"],
-      [0.52, "rgba(195,245,255,0.58)"],
-      [1.00, "rgba(255,255,255,0.00)"]
-    ]);
-
-    strokePath(() => {
-      ctx.moveTo(-s * 0.30, s * 0.44);
-      ctx.bezierCurveTo(
-        -s * 0.40, s * 0.62,
-        -s * 0.09, s * 0.76,
-        s * 0.28, s * 0.72
-      );
-      ctx.bezierCurveTo(
-        s * 0.53, s * 0.68,
-        s * 0.66, s * 0.49,
-        s * 0.70, s * 0.30
-      );
-    }, {
-      lineWidth: s * 0.045,
-      strokeStyle: hi,
-      alpha: 0.56
-    });
-  }
-
-  function drawTopCyanRibbon(s, level, pulse) {
-    const grad = createLinearGradient(-s * 0.95, -s * 0.92, s * 0.82, -s * 0.12, [
-      [0.00, "#42faf0"],
-      [0.34, "#39dde8"],
-      [0.68, "#1498ea"],
-      [1.00, "#0d49b5"]
-    ]);
-
-    strokePath(() => {
-      ctx.moveTo(-s * 0.54, s * 0.04);
-      ctx.bezierCurveTo(
-        -s * 0.88, -s * 0.48,
-        -s * 0.49, -s * 1.02,
-        s * 0.16, -s * 0.97
-      );
-      ctx.bezierCurveTo(
-        s * 0.68, -s * 0.92,
-        s * 0.88, -s * 0.56,
-        s * 0.68, -s * 0.26
-      );
-    }, {
-      lineWidth: s * (0.38 + level * 0.026 + pulse * 0.01),
-      strokeStyle: grad,
-      alpha: 0.99,
-      shadowColor: "rgba(40,240,255,0.66)",
-      shadowBlur: s * 0.085
-    });
-
-    const hi = createLinearGradient(-s * 0.50, -s * 0.58, s * 0.58, -s * 0.28, [
-      [0.00, "rgba(255,255,255,0.00)"],
-      [0.24, "rgba(220,255,255,0.92)"],
-      [0.62, "rgba(175,245,255,0.62)"],
-      [1.00, "rgba(255,255,255,0.00)"]
-    ]);
-
-    strokePath(() => {
-      ctx.moveTo(-s * 0.34, -s * 0.02);
-      ctx.bezierCurveTo(
-        -s * 0.58, -s * 0.35,
-        -s * 0.32, -s * 0.75,
-        s * 0.18, -s * 0.77
-      );
-      ctx.bezierCurveTo(
-        s * 0.48, -s * 0.77,
-        s * 0.62, -s * 0.60,
-        s * 0.52, -s * 0.44
-      );
-    }, {
-      lineWidth: s * 0.055,
-      strokeStyle: hi,
-      alpha: 0.70
-    });
-  }
-
-  function drawPurpleTransition(s) {
-    const grad = createLinearGradient(-s * 0.18, s * 0.79, s * 0.82, s * 0.32, [
-      [0.00, "rgba(70,120,255,0.00)"],
-      [0.22, "rgba(100,90,255,0.44)"],
-      [0.68, "rgba(220,70,255,0.52)"],
-      [1.00, "rgba(255,120,240,0.10)"]
-    ]);
-
-    strokePath(() => {
-      ctx.moveTo(-s * 0.22, s * 0.72);
-      ctx.bezierCurveTo(
-        s * 0.04, s * 0.82,
-        s * 0.34, s * 0.75,
-        s * 0.62, s * 0.56
-      );
-    }, {
-      lineWidth: s * 0.09,
-      strokeStyle: grad,
-      alpha: 0.46,
-      shadowColor: "rgba(120,60,255,0.24)",
-      shadowBlur: s * 0.05
-    });
-  }
-
-  function drawMagentaRibbon(s, level, pulse) {
-    const grad = createLinearGradient(s * 0.44, -s * 0.52, s * 0.42, s * 0.98, [
-      [0.00, "#ff31b4"],
-      [0.32, "#f50098"],
-      [0.64, "#b100ff"],
-      [1.00, "#ff149d"]
-    ]);
-
-    strokePath(() => {
-      ctx.moveTo(s * 0.72, -s * 0.20);
-      ctx.bezierCurveTo(
-        s * 0.92, s * 0.02,
-        s * 0.98, s * 0.42,
-        s * 0.72, s * 0.74
-      );
-      ctx.bezierCurveTo(
-        s * 0.42, s * 1.02,
-        -s * 0.04, s * 0.98,
-        -s * 0.22, s * 0.84
-      );
-    }, {
-      lineWidth: s * (0.335 + level * 0.024 + pulse * 0.012),
-      strokeStyle: grad,
-      alpha: 0.99,
-      shadowColor: "rgba(255,45,185,0.74)",
-      shadowBlur: s * 0.09
-    });
-
-    const hi = createLinearGradient(s * 0.60, -s * 0.26, s * 0.18, s * 0.88, [
-      [0.00, "rgba(255,255,255,0.00)"],
-      [0.16, "rgba(255,225,245,0.72)"],
-      [0.56, "rgba(255,170,235,0.60)"],
-      [1.00, "rgba(255,255,255,0.00)"]
-    ]);
-
-    strokePath(() => {
-      ctx.moveTo(s * 0.68, -s * 0.02);
-      ctx.bezierCurveTo(
-        s * 0.76, s * 0.14,
-        s * 0.76, s * 0.42,
-        s * 0.56, s * 0.66
-      );
-      ctx.bezierCurveTo(
-        s * 0.34, s * 0.84,
-        s * 0.10, s * 0.88,
-        -s * 0.02, s * 0.82
-      );
-    }, {
-      lineWidth: s * 0.048,
-      strokeStyle: hi,
-      alpha: 0.70
-    });
-  }
-
-  function drawSpeculars(s) {
-    const g2 = createLinearGradient(-s * 0.50, -s * 0.36, s * 0.42, -s * 0.02, [
-      [0.00, "rgba(255,255,255,0.00)"],
-      [0.18, "rgba(220,255,255,0.62)"],
-      [0.50, "rgba(160,245,255,0.48)"],
-      [1.00, "rgba(255,255,255,0.00)"]
-    ]);
-
-    strokePath(() => {
-      ctx.moveTo(-s * 0.42, -s * 0.20);
-      ctx.bezierCurveTo(
-        -s * 0.28, -s * 0.42,
-        -s * 0.02, -s * 0.58,
-        s * 0.30, -s * 0.52
-      );
-    }, {
-      lineWidth: s * 0.046,
-      strokeStyle: g2,
-      alpha: 0.42
-    });
-  }
-
-  function drawEyes(s, t, level) {
-    const blinkCycle = 5.6;
+  function drawFaceDetails(s, t, level, pulse) {
+    const blinkCycle = 5.2 / activeStyle.blinkSpeed;
     const mod = t % blinkCycle;
     let blink = 1;
 
-    if (mod > 5.12 && mod <= 5.22) {
-      blink = 1 - (mod - 5.12) / 0.10;
-    } else if (mod > 5.22 && mod <= 5.34) {
-      blink = (mod - 5.22) / 0.12;
+    if (mod > blinkCycle - 0.22 && mod <= blinkCycle - 0.12) {
+      blink = 1 - (mod - (blinkCycle - 0.22)) / 0.10;
+    } else if (mod > blinkCycle - 0.12) {
+      blink = (mod - (blinkCycle - 0.12)) / 0.12;
     }
 
-    blink = clamp(blink, 0.30, 1);
+    blink = clamp(blink, 0.12, 1);
 
-    const eyeIntensity = activeStyle.eyeIntensity + level * 0.18;
-    const eyeWidth = s * 0.23;
-    const eyeHeight = s * 0.040 * blink;
-    const browTilt = s * 0.014 * activeStyle.seriousness;
+    const listeningFocus = activeStyle.listening;
+    const thinking = activeStyle.thinking;
+    const eyeGlow = activeStyle.eye + level * 0.15;
 
-    function drawEye(x) {
-      const y = s * 0.12;
+    // eyebrows
+    strokePath(() => {
+      ctx.moveTo(-s * 0.24, -s * 0.45 - thinking * s * 0.02);
+      ctx.quadraticCurveTo(-s * 0.15, -s * 0.49 - thinking * s * 0.01, -s * 0.05, -s * 0.46);
+    }, {
+      lineWidth: s * 0.018,
+      strokeStyle: "rgba(35,35,45,0.78)",
+      alpha: 0.92
+    });
 
-      strokePath(() => {
-        ctx.moveTo(x - eyeWidth * 0.52, y + browTilt * 0.4);
-        ctx.quadraticCurveTo(x, y - eyeHeight - browTilt, x + eyeWidth * 0.52, y);
-      }, {
-        lineWidth: s * 0.067,
-        strokeStyle: "rgba(0,220,255,0.14)",
-        alpha: 0.95,
-        shadowColor: "rgba(30,240,255,0.92)",
-        shadowBlur: s * 0.10
-      });
+    strokePath(() => {
+      ctx.moveTo(s * 0.05, -s * 0.46);
+      ctx.quadraticCurveTo(s * 0.15, -s * 0.49 + thinking * s * 0.01, s * 0.24, -s * 0.45 + thinking * s * 0.02);
+    }, {
+      lineWidth: s * 0.018,
+      strokeStyle: "rgba(35,35,45,0.78)",
+      alpha: 0.92
+    });
 
-      const g = createLinearGradient(x - eyeWidth * 0.5, y - eyeHeight, x + eyeWidth * 0.5, y, [
-        [0.00, "#91ffff"],
-        [0.50, "#d8ffff"],
-        [1.00, "#91ffff"]
-      ]);
+    // eyes
+    function eye(x, lookOffset) {
+      const y = -s * 0.36;
+      const eyeW = s * 0.085;
+      const eyeH = s * 0.030 * blink;
 
-      strokePath(() => {
-        ctx.moveTo(x - eyeWidth * 0.48, y);
-        ctx.quadraticCurveTo(x, y - eyeHeight, x + eyeWidth * 0.48, y);
-      }, {
-        lineWidth: s * 0.032,
-        strokeStyle: g,
-        alpha: clamp(0.76 + eyeIntensity * 0.16, 0, 1)
-      });
+      ellipse(x, y, eyeW, eyeH, 0, "rgba(255,250,245,0.88)", 0.96);
+
+      ellipse(
+        x + lookOffset,
+        y,
+        s * 0.020,
+        s * 0.023 * blink,
+        0,
+        "#111827",
+        0.95
+      );
+
+      ellipse(
+        x + lookOffset + s * 0.006,
+        y - s * 0.006,
+        s * 0.006,
+        s * 0.006,
+        0,
+        "rgba(255,255,255,0.85)",
+        blink
+      );
+
+      // subtle cyan AI reflection
+      ellipse(
+        x + lookOffset,
+        y,
+        s * 0.045,
+        s * 0.018 * blink,
+        0,
+        radialGradient(
+          x + lookOffset, y, 0,
+          x + lookOffset, y, s * 0.05,
+          [
+            [0.00, "rgba(70,245,255,0.16)"],
+            [1.00, "rgba(70,245,255,0.00)"]
+          ]
+        ),
+        0.9 * eyeGlow
+      );
     }
 
-    drawEye(-s * 0.20);
-    drawEye(s * 0.20);
+    const look = thinking ? s * 0.012 * Math.sin(t * 0.8) : listeningFocus ? -s * 0.004 : 0;
+    eye(-s * 0.14, look);
+    eye(s * 0.14, look);
+
+    // nose
+    strokePath(() => {
+      ctx.moveTo(s * 0.015, -s * 0.32);
+      ctx.bezierCurveTo(s * 0.04, -s * 0.22, s * 0.05, -s * 0.15, s * 0.015, -s * 0.10);
+    }, {
+      lineWidth: s * 0.012,
+      strokeStyle: "rgba(115,72,56,0.30)",
+      alpha: 0.9
+    });
+
+    ellipse(-s * 0.022, -s * 0.09, s * 0.012, s * 0.006, 0, "rgba(80,50,45,0.22)", 0.8);
+    ellipse(s * 0.034, -s * 0.09, s * 0.012, s * 0.006, 0, "rgba(80,50,45,0.20)", 0.8);
+
+    // cheeks / attentive expression
+    ellipse(
+      -s * 0.20,
+      -s * 0.16,
+      s * 0.075,
+      s * 0.035,
+      -0.1,
+      "rgba(255,160,145,0.08)",
+      0.5 + listeningFocus * 0.2
+    );
+
+    ellipse(
+      s * 0.20,
+      -s * 0.16,
+      s * 0.075,
+      s * 0.035,
+      0.1,
+      "rgba(255,160,145,0.07)",
+      0.45 + listeningFocus * 0.2
+    );
+
+    drawMouth(s, t, level);
   }
 
-  function drawVoicePulse(s, t, level) {
+  function drawMouth(s, t, level) {
+    const speaking = currentState === "speaking";
+    const mouthPower = activeStyle.mouth;
+    const voiceBeat = speaking ? (Math.sin(t * 14.0) * 0.5 + 0.5) : 0;
+    const open = speaking
+      ? clamp(0.18 + level * 0.55 + voiceBeat * 0.32, 0.10, 0.86)
+      : 0;
+
+    if (speaking) {
+      // mouth shadow/opening
+      fillPath(() => {
+        ctx.moveTo(-s * 0.085, -s * 0.005);
+        ctx.bezierCurveTo(-s * 0.045, s * 0.025 + s * 0.040 * open, s * 0.045, s * 0.025 + s * 0.040 * open, s * 0.085, -s * 0.005);
+        ctx.bezierCurveTo(s * 0.040, s * 0.052 + s * 0.055 * open, -s * 0.040, s * 0.052 + s * 0.055 * open, -s * 0.085, -s * 0.005);
+        ctx.closePath();
+      }, "rgba(65,28,35,0.78)", 0.9);
+
+      // lower lip
+      strokePath(() => {
+        ctx.moveTo(-s * 0.075, s * 0.036 + s * 0.035 * open);
+        ctx.quadraticCurveTo(0, s * 0.075 + s * 0.025 * open, s * 0.075, s * 0.036 + s * 0.035 * open);
+      }, {
+        lineWidth: s * 0.010,
+        strokeStyle: "rgba(175,95,90,0.45)",
+        alpha: 0.9
+      });
+
+      // subtle speech glow
+      const g = radialGradient(
+        0, s * 0.035, 0,
+        0, s * 0.035, s * 0.26,
+        [
+          [0.00, "rgba(90,235,255,0.11)"],
+          [0.40, "rgba(255,90,200,0.08)"],
+          [1.00, "rgba(255,255,255,0.00)"]
+        ]
+      );
+      ellipse(0, s * 0.035, s * 0.22, s * 0.10, 0, g, mouthPower);
+    } else {
+      // neutral business mouth
+      strokePath(() => {
+        ctx.moveTo(-s * 0.085, s * 0.015);
+        ctx.quadraticCurveTo(0, s * 0.035, s * 0.085, s * 0.015);
+      }, {
+        lineWidth: s * 0.014,
+        strokeStyle: "rgba(80,45,50,0.54)",
+        alpha: 0.95
+      });
+    }
+  }
+
+  function drawListeningCue(s, t, level) {
+    if (currentState !== "listening") return;
+
+    const beat = Math.sin(t * 3.1) * 0.5 + 0.5;
+
+    strokePath(() => {
+      ctx.arc(-s * 0.49, -s * 0.29, s * (0.12 + beat * 0.02), -Math.PI * 0.65, Math.PI * 0.55);
+    }, {
+      lineWidth: s * 0.010,
+      strokeStyle: "rgba(90,245,255,0.35)",
+      alpha: 0.55 + level * 0.20,
+      shadowColor: "rgba(90,245,255,0.42)",
+      shadowBlur: s * 0.04
+    });
+
+    strokePath(() => {
+      ctx.arc(s * 0.49, -s * 0.29, s * (0.12 + beat * 0.02), Math.PI * 0.45, Math.PI * 1.65);
+    }, {
+      lineWidth: s * 0.010,
+      strokeStyle: "rgba(90,245,255,0.28)",
+      alpha: 0.35 + level * 0.14,
+      shadowColor: "rgba(90,245,255,0.32)",
+      shadowBlur: s * 0.035
+    });
+  }
+
+  function drawThinkingCue(s, t) {
+    if (currentState !== "thinking") return;
+
+    const baseX = s * 0.48;
+    const baseY = -s * 0.66;
+
+    for (let i = 0; i < 3; i++) {
+      const phase = (Math.sin(t * 2.0 + i * 1.2) * 0.5 + 0.5);
+      const r = s * (0.018 + i * 0.004 + phase * 0.004);
+      const x = baseX + i * s * 0.075;
+      const y = baseY - Math.sin(t * 1.3 + i) * s * 0.012;
+
+      ellipse(
+        x,
+        y,
+        r,
+        r,
+        0,
+        i === 0 ? "rgba(120,255,255,0.55)" : "rgba(255,120,225,0.42)",
+        0.55 + phase * 0.25,
+        "rgba(120,240,255,0.25)",
+        s * 0.03
+      );
+    }
+  }
+
+  function drawSpeechCue(s, t, level) {
     if (currentState !== "speaking") return;
 
-    const energy = clamp(0.35 + level * 0.9, 0, 1.2);
     const beat = Math.sin(t * 10.5) * 0.5 + 0.5;
-    const amp = (0.35 + beat * 0.65) * energy;
+    const amp = 0.35 + level * 0.65;
 
-    const voiceGrad = createLinearGradient(-s * 0.52, s * 0.48, s * 0.52, s * 0.48, [
-      [0.00, "rgba(0,220,255,0.00)"],
-      [0.20, "rgba(60,230,255,0.20)"],
-      [0.50, "rgba(255,255,255,0.42)"],
-      [0.78, "rgba(255,110,220,0.22)"],
-      [1.00, "rgba(255,110,220,0.00)"]
+    const grad = linearGradient(-s * 0.42, s * 0.19, s * 0.42, s * 0.19, [
+      [0.00, "rgba(0,230,255,0.00)"],
+      [0.22, "rgba(70,235,255,0.22)"],
+      [0.50, "rgba(255,255,255,0.36)"],
+      [0.78, "rgba(255,90,210,0.22)"],
+      [1.00, "rgba(255,90,210,0.00)"]
     ]);
 
     strokePath(() => {
-      const y = s * 0.50;
-      ctx.moveTo(-s * 0.38, y);
-      for (let i = 0; i <= 18; i++) {
-        const p = i / 18;
-        const x = lerp(-s * 0.38, s * 0.38, p);
-        const wave = Math.sin((p * Math.PI * 4.5) + t * 12) * s * 0.012 * amp;
-        const envelope = Math.sin(p * Math.PI);
-        const yy = y + wave * envelope;
+      const y = s * 0.20;
+      ctx.moveTo(-s * 0.34, y);
+      for (let i = 0; i <= 24; i++) {
+        const p = i / 24;
+        const x = lerp(-s * 0.34, s * 0.34, p);
+        const env = Math.sin(p * Math.PI);
+        const wave = Math.sin(p * Math.PI * 5.0 + t * 13.0) * s * 0.012 * amp * (0.6 + beat * 0.4) * env;
+        const yy = y + wave;
         if (i === 0) ctx.moveTo(x, yy);
         else ctx.lineTo(x, yy);
       }
     }, {
-      lineWidth: s * 0.018,
-      strokeStyle: voiceGrad,
-      alpha: 0.70,
-      shadowColor: "rgba(110,235,255,0.34)",
-      shadowBlur: s * 0.05
+      lineWidth: s * 0.014,
+      strokeStyle: grad,
+      alpha: 0.75,
+      shadowColor: "rgba(90,240,255,0.28)",
+      shadowBlur: s * 0.04
     });
-
-    const pulseAura = createRadialGradient(
-      0, s * 0.48, 0,
-      0, s * 0.48, s * 0.42,
-      [
-        [0.00, "rgba(130,240,255,0.12)"],
-        [0.45, "rgba(255,70,190,0.08)"],
-        [1.00, "rgba(255,255,255,0.00)"]
-      ]
-    );
-    drawEllipse(0, s * 0.50, s * 0.45, s * 0.16, 0, pulseAura, 0.9);
   }
 
   function drawAvatar(t) {
-    const silentTime = performance.now() - lastMsg;
-    const fallback = (!nobreath && silentTime > 3000)
-      ? (Math.sin(t * 1.55) * 0.5 + 0.5) * 0.25
+    const nowMs = performance.now();
+    const silent = nowMs - lastMsg;
+
+    const fallback = (!nobreath && silent > 3000)
+      ? (Math.sin(t * 1.45) * 0.5 + 0.5) * 0.22
       : targetLevel;
 
     currentLevel = lerp(currentLevel, fallback, 0.12);
 
+    const stateEase = easeOutCubic(clamp((nowMs - lastStateChange) / 380, 0, 1));
     const pulse = Math.sin(t * activeStyle.pulseSpeed * 2.2) * 0.5 + 0.5;
-    const breath = nobreath ? 0 : (Math.sin(t * 1.4) * 0.5 + 0.5);
-    const speechBoost = currentState === "speaking" ? (Math.sin(t * 8.5) * 0.5 + 0.5) * 0.04 : 0;
+    const breath = nobreath ? 0 : (Math.sin(t * 1.2) * 0.5 + 0.5);
 
-    const scaleX = 1 + breath * 0.006 + currentLevel * 0.020 + speechBoost * 0.5;
-    const scaleY = 1 + breath * 0.012 + currentLevel * 0.032 + speechBoost;
-    const floatY = Math.sin(t * 1.18) * unit * 0.012 * activeStyle.floatAmount;
-    const subtleTilt = Math.sin(t * 0.66) * 0.012;
-    const settle = easeInOut(clamp((performance.now() - lastStateChange) / 420, 0, 1));
+    const s = unit;
+    const floatY = Math.sin(t * 1.15) * s * 0.010 * activeStyle.headNod;
+    const fullScale = 1 + breath * 0.006 + currentLevel * 0.014;
+    const globalTilt = Math.sin(t * 0.62) * 0.006 * activeStyle.headNod;
 
     ctx.clearRect(0, 0, width, height);
 
     ctx.save();
-    ctx.translate(centerX, centerY + floatY);
-    ctx.rotate(subtleTilt * settle);
-    ctx.scale(scaleX, scaleY);
+    ctx.translate(cx, cy + floatY);
+    ctx.scale(fullScale, fullScale);
 
-    drawAura(unit, t, currentLevel, pulse);
-    drawParticles(unit, t, currentLevel);
-    drawBackShadow(unit);
-    drawCore(unit, t, currentLevel);
-    drawLowerBlueRibbon(unit, currentLevel, pulse);
-    drawTopCyanRibbon(unit, currentLevel, pulse);
-    drawPurpleTransition(unit);
-    drawMagentaRibbon(unit, currentLevel, pulse);
-    drawSpeculars(unit);
-    drawVoicePulse(unit, t, currentLevel);
-    drawEyes(unit, t, currentLevel);
+    drawBackgroundAura(s, t, currentLevel, pulse);
+    drawParticles(s, t, currentLevel);
+
+    // torso remains very stable
+    ctx.save();
+    ctx.translate(0, s * 0.08);
+    drawSuit(s, t, currentLevel, pulse);
+    ctx.restore();
+
+    // head/neck movement
+    const listenLean = activeStyle.lean * stateEase;
+    const headTilt = globalTilt + listenLean + (currentState === "thinking" ? Math.sin(t * 0.75) * 0.010 : 0);
+    const nod = currentState === "listening"
+      ? Math.sin(t * 2.4) * s * 0.006
+      : currentState === "speaking"
+        ? Math.sin(t * 4.1) * s * 0.006 * (0.35 + currentLevel)
+        : Math.sin(t * 1.0) * s * 0.003;
+
+    ctx.save();
+    ctx.translate(0, -s * 0.02 + nod);
+    ctx.rotate(headTilt);
+    drawNeck(s);
+    drawHead(s, t, currentLevel, pulse);
+    drawListeningCue(s, t, currentLevel);
+    drawThinkingCue(s, t);
+    drawSpeechCue(s, t, currentLevel);
+    ctx.restore();
 
     ctx.restore();
   }
 
-  let rafId = 0;
-
   function frame() {
-    rafId = requestAnimationFrame(frame);
-    const now = performance.now() / 1000;
-    drawAvatar(now);
+    requestAnimationFrame(frame);
+    drawAvatar(performance.now() / 1000);
   }
 
-  function onResize() {
-    updateMetrics();
-  }
+  window.addEventListener("resize", resize);
 
-  window.addEventListener("resize", onResize);
-
-  let ro = null;
   if ("ResizeObserver" in window) {
-    ro = new ResizeObserver(() => updateMetrics());
+    const ro = new ResizeObserver(() => resize());
     ro.observe(root);
   }
 
@@ -756,21 +953,26 @@
 
     if (d.type === "ping") {
       try {
-        ev.source && ev.source.postMessage && ev.source.postMessage({ type: "avatar:ready" }, "*");
+        if (ev.source && typeof ev.source.postMessage === "function") {
+          ev.source.postMessage({ type: "avatar:ready" }, "*");
+        }
       } catch (e) {}
     }
   });
 
-  updateMetrics();
+  resize();
   setState("idle");
   setLevel(0);
   frame();
 
   setTimeout(() => {
     try {
-      window.parent && window.parent.postMessage && window.parent.postMessage({ type: "avatar:ready" }, "*");
+      if (window.parent && typeof window.parent.postMessage === "function") {
+        window.parent.postMessage({ type: "avatar:ready" }, "*");
+      }
     } catch (e) {}
   }, 50);
+
 })();
 </script>
 </body>
