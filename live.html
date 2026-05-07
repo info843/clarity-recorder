@@ -343,6 +343,25 @@ function onRealtimeEvent(ev){
 
   const eventType = data.type || '';
 
+  if (
+  eventType.includes('transcript') ||
+  eventType.includes('transcription') ||
+  eventType.includes('input_audio') ||
+  eventType === 'conversation.item.created' ||
+  eventType === 'conversation.item.done'
+) {
+  log('[RT-EVENT-CHECK]', {
+    type: eventType,
+    hasTranscript: !!data?.transcript,
+    hasText: !!data?.text,
+    itemRole: data?.item?.role || '',
+    itemType: data?.item?.type || '',
+    itemContentTypes: Array.isArray(data?.item?.content)
+      ? data.item.content.map(p => p?.type || '').join(',')
+      : ''
+  });
+}
+
   if (eventType === 'response.state' && data.state){
     postToParent('clarity.avatar', { state:data.state });
   }
