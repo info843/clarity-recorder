@@ -547,34 +547,41 @@
      * USER TRANSCRIPT FALLBACK:
      * Manche Realtime-Events liefern User-Inhalte über conversation.item.created/done.
      */
-    if (
-      (eventType === 'conversation.item.created' || eventType === 'conversation.item.done') &&
-      data.item &&
-      data.item.role === 'user'
-    ) {
-      const it = data.item;
-      const userText = extractTextFromContentParts(it.content);
+   if (
+  (eventType === 'conversation.item.created' || eventType === 'conversation.item.done') &&
+  data.item &&
+  data.item.role === 'user'
+) {
+  const it = data.item;
 
-      if (userText) {
-        userUtterances += 1;
+  const contentTypes = Array.isArray(it.content)
+    ? it.content.map(p => p?.type || '').join(',')
+    : '';
 
-        emitTranscript('user', userText, {
-          itemId: it.id || data.item_id || '',
-          responseId: data.response_id || '',
-          sourceEvent: eventType,
-          final: true
-        });
+  // Wichtig:
+  // input_text bei role:user sind in unserem Setup interne Steuerprompts an das Modell.
+  // Diese dürfen NICHT als Kandidatenantwort ins Transkript.
+  if (contentTypes.includes('input_text')) {
+    log('[TRANSCRIPT] skipped internal user input_text', {
+      itemId: it.id || data.item_id || '',
+      contentTypes
+    });
+    return;
+  }
 
-        const low = userText.toLowerCase();
+  // input_audio zeigt: Kandidat hat gesprochen.
+  // Aber ohne Transkripttext speichern wir noch keinen Turn.
+  // Der eigentliche Text muss über conversation.item.input_audio_transcription.completed kommen.
+  if (contentTypes.includes('input_audio')) {
+    log('[TRANSCRIPT] user input_audio item observed, waiting for transcription.completed', {
+      itemId: it.id || data.item_id || '',
+      contentTypes
+    });
+    return;
+  }
 
-        if (/(^|\b)(bereit|ready)(\b|$)/.test(low)) {
-          READY_DETECTED = true;
-          maybeAskFirstQuestion();
-        }
-      }
-
-      return;
-    }
+  return;
+}
 
     /**
      * ASSISTANT TRANSCRIPT — Audio output transcript.
