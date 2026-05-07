@@ -1483,19 +1483,79 @@ function speakPrepThenWelcome() {
     }
   }
 
-         function blobToDataUrl(blob) {
+  function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {
     try {
       const reader = new FileReader();
 
-      reader.onloadend = () => resolve(String(reader.result || ''));
-      reader.onerror = () => reject(new Error('blob_to_dataurl_failed'));
+      reader.onloadend = () => {
+        resolve(String(reader.result || ''));
+      };
+
+      reader.onerror = () => {
+        reject(new Error('candidate_audio_file_reader_failed'));
+      };
 
       reader.readAsDataURL(blob);
     } catch (e) {
       reject(e);
     }
   });
+}
+
+async function sendCandidateAudioToParent(blob, meta = {}) {
+  try {
+    if (!blob || !blob.size) {
+      log('[CANDIDATE-AUDIO] skip send - empty blob', {
+        size: blob?.size || 0
+      });
+
+      postToParent('candidate-audio:error', {
+        message: 'candidate_audio_empty',
+        uid: UID,
+        companyId: COMPANY_ID,
+        ts: new Date().toISOString()
+      });
+
+      return;
+    }
+
+    const dataUrl = await blobToDataUrl(blob);
+
+    const payload = {
+      dataUrl,
+      durationMs: meta.durationMs || 0,
+      size: blob.size,
+      mimeType: blob.type || meta.mimeType || 'audio/webm',
+      uid: UID,
+      companyId: COMPANY_ID,
+      ts: new Date().toISOString()
+    };
+
+    postToParent('candidate-audio:finished', payload);
+
+    log('[CANDIDATE-AUDIO] event posted to parent', {
+      type: 'candidate-audio:finished',
+      durationMs: payload.durationMs,
+      size: payload.size,
+      mimeType: payload.mimeType,
+      dataUrlPresent: !!payload.dataUrl,
+      dataUrlPrefix: payload.dataUrl ? payload.dataUrl.slice(0, 32) : ''
+    });
+  } catch (e) {
+    const msg = errMsg(e);
+
+    log('[CANDIDATE-AUDIO] send failed', {
+      message: msg
+    });
+
+    postToParent('candidate-audio:error', {
+      message: msg,
+      uid: UID,
+      companyId: COMPANY_ID,
+      ts: new Date().toISOString()
+    });
+  }
 }
 
 /* ===== Candidate-only Audio Recorder ===== */
@@ -1539,105 +1599,38 @@ function prepareCandidateAudioRecording() {
     };
 
     candidateRecorder.onstop = async () => {
-      try {
-        const durationMs = candidateRecordingStartedAt
-          ? Date.now() - candidateRecordingStartedAt
-          : 0;
+      const durationMs = candidateRecordingStartedAt
+        ? Date.now() - candidateRecordingStartedAt
+        : 0;
 
-        const blob = new Blob(candidateChunks, {
-          type: mimeType
-        });
-
-        log('[CANDIDATE-AUDIO] stopped', {
-          size: blob.size,
-          durationMs,
-          chunks: candidateChunks.length,
-          mimeType
-        });
-
-        if (!blob.size) {
-          postToParent('candidate-audio:error', {
-            message: 'candidate_audio_empty',
-            durationMs,
-            size: 0
-          });
-          return;
-        }
-
-        const dataUrl = await blobToDataUrl(blob);
-
-postToParent('candidate-audio:finished', {
-  durationMs,
-  size: blob.size,
-  mimeType: blob.type || 'audio/webm',
-  dataUrl
-});
-
-        function blobToDataUrl(blob) {
-  return new Promise((resolve, reject) => {
-    try {
-      const reader = new FileReader();
-
-      reader.onloadend = () => {
-        resolve(String(reader.result || ''));
-      };
-
-      reader.onerror = () => {
-        reject(new Error('candidate_audio_file_reader_failed'));
-      };
-
-      reader.readAsDataURL(blob);
-    } catch (e) {
-      reject(e);
-    }
-  });
-}
-
-async function sendCandidateAudioToParent(blob, meta = {}) {
-  try {
-    if (!blob || !blob.size) {
-      log('[CANDIDATE-AUDIO] skip send - empty blob', {
-        size: blob?.size || 0
+      const blob = new Blob(candidateChunks, {
+        type: mimeType || 'audio/webm'
       });
-      return;
-    }
 
-    const dataUrl = await blobToDataUrl(blob);
+      log('[CANDIDATE-AUDIO] stopped', {
+        size: blob.size,
+        durationMs,
+        chunks: candidateChunks.length,
+        mimeType: blob.type
+      });
 
-    const payload = {
-      dataUrl,
-      durationMs: meta.durationMs || 0,
-      size: blob.size,
-      mimeType: blob.type || meta.mimeType || 'audio/webm',
-      uid: UID,
-      companyId: COMPANY_ID,
-      ts: new Date().toISOString()
+      await sendCandidateAudioToParent(blob, {
+        durationMs,
+        mimeType: blob.type
+      });
+
+      candidateChunks.length = 0;
+      candidateAudioReady = false;
     };
 
-    /**
-     * WICHTIG:
-     * Das ist das echte Event an Wix.
-     * Nicht nur loggen.
-     */
-    postToParent('candidate-audio:finished', payload);
-
-    log('[CANDIDATE-AUDIO] event posted to parent', {
-      type: 'candidate-audio:finished',
-      durationMs: payload.durationMs,
-      size: payload.size,
-      mimeType: payload.mimeType,
-      dataUrlPresent: !!payload.dataUrl,
-      dataUrlPrefix: payload.dataUrl ? payload.dataUrl.slice(0, 32) : ''
-    });
+    log('[CANDIDATE-AUDIO] ready');
   } catch (e) {
-    const msg = errMsg(e);
-
-    log('[CANDIDATE-AUDIO] send failed', {
-      message: msg
+    log('[CANDIDATE-AUDIO] prepare failed', {
+      message: errMsg(e)
     });
 
     postToParent('candidate-audio:error', {
-      message: msg,
+      message: errMsg(e),
       uid: UID,
       companyId: COMPANY_ID,
       ts: new Date().toISOString()
