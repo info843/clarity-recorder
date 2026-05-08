@@ -5,22 +5,124 @@
   <title>Live Interview</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root { --bg:#0b0c10; --fg:#e5e7eb; --muted:#9ca3af; --ok:#10b981; --warn:#f59e0b; --err:#ef4444; --card:#111217; --line:#1f2330; }
-    html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
-    .wrap{display:grid;grid-template-columns:1fr 320px;gap:16px;padding:14px;align-items:start}
-    .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+    :root {
+      --bg:#ffffff;
+      --fg:#111827;
+      --muted:#6b7280;
+      --ok:#047857;
+      --warn:#92400e;
+      --err:#b91c1c;
+      --card:#ffffff;
+      --line:#e5e7eb;
+      --soft:#f8fafc;
+      --bar:#e5e7eb;
+      --accent:#4f46e5;
+      --shadow:0 16px 40px rgba(15,23,42,.10);
+    }
+
+    html,body{
+      margin:0;
+      padding:0;
+      background:var(--bg);
+      color:var(--fg);
+      font:14px/1.45 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    }
+
+    .wrap{
+      display:grid;
+      grid-template-columns:1fr 300px;
+      gap:16px;
+      padding:14px;
+      align-items:start;
+      background:#ffffff;
+    }
+
+    .card{
+      background:var(--card);
+      border:1px solid rgba(229,231,235,.65);
+      border-radius:16px;
+      padding:14px;
+      box-shadow:var(--shadow);
+    }
+
     .row{display:flex;gap:10px;align-items:center}
-    .bar{height:6px;background:#0f172a;border-radius:999px;overflow:hidden}
-    .bar > i{display:block;height:100%;width:0;background:#4f46e5;transition:width 50ms linear}
-    .badge{display:inline-block;padding:2px 6px;border-radius:8px;background:#0f172a;border:1px solid #24314f;color:#cbd5e1;font-size:12px}
+
+    .bar{
+      height:6px;
+      background:var(--bar);
+      border-radius:999px;
+      overflow:hidden;
+    }
+
+    .bar > i{
+      display:block;
+      height:100%;
+      width:0;
+      background:var(--accent);
+      transition:width 50ms linear;
+    }
+
+    .badge{
+      display:inline-block;
+      padding:3px 8px;
+      border-radius:999px;
+      background:#f8fafc;
+      border:1px solid #e2e8f0;
+      color:#334155;
+      font-size:12px;
+    }
+
     .muted{color:var(--muted)}
-    .btn{appearance:none;border:1px solid #2b3244;background:#141827;color:#f8fafc;border-radius:8px;padding:8px 10px;cursor:pointer}
+
+    .btn{
+      appearance:none;
+      border:1px solid #cbd5e1;
+      background:#ffffff;
+      color:#111827;
+      border-radius:10px;
+      padding:8px 12px;
+      cursor:pointer;
+      box-shadow:0 6px 18px rgba(15,23,42,.08);
+    }
+
+    .btn:hover{background:#f8fafc}
     .btn:disabled{opacity:.5;cursor:not-allowed}
-    video{width:100%;max-height:320px;background:#000;border-radius:8px}
+
+    video{
+      width:100%;
+      max-height:320px;
+      background:#ffffff;
+      border-radius:12px;
+      box-shadow:0 10px 28px rgba(15,23,42,.10);
+      border:0;
+    }
+
     audio{width:100%}
-    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-    .log{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#9ca3af;white-space:pre-wrap;max-height:260px;overflow:auto}
-    .ghost{opacity:.65}
+
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+    .log{
+      font-family:ui-monospace,Menlo,Consolas,monospace;
+      font-size:12px;
+      color:#6b7280;
+      white-space:pre-wrap;
+      max-height:260px;
+      overflow:auto;
+      background:#f8fafc;
+      border-radius:12px;
+      padding:8px;
+      border:1px solid #e5e7eb;
+    }
+
+    .ghost{opacity:.72}
+
+    .debugOnly{display:none}
+    body.debug-ui .debugOnly{display:block}
+
+    @media (max-width:900px){
+      .wrap{grid-template-columns:1fr}
+      .grid2{grid-template-columns:1fr}
+    }
   </style>
 </head>
 <body>
@@ -28,40 +130,40 @@
     <section class="card">
       <div class="row" style="justify-content:space-between">
         <div>
-          <div id="status" class="badge">Init…</div>
-          <div id="audioBadge" class="badge" style="margin-left:6px">• (stumm?)</div>
+          <div id="status" class="badge">Initialisierung…</div>
+          <div id="audioBadge" class="badge" style="margin-left:6px">Audio wird vorbereitet</div>
         </div>
         <div class="row">
-          <button id="btnStop" class="btn">Interview abbrechen</button>
+          <button id="btnStop" class="btn">Interview beenden</button>
         </div>
       </div>
 
       <div class="grid2" style="margin-top:12px">
         <div>
-          <div class="muted" style="margin-bottom:6px">Kamera-Vorschau</div>
+          <div id="cameraLabel" class="muted" style="margin-bottom:6px">Kamera-Vorschau</div>
           <video id="localVideo" autoplay playsinline muted></video>
-          <div class="muted" style="margin:8px 0 4px">Mic-Level</div>
+          <div id="micLabel" class="muted" style="margin:8px 0 4px">Mikrofon</div>
           <div class="bar"><i id="micLevel"></i></div>
         </div>
         <div>
-          <div class="muted" style="margin-bottom:6px">Assistent-Audio</div>
+          <div id="assistantAudioLabel" class="muted" style="margin-bottom:6px">Interview-Audio</div>
           <audio id="remoteAudio" controls></audio>
-          <div class="muted" style="margin:8px 0 4px">System</div>
+          <div id="systemLabel" class="muted" style="margin:8px 0 4px">System</div>
           <div class="bar"><i id="sysLevel"></i></div>
-          <div class="muted" style="margin-top:10px">Hinweis: Bei blockiertem Autoplay ggf. in den Player klicken.</div>
+          <div id="autoplayHint" class="muted" style="margin-top:10px">Falls kein Ton zu hören ist, klicken Sie einmal in den Player.</div>
         </div>
       </div>
     </section>
 
-    <aside class="card">
-      <div style="font-weight:600;margin-bottom:8px">Recorder / Upload</div>
+    <aside class="card debugOnly" id="debugPanel">
+      <div id="recorderTitle" style="font-weight:600;margin-bottom:8px">Recorder / Upload</div>
       <div class="row">
         <div class="badge ghost" id="recState">idle</div>
         <div class="badge ghost" id="muxState" style="margin-left:6px">no upload</div>
       </div>
-      <div class="muted" style="margin:8px 0 4px">Fortschritt</div>
+      <div id="progressLabel" class="muted" style="margin:8px 0 4px">Fortschritt</div>
       <div class="bar"><i id="recProgress"></i></div>
-      <div class="muted" style="margin:10px 0 4px">Logs</div>
+      <div id="logsLabel" class="muted" style="margin:10px 0 4px">Logs</div>
       <div id="log" class="log"></div>
     </aside>
   </div>
@@ -83,18 +185,173 @@
   const VOICE = (Q.get('voice') || 'verse').toLowerCase();
   const AUTOSTART = Q.get('autostart') !== '0';
   const API_BASE = (Q.get('api') || window.location.origin).replace(/\/+$/, '');
+  const DEBUG_UI = Q.get('debugUi') === '1' || Q.get('debugui') === '1' || Q.get('showLogs') === '1';
+
+  if (DEBUG_UI) document.body.classList.add('debug-ui');
 
   /* ===== UI ===== */
   const $status = document.getElementById('status');
+  const $audioBadge = document.getElementById('audioBadge');
   const $mic    = document.getElementById('micLevel');
   const $sys    = document.getElementById('sysLevel');
   const $log    = document.getElementById('log');
   const $localV = document.getElementById('localVideo');
   const $remoteA= document.getElementById('remoteAudio');
+  const $btnStop= document.getElementById('btnStop');
 
   const $recState = document.getElementById('recState');
   const $muxState = document.getElementById('muxState');
   const $recProg  = document.getElementById('recProgress');
+
+  const UI_TEXTS = {
+    de: {
+      init: 'Initialisierung…',
+      audioPreparing: 'Audio wird vorbereitet',
+      audioReady: 'Audio bereit',
+      audioClick: 'Bitte einmal hier klicken, um Audio zu aktivieren.',
+      connected: 'Verbunden – das Interview läuft.',
+      disconnected: 'Die Verbindung wurde unterbrochen. Bitte bleiben Sie auf der Seite.',
+      mediaBlocked: 'Mikrofon oder Kamera konnten nicht gestartet werden. Bitte prüfen Sie die Berechtigungen.',
+      startError: 'Das Interview konnte nicht gestartet werden. Bitte bleiben Sie auf der Seite und versuchen Sie es erneut.',
+      processing: 'Das Interview wurde beendet. Bitte bleiben Sie noch einen Moment auf dieser Seite, während die Verarbeitung abgeschlossen wird.',
+      uploadPreparing: 'Ihr Interview wird verarbeitet. Sie können in der Zwischenzeit optional eine Bewertung abgeben.',
+      uploadReady: 'Alle Daten wurden erfolgreich verarbeitet. Sie können dieses Fenster jetzt schließen. CLARITY wünscht Ihnen weiterhin viel Erfolg und einen schönen Tag.',
+      uploadStillProcessing: 'Ihr Interview wurde gespeichert. Die Verarbeitung wird abgeschlossen. Bitte bleiben Sie noch einen Moment auf der Seite.',
+      fallbackEnd: 'Bitte beenden Sie das Interview über den Button „Interview beenden“ und bleiben Sie noch einen Moment auf der Seite. Die Verarbeitung startet anschließend automatisch.',
+      stopButton: 'Interview beenden',
+      cameraLabel: 'Kamera-Vorschau',
+      micLabel: 'Mikrofon',
+      assistantAudioLabel: 'Interview-Audio',
+      systemLabel: 'System',
+      autoplayHint: 'Falls kein Ton zu hören ist, klicken Sie einmal in den Player.',
+      finalClose: 'Vielen Dank für das Gespräch und für Ihre detaillierten Antworten sowie Ihre Zeit. Bitte schließen Sie dieses Fenster noch nicht, bleiben Sie noch auf der Seite. Das Interview wird verarbeitet. Sie können in der Zwischenzeit eine Bewertung abgeben, wenn Sie möchten. Das Bewertungsfeld wird weiter unten angezeigt.',
+      welcomePrep: 'Einen Moment bitte, ich bereite das Interview vor.',
+      readyWord: 'bereit'
+    },
+    en: {
+      init: 'Initializing…',
+      audioPreparing: 'Preparing audio',
+      audioReady: 'Audio ready',
+      audioClick: 'Please click here once to enable audio.',
+      connected: 'Connected – the interview is running.',
+      disconnected: 'The connection was interrupted. Please stay on this page.',
+      mediaBlocked: 'Microphone or camera could not be started. Please check your permissions.',
+      startError: 'The interview could not be started. Please stay on this page and try again.',
+      processing: 'The interview has ended. Please stay on this page for a moment while processing is completed.',
+      uploadPreparing: 'Your interview is being processed. You may optionally leave a rating in the meantime.',
+      uploadReady: 'All data has been processed successfully. You may now close this window. CLARITY wishes you continued success and a pleasant day.',
+      uploadStillProcessing: 'Your interview has been saved. Processing is being completed. Please stay on this page for a moment.',
+      fallbackEnd: 'Please end the interview using the “End interview” button and stay on this page for a moment. Processing will then start automatically.',
+      stopButton: 'End interview',
+      cameraLabel: 'Camera preview',
+      micLabel: 'Microphone',
+      assistantAudioLabel: 'Interview audio',
+      systemLabel: 'System',
+      autoplayHint: 'If you do not hear audio, click the player once.',
+      finalClose: 'Thank you for the conversation and for your detailed answers as well as your time. Please do not close this window yet, stay on this page. The interview is being processed. You may leave a rating in the meantime if you wish. The rating field will be displayed further down.',
+      welcomePrep: 'One moment please, I am preparing the interview.',
+      readyWord: 'ready'
+    },
+    es: {
+      init: 'Inicializando…',
+      audioPreparing: 'Preparando audio',
+      audioReady: 'Audio listo',
+      audioClick: 'Haga clic aquí una vez para activar el audio.',
+      connected: 'Conectado – la entrevista está en curso.',
+      disconnected: 'La conexión se interrumpió. Permanezca en esta página.',
+      mediaBlocked: 'No se pudo iniciar el micrófono o la cámara. Revise los permisos.',
+      startError: 'No se pudo iniciar la entrevista. Permanezca en esta página e inténtelo de nuevo.',
+      processing: 'La entrevista ha finalizado. Permanezca un momento en esta página mientras se completa el procesamiento.',
+      uploadPreparing: 'Su entrevista se está procesando. Mientras tanto, puede dejar una valoración si lo desea.',
+      uploadReady: 'Todos los datos se han procesado correctamente. Ya puede cerrar esta ventana. CLARITY le desea mucho éxito y un buen día.',
+      uploadStillProcessing: 'Su entrevista se ha guardado. El procesamiento se está completando. Permanezca un momento en esta página.',
+      fallbackEnd: 'Finalice la entrevista con el botón “Finalizar entrevista” y permanezca un momento en esta página. El procesamiento comenzará automáticamente después.',
+      stopButton: 'Finalizar entrevista',
+      cameraLabel: 'Vista previa de cámara',
+      micLabel: 'Micrófono',
+      assistantAudioLabel: 'Audio de la entrevista',
+      systemLabel: 'Sistema',
+      autoplayHint: 'Si no oye el audio, haga clic una vez en el reproductor.',
+      finalClose: 'Gracias por la conversación, por sus respuestas detalladas y por su tiempo. No cierre esta ventana todavía, permanezca en esta página. La entrevista se está procesando. Mientras tanto, puede dejar una valoración si lo desea. El campo de valoración se mostrará más abajo.',
+      welcomePrep: 'Un momento, por favor, estoy preparando la entrevista.',
+      readyWord: 'listo'
+    },
+    fr: {
+      init: 'Initialisation…',
+      audioPreparing: 'Préparation de l’audio',
+      audioReady: 'Audio prêt',
+      audioClick: 'Veuillez cliquer ici une fois pour activer l’audio.',
+      connected: 'Connecté – l’entretien est en cours.',
+      disconnected: 'La connexion a été interrompue. Veuillez rester sur cette page.',
+      mediaBlocked: 'Le microphone ou la caméra n’a pas pu être démarré. Veuillez vérifier les autorisations.',
+      startError: 'L’entretien n’a pas pu démarrer. Veuillez rester sur cette page et réessayer.',
+      processing: 'L’entretien est terminé. Veuillez rester quelques instants sur cette page pendant la finalisation du traitement.',
+      uploadPreparing: 'Votre entretien est en cours de traitement. Vous pouvez laisser une évaluation entre-temps si vous le souhaitez.',
+      uploadReady: 'Toutes les données ont été traitées avec succès. Vous pouvez maintenant fermer cette fenêtre. CLARITY vous souhaite beaucoup de succès et une bonne journée.',
+      uploadStillProcessing: 'Votre entretien a été enregistré. Le traitement est en cours de finalisation. Veuillez rester encore un moment sur cette page.',
+      fallbackEnd: 'Veuillez terminer l’entretien avec le bouton « Terminer l’entretien » et rester quelques instants sur cette page. Le traitement démarrera ensuite automatiquement.',
+      stopButton: 'Terminer l’entretien',
+      cameraLabel: 'Aperçu caméra',
+      micLabel: 'Microphone',
+      assistantAudioLabel: 'Audio de l’entretien',
+      systemLabel: 'Système',
+      autoplayHint: 'Si vous n’entendez pas l’audio, cliquez une fois sur le lecteur.',
+      finalClose: 'Merci pour cet échange, pour vos réponses détaillées ainsi que pour votre temps. Veuillez ne pas fermer cette fenêtre pour le moment, restez sur cette page. L’entretien est en cours de traitement. Vous pouvez laisser une évaluation entre-temps si vous le souhaitez. Le champ d’évaluation sera affiché plus bas.',
+      welcomePrep: 'Un instant, je prépare l’entretien.',
+      readyWord: 'prêt'
+    },
+    it: {
+      init: 'Inizializzazione…',
+      audioPreparing: 'Preparazione audio',
+      audioReady: 'Audio pronto',
+      audioClick: 'Fare clic qui una volta per attivare l’audio.',
+      connected: 'Connesso – il colloquio è in corso.',
+      disconnected: 'La connessione è stata interrotta. Rimanga su questa pagina.',
+      mediaBlocked: 'Non è stato possibile avviare microfono o videocamera. Controlli le autorizzazioni.',
+      startError: 'Non è stato possibile avviare il colloquio. Rimanga su questa pagina e riprovi.',
+      processing: 'Il colloquio è terminato. Rimanga ancora un momento su questa pagina mentre l’elaborazione viene completata.',
+      uploadPreparing: 'Il colloquio è in fase di elaborazione. Nel frattempo può lasciare una valutazione, se lo desidera.',
+      uploadReady: 'Tutti i dati sono stati elaborati correttamente. Ora può chiudere questa finestra. CLARITY le augura ancora molto successo e una buona giornata.',
+      uploadStillProcessing: 'Il colloquio è stato salvato. L’elaborazione è in fase di completamento. Rimanga ancora un momento su questa pagina.',
+      fallbackEnd: 'Termini il colloquio con il pulsante “Termina colloquio” e rimanga ancora un momento su questa pagina. L’elaborazione partirà automaticamente subito dopo.',
+      stopButton: 'Termina colloquio',
+      cameraLabel: 'Anteprima videocamera',
+      micLabel: 'Microfono',
+      assistantAudioLabel: 'Audio colloquio',
+      systemLabel: 'Sistema',
+      autoplayHint: 'Se non sente l’audio, faccia clic una volta sul player.',
+      finalClose: 'Grazie per il colloquio, per le sue risposte dettagliate e per il tempo dedicato. Non chiuda ancora questa finestra, rimanga su questa pagina. Il colloquio è in fase di elaborazione. Nel frattempo può lasciare una valutazione, se lo desidera. Il campo per la valutazione verrà mostrato più in basso.',
+      welcomePrep: 'Un momento, sto preparando il colloquio.',
+      readyWord: 'pronto'
+    }
+  };
+
+  function langKey(raw){
+    const s = String(raw || LANG || 'en').toLowerCase();
+    if (s.startsWith('de')) return 'de';
+    if (s.startsWith('es')) return 'es';
+    if (s.startsWith('fr')) return 'fr';
+    if (s.startsWith('it')) return 'it';
+    if (s.startsWith('en')) return 'en';
+    return 'en';
+  }
+
+  function t(key){
+    const lk = langKey(CTX?.lang || LANG);
+    return UI_TEXTS[lk]?.[key] || UI_TEXTS.en[key] || key;
+  }
+
+  function applyStaticTexts(){
+    try {
+      $btnStop.textContent = t('stopButton');
+      document.getElementById('cameraLabel').textContent = t('cameraLabel');
+      document.getElementById('micLabel').textContent = t('micLabel');
+      document.getElementById('assistantAudioLabel').textContent = t('assistantAudioLabel');
+      document.getElementById('systemLabel').textContent = t('systemLabel');
+      document.getElementById('autoplayHint').textContent = t('autoplayHint');
+      $audioBadge.textContent = t('audioPreparing');
+    } catch(_) {}
+  }
 
   function errMsg(e){
     return (e && (e.message || e.toString())) || String(e || '');
@@ -103,8 +360,12 @@
   function log(...a){
     console.log(...a);
     const s = a.map(x => typeof x === 'object' ? JSON.stringify(x) : String(x)).join(' ');
-    $log.textContent += s + "\n";
-    $log.scrollTop = $log.scrollHeight;
+
+    if ($log) {
+      $log.textContent += s + "\n";
+      $log.scrollTop = $log.scrollHeight;
+    }
+
     try {
       parent?.postMessage?.({ type:'clarity.live.log', data:s }, '*');
     } catch(_) {}
@@ -113,16 +374,22 @@
   function setStatus(kind, text){
     $status.textContent = text || kind || '';
     $status.style.background =
-      kind === 'err'  ? '#3b0d0d' :
-      kind === 'ok'   ? '#0d3b2a' :
-      kind === 'warn' ? '#3b2f0d' :
-      '#0f172a';
+      kind === 'err'  ? '#fef2f2' :
+      kind === 'ok'   ? '#ecfdf5' :
+      kind === 'warn' ? '#fffbeb' :
+      '#f8fafc';
 
     $status.style.borderColor =
-      kind === 'err'  ? '#7f1d1d' :
-      kind === 'ok'   ? '#14532d' :
-      kind === 'warn' ? '#7f6a1d' :
-      '#24314f';
+      kind === 'err'  ? '#fecaca' :
+      kind === 'ok'   ? '#bbf7d0' :
+      kind === 'warn' ? '#fde68a' :
+      '#e2e8f0';
+
+    $status.style.color =
+      kind === 'err'  ? '#991b1b' :
+      kind === 'ok'   ? '#065f46' :
+      kind === 'warn' ? '#92400e' :
+      '#334155';
   }
 
   function setProg(pct){
@@ -168,6 +435,9 @@
   const remoteTrackReady = new Promise(r => remoteTrackReadyResolve = r);
 
   let END_CALLED = false;
+  let END_REQUESTED_BY_MODEL = false;
+  let FINAL_MESSAGE_SPOKEN = false;
+  let FINAL_MESSAGE_ITEM_ID = '';
   let interviewStartedAt = 0;
   let userUtterances = 0;
   const MIN_SECONDS_BEFORE_END = 120;
@@ -178,15 +448,18 @@
   let recordingStartedAt = 0;
   let lastPutStatus = null;
 
-/* ===== Candidate-only Audio Fallback Recorder ===== */
-let candidateRecorder = null;
-let candidateChunks = [];
-let candidateRecordingStartedAt = 0;
-let candidateAudioReady = false; 
+  /* ===== Candidate-only Audio Fallback Recorder ===== */
+  let candidateRecorder = null;
+  let candidateChunks = [];
+  let candidateRecordingStartedAt = 0;
+  let candidateAudioReady = false;
 
   /* ===== Transcript State ===== */
   let transcriptSeq = 0;
   const transcriptSeen = new Set();
+
+  applyStaticTexts();
+  setStatus('info', t('init'));
 
   function transcriptKey(speaker, text, itemId) {
     return [
@@ -196,9 +469,25 @@ let candidateAudioReady = false;
     ].join('|');
   }
 
+  function looksLikeToolNoise(text){
+    const clean = String(text || '').trim();
+    if (!clean) return true;
+    if (clean === '{}' || clean === '[]') return true;
+    if (/^\s*[{[]/.test(clean)) return true;
+    if (/^\s*null\s*$/i.test(clean)) return true;
+    return false;
+  }
+
   function emitTranscript(speaker, text, extra = {}) {
     const clean = String(text || '').trim();
     if (!clean) return;
+    if (speaker === 'assistant' && looksLikeToolNoise(clean)) {
+      log('[TRANSCRIPT] skipped assistant tool/noise text', {
+        sourceEvent: extra.sourceEvent || '',
+        textPreview: clean.slice(0, 120)
+      });
+      return;
+    }
 
     const key = transcriptKey(
       speaker,
@@ -230,6 +519,42 @@ let candidateAudioReady = false;
     return String(ctx.lang || LANG || 'de').toLowerCase().startsWith('de');
   }
 
+  function isEnglishInterview(ctx = {}) {
+    return langKey(ctx.lang || LANG) !== 'de';
+  }
+
+  function finalClosingText(ctx = {}){
+    return UI_TEXTS[langKey(ctx.lang || LANG)]?.finalClose || UI_TEXTS.en.finalClose;
+  }
+
+  function finalClosingDetected(text){
+    const low = String(text || '').toLowerCase();
+    const lk = langKey(CTX.lang || LANG);
+
+    if (lk === 'de') {
+      return low.includes('bitte schließen sie dieses fenster noch nicht') &&
+             low.includes('das interview wird verarbeitet');
+    }
+
+    if (lk === 'es') {
+      return low.includes('no cierre esta ventana') &&
+             low.includes('la entrevista se está procesando');
+    }
+
+    if (lk === 'fr') {
+      return low.includes('ne pas fermer cette fenêtre') &&
+             low.includes('entretien est en cours de traitement');
+    }
+
+    if (lk === 'it') {
+      return low.includes('non chiuda ancora questa finestra') &&
+             low.includes('colloquio è in fase di elaborazione');
+    }
+
+    return low.includes('please do not close this window') &&
+           low.includes('the interview is being processed');
+  }
+
   function canEndNow(){
     if (!interviewStartedAt) return false;
 
@@ -239,6 +564,27 @@ let candidateAudioReady = false;
     if (userUtterances < MIN_USER_UTTERANCES) return false;
 
     return true;
+  }
+
+  function beginFinalHangup(source){
+    if (END_CALLED) return;
+
+    END_CALLED = true;
+    log('[END] final hangup accepted', {
+      source: source || 'unknown',
+      finalMessageSpoken: FINAL_MESSAGE_SPOKEN,
+      itemId: FINAL_MESSAGE_ITEM_ID || ''
+    });
+
+    setStatus('warn', t('processing'));
+    postToParent('clarity.live.final_message_done', {
+      uid: UID,
+      companyId: COMPANY_ID,
+      source: source || '',
+      ts: new Date().toISOString()
+    });
+
+    setTimeout(() => hangup(source || 'final_message_done'), 250);
   }
 
   function requestEndNow(source){
@@ -253,10 +599,12 @@ let candidateAudioReady = false;
       return;
     }
 
-    END_CALLED = true;
-    log('[END] end_interview ACCEPTED', source || 'unknown');
+    END_REQUESTED_BY_MODEL = true;
+    log('[END] end_interview requested by model', source || 'unknown');
 
-    setTimeout(() => hangup('model_end'), 900);
+    if (FINAL_MESSAGE_SPOKEN) {
+      beginFinalHangup(source || 'model_end');
+    }
   }
 
   /* ===== DC Queue ===== */
@@ -342,7 +690,7 @@ let candidateAudioReady = false;
       log('[RTC]', pc.connectionState);
 
       if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected'){
-        setStatus('err','Verbindung unterbrochen');
+        setStatus('warn', t('disconnected'));
       }
     };
 
@@ -388,10 +736,12 @@ let candidateAudioReady = false;
         await $remoteA.play();
 
         audioUnlocked = true;
+        $audioBadge.textContent = t('audioReady');
         postToParent('clarity.live.audio_ready', {});
         log('[AUDIO] remote audio playing (unlocked).');
       } catch(e) {
         audioUnlocked = false;
+        $audioBadge.textContent = t('audioPreparing');
         postToParent('clarity.live.audio_wait', {});
         log('[AUDIO] autoplay blocked, waiting for user gesture.');
       }
@@ -435,8 +785,8 @@ let candidateAudioReady = false;
     });
 
     if (!r.ok){
-      const t = await r.text().catch(() => r.statusText);
-      throw new Error('realtime_handshake_failed: ' + t);
+      const txt = await r.text().catch(() => r.statusText);
+      throw new Error('realtime_handshake_failed: ' + txt);
     }
 
     const answer = {
@@ -447,373 +797,344 @@ let candidateAudioReady = false;
     await pc.setRemoteDescription(answer);
   }
 
-  function extractTextFromContentParts(parts) {
-    const texts = [];
+  function onRealtimeEvent(ev){
+    let data = ev && ev.data;
 
-    if (!Array.isArray(parts)) return '';
+    try {
+      if (typeof data === 'string') data = JSON.parse(data);
+    } catch(_) {}
 
-    for (const part of parts) {
-      const t =
-        part?.transcript ||
-        part?.text ||
-        part?.input_text ||
-        part?.audio?.transcript ||
-        '';
+    if (!data) return;
 
-      if (String(t || '').trim()) {
-        texts.push(String(t).trim());
+    const eventType = data.type || '';
+
+    if (
+      eventType.includes('transcript') ||
+      eventType.includes('transcription') ||
+      eventType.includes('input_audio') ||
+      eventType === 'conversation.item.created' ||
+      eventType === 'conversation.item.done' ||
+      eventType === 'response.output_item.done' ||
+      eventType === 'response.output_item.added' ||
+      eventType === 'response.function_call_arguments.done'
+    ) {
+      log('[RT-EVENT-TYPE]', eventType);
+
+      log('[RT-EVENT-CHECK]', {
+        type: eventType,
+        hasTranscript: !!data?.transcript,
+        hasText: !!data?.text,
+        hasDelta: !!data?.delta,
+        hasError: !!data?.error,
+        itemId: data?.item_id || data?.itemId || data?.item?.id || '',
+        itemRole: data?.item?.role || '',
+        itemType: data?.item?.type || '',
+        itemStatus: data?.item?.status || '',
+        itemContentTypes: Array.isArray(data?.item?.content)
+          ? data.item.content.map(p => p?.type || '').join(',')
+          : '',
+        error: data?.error?.message || data?.error || ''
+      });
+    }
+
+    if (eventType === 'response.state' && data.state){
+      postToParent('clarity.avatar', { state:data.state });
+    }
+
+    /* USER TRANSCRIPT — completed */
+    if (
+      eventType === 'conversation.item.input_audio_transcription.completed' ||
+      eventType === 'input_audio_transcription.completed'
+    ) {
+      const txtRaw = String(
+        data?.transcript ||
+        data?.transcription?.text ||
+        data?.text ||
+        ''
+      ).trim();
+
+      const txt = txtRaw.toLowerCase();
+
+      log('[USER-TRANSCRIPT-COMPLETED]', {
+        eventType,
+        itemId: data?.item_id || data?.itemId || '',
+        hasText: !!txtRaw,
+        textPreview: txtRaw.slice(0, 160)
+      });
+
+      if (txtRaw) {
+        userUtterances += 1;
+
+        emitTranscript('user', txtRaw, {
+          itemId: data.item_id || data.itemId || '',
+          responseId: data.response_id || data.responseId || '',
+          sourceEvent: eventType,
+          final: true
+        });
       }
-    }
 
-    return texts.join('\n').trim();
-  }
-
-function onRealtimeEvent(ev){
-  let data = ev && ev.data;
-
-  try {
-    if (typeof data === 'string') data = JSON.parse(data);
-  } catch(_) {}
-
-  if (!data) return;
-
-  const eventType = data.type || '';
-
-  // Sehr wichtig für Diagnose: jedes relevante Realtime-Event sichtbar machen
-  if (
-    eventType.includes('transcript') ||
-    eventType.includes('transcription') ||
-    eventType.includes('input_audio') ||
-    eventType === 'conversation.item.created' ||
-    eventType === 'conversation.item.done' ||
-    eventType === 'response.output_item.done' ||
-    eventType === 'response.output_item.added' ||
-    eventType === 'response.function_call_arguments.done'
-  ) {
-    log('[RT-EVENT-TYPE]', eventType);
-
-    log('[RT-EVENT-CHECK]', {
-      type: eventType,
-      hasTranscript: !!data?.transcript,
-      hasText: !!data?.text,
-      hasDelta: !!data?.delta,
-      hasError: !!data?.error,
-      itemId: data?.item_id || data?.itemId || data?.item?.id || '',
-      itemRole: data?.item?.role || '',
-      itemType: data?.item?.type || '',
-      itemStatus: data?.item?.status || '',
-      itemContentTypes: Array.isArray(data?.item?.content)
-        ? data.item.content.map(p => p?.type || '').join(',')
-        : '',
-      error: data?.error?.message || data?.error || ''
-    });
-  }
-
-  if (eventType === 'response.state' && data.state){
-    postToParent('clarity.avatar', { state:data.state });
-  }
-
-  /*
-   * USER TRANSCRIPT — Hauptweg 1:
-   * Offizielle neue Event-Namen.
-   */
-  if (
-    eventType === 'conversation.item.input_audio_transcription.completed' ||
-    eventType === 'input_audio_transcription.completed'
-  ) {
-    const txtRaw = String(
-      data?.transcript ||
-      data?.transcription?.text ||
-      data?.text ||
-      ''
-    ).trim();
-
-    const txt = txtRaw.toLowerCase();
-
-    log('[USER-TRANSCRIPT-COMPLETED]', {
-      eventType,
-      itemId: data?.item_id || data?.itemId || '',
-      hasText: !!txtRaw,
-      textPreview: txtRaw.slice(0, 160)
-    });
-
-    if (txtRaw) {
-      userUtterances += 1;
-
-      emitTranscript('user', txtRaw, {
-        itemId: data.item_id || data.itemId || '',
-        responseId: data.response_id || data.responseId || '',
-        sourceEvent: eventType,
-        final: true
-      });
-    }
-
-    if (/(^|\b)(bereit|ready|oui|yes|ja)(\b|$)/.test(txt)){
-      READY_DETECTED = true;
-      maybeAskFirstQuestion();
-    }
-
-    return;
-  }
-
-  /*
-   * USER TRANSCRIPT — Hauptweg 2:
-   * Delta/Segment-Events sichtbar machen.
-   * Wichtig: Wir speichern delta/segment nicht sofort als finale Antwort,
-   * aber loggen sie, damit wir sehen, ob OpenAI überhaupt Zwischenstücke liefert.
-   */
-  if (
-    eventType === 'conversation.item.input_audio_transcription.delta' ||
-    eventType === 'input_audio_transcription.delta' ||
-    eventType === 'conversation.item.input_audio_transcription.segment' ||
-    eventType === 'input_audio_transcription.segment'
-  ) {
-    const piece = String(
-      data?.delta ||
-      data?.transcript ||
-      data?.text ||
-      data?.segment?.text ||
-      ''
-    ).trim();
-
-    log('[USER-TRANSCRIPT-PIECE]', {
-      eventType,
-      itemId: data?.item_id || data?.itemId || '',
-      hasPiece: !!piece,
-      piecePreview: piece.slice(0, 160)
-    });
-
-    return;
-  }
-
-  /*
-   * USER TRANSCRIPT — Failed-Events:
-   * Wenn diese erscheinen, wissen wir sicher: Live-User-Transcript geht nicht zuverlässig.
-   */
-  if (
-    eventType === 'conversation.item.input_audio_transcription.failed' ||
-    eventType === 'input_audio_transcription.failed'
-  ) {
-    log('[USER-TRANSCRIPT-FAILED]', {
-      eventType,
-      itemId: data?.item_id || data?.itemId || '',
-      error: data?.error?.message || data?.error || 'unknown'
-    });
-
-    postToParent('rt.transcript.partial', {
-      speaker: 'system',
-      text: '[user_transcription_failed]',
-      sourceEvent: eventType,
-      final: true,
-      ts: new Date().toISOString()
-    });
-
-    return;
-  }
-
-  /*
-   * USER AUDIO ITEM:
-   * Das ist noch kein Text. Nur Diagnose.
-   * Wenn wir viele input_audio items sehen, aber kein completed/failed,
-   * bauen wir danach Candidate-only-Audio-Fallback.
-   */
-  if (
-    (eventType === 'conversation.item.created' || eventType === 'conversation.item.done') &&
-    data.item &&
-    data.item.role === 'user'
-  ) {
-    const it = data.item;
-    const contentTypes = Array.isArray(it.content)
-      ? it.content.map(p => p?.type || '').join(',')
-      : '';
-
-    const hasInputAudio = contentTypes.includes('input_audio');
-    const hasInputText = contentTypes.includes('input_text');
-
-    if (hasInputAudio) {
-      log('[TRANSCRIPT] user input_audio item observed, waiting for transcription.completed', {
-        itemId: it.id || data.item_id || '',
-        contentTypes
-      });
-      return;
-    }
-
-    /*
-     * Interne User-input_text-Prompts ignorieren.
-     * Diese entstehen durch unsere eigenen conversation.item.create-Aufrufe.
-     */
-    if (hasInputText) {
-      log('[TRANSCRIPT] skipped internal user input_text', {
-        itemId: it.id || data.item_id || '',
-        contentTypes
-      });
-      return;
-    }
-
-    // Fallback: Falls doch echter User-Text in content liegt
-    const texts = [];
-
-    if (Array.isArray(it.content)) {
-      for (const part of it.content) {
-        const t =
-          part?.transcript ||
-          part?.text ||
-          part?.input_text ||
-          part?.audio?.transcript ||
-          '';
-
-        if (String(t || '').trim()) texts.push(String(t).trim());
-      }
-    }
-
-    const userText = texts.join('\n').trim();
-
-    if (userText) {
-      userUtterances += 1;
-
-      emitTranscript('user', userText, {
-        itemId: it.id || data.item_id || '',
-        responseId: data.response_id || '',
-        sourceEvent: eventType,
-        final: true
-      });
-
-      const low = userText.toLowerCase();
-      if (/(^|\b)(bereit|ready|oui|yes|ja)(\b|$)/.test(low)) {
+      if (/(^|\b)(bereit|ready|oui|yes|ja|sí|si|listo|prêt|pronto)(\b|$)/.test(txt)){
         READY_DETECTED = true;
         maybeAskFirstQuestion();
       }
-    }
 
-    return;
-  }
-
-  /*
-   * ASSISTANT TRANSCRIPT — gesprochene Antwort final.
-   */
-  if (eventType === 'response.audio_transcript.done') {
-    const txt = String(data?.transcript || '').trim();
-
-    if (txt) {
-      emitTranscript('assistant', txt, {
-        itemId: data.item_id || data.itemId || '',
-        responseId: data.response_id || data.responseId || '',
-        sourceEvent: eventType,
-        final: true
-      });
-    }
-
-    return;
-  }
-
-  /*
-   * ASSISTANT TRANSCRIPT — Delta sichtbar machen, aber nicht speichern.
-   */
-  if (eventType === 'response.audio_transcript.delta') {
-    const piece = String(data?.delta || '').trim();
-
-    if (piece) {
-      log('[ASSISTANT-TRANSCRIPT-DELTA]', {
-        itemId: data.item_id || data.itemId || '',
-        responseId: data.response_id || data.responseId || '',
-        piecePreview: piece.slice(0, 80)
-      });
-    }
-
-    return;
-  }
-
-  /*
-   * ASSISTANT TRANSCRIPT — Text-Fallback.
-   */
-  if (eventType === 'response.text.done') {
-    const txt = String(data?.text || '').trim();
-
-    if (txt) {
-      emitTranscript('assistant', txt, {
-        itemId: data.item_id || data.itemId || '',
-        responseId: data.response_id || data.responseId || '',
-        sourceEvent: eventType,
-        final: true
-      });
-    }
-
-    return;
-  }
-
-  /*
-   * ASSISTANT TRANSCRIPT — output_item.done Fallback.
-   */
-  if (eventType === 'response.output_item.done' && data.item) {
-    const it = data.item;
-
-    if (it.type === 'function_call' && it.name === 'end_interview'){
-      requestEndNow(eventType);
       return;
     }
 
-    if (Array.isArray(it.content)) {
-      const texts = [];
+    /* USER TRANSCRIPT — delta / segment diagnostics */
+    if (
+      eventType === 'conversation.item.input_audio_transcription.delta' ||
+      eventType === 'input_audio_transcription.delta' ||
+      eventType === 'conversation.item.input_audio_transcription.segment' ||
+      eventType === 'input_audio_transcription.segment'
+    ) {
+      const piece = String(
+        data?.delta ||
+        data?.transcript ||
+        data?.text ||
+        data?.segment?.text ||
+        ''
+      ).trim();
 
-      for (const part of it.content) {
-        const t =
-          part?.transcript ||
-          part?.text ||
-          part?.audio?.transcript ||
-          '';
+      log('[USER-TRANSCRIPT-PIECE]', {
+        eventType,
+        itemId: data?.item_id || data?.itemId || '',
+        hasPiece: !!piece,
+        piecePreview: piece.slice(0, 160)
+      });
 
-        if (String(t || '').trim()) texts.push(String(t).trim());
+      return;
+    }
+
+    /* USER TRANSCRIPT — failed */
+    if (
+      eventType === 'conversation.item.input_audio_transcription.failed' ||
+      eventType === 'input_audio_transcription.failed'
+    ) {
+      log('[USER-TRANSCRIPT-FAILED]', {
+        eventType,
+        itemId: data?.item_id || data?.itemId || '',
+        error: data?.error?.message || data?.error || 'unknown'
+      });
+
+      postToParent('rt.transcript.partial', {
+        speaker: 'system',
+        text: '[user_transcription_failed]',
+        sourceEvent: eventType,
+        final: true,
+        ts: new Date().toISOString()
+      });
+
+      return;
+    }
+
+    /* USER AUDIO ITEM / internal user input_text */
+    if (
+      (eventType === 'conversation.item.created' || eventType === 'conversation.item.done') &&
+      data.item &&
+      data.item.role === 'user'
+    ) {
+      const it = data.item;
+      const contentTypes = Array.isArray(it.content)
+        ? it.content.map(p => p?.type || '').join(',')
+        : '';
+
+      const hasInputAudio = contentTypes.includes('input_audio');
+      const hasInputText = contentTypes.includes('input_text');
+
+      if (hasInputAudio) {
+        log('[TRANSCRIPT] user input_audio item observed, waiting for transcription.completed', {
+          itemId: it.id || data.item_id || '',
+          contentTypes
+        });
+        return;
       }
 
-      const finalText = texts.join('\n').trim();
+      if (hasInputText) {
+        log('[TRANSCRIPT] skipped internal user input_text', {
+          itemId: it.id || data.item_id || '',
+          contentTypes
+        });
+        return;
+      }
 
-      if (finalText) {
-        emitTranscript('assistant', finalText, {
+      const texts = [];
+
+      if (Array.isArray(it.content)) {
+        for (const part of it.content) {
+          const txt =
+            part?.transcript ||
+            part?.text ||
+            part?.input_text ||
+            part?.audio?.transcript ||
+            '';
+
+          if (String(txt || '').trim()) texts.push(String(txt).trim());
+        }
+      }
+
+      const userText = texts.join('\n').trim();
+
+      if (userText) {
+        userUtterances += 1;
+
+        emitTranscript('user', userText, {
           itemId: it.id || data.item_id || '',
           responseId: data.response_id || '',
           sourceEvent: eventType,
           final: true
         });
+
+        const low = userText.toLowerCase();
+        if (/(^|\b)(bereit|ready|oui|yes|ja|sí|si|listo|prêt|pronto)(\b|$)/.test(low)) {
+          READY_DETECTED = true;
+          maybeAskFirstQuestion();
+        }
+      }
+
+      return;
+    }
+
+    /* ASSISTANT TRANSCRIPT — spoken final */
+    if (eventType === 'response.audio_transcript.done') {
+      const txt = String(data?.transcript || '').trim();
+
+      if (txt) {
+        emitTranscript('assistant', txt, {
+          itemId: data.item_id || data.itemId || '',
+          responseId: data.response_id || data.responseId || '',
+          sourceEvent: eventType,
+          final: true
+        });
+
+        if (finalClosingDetected(txt)) {
+          FINAL_MESSAGE_SPOKEN = true;
+          FINAL_MESSAGE_ITEM_ID = data.item_id || data.itemId || '';
+          log('[END] final processing message detected', {
+            itemId: FINAL_MESSAGE_ITEM_ID,
+            responseId: data.response_id || data.responseId || ''
+          });
+        }
+      }
+
+      return;
+    }
+
+    /* ASSISTANT TRANSCRIPT — delta diagnostics only */
+    if (eventType === 'response.audio_transcript.delta') {
+      const piece = String(data?.delta || '').trim();
+
+      if (piece) {
+        log('[ASSISTANT-TRANSCRIPT-DELTA]', {
+          itemId: data.item_id || data.itemId || '',
+          responseId: data.response_id || data.responseId || '',
+          piecePreview: piece.slice(0, 80)
+        });
+      }
+
+      return;
+    }
+
+    /* ASSISTANT TRANSCRIPT — text fallback, but ignore tool JSON/noise */
+    if (eventType === 'response.text.done') {
+      const txt = String(data?.text || '').trim();
+
+      if (looksLikeToolNoise(txt)) {
+        log('[TRANSCRIPT] skipped empty/json response.text.done', {
+          textPreview: txt.slice(0, 120)
+        });
+        return;
+      }
+
+      emitTranscript('assistant', txt, {
+        itemId: data.item_id || data.itemId || '',
+        responseId: data.response_id || data.responseId || '',
+        sourceEvent: eventType,
+        final: true
+      });
+
+      return;
+    }
+
+    /* ASSISTANT output_item.done */
+    if (eventType === 'response.output_item.done' && data.item) {
+      const it = data.item;
+
+      if (FINAL_MESSAGE_SPOKEN) {
+        const itemId = it.id || data.item_id || data.itemId || '';
+        const sameItem = !FINAL_MESSAGE_ITEM_ID || itemId === FINAL_MESSAGE_ITEM_ID;
+
+        if (sameItem || END_REQUESTED_BY_MODEL) {
+          beginFinalHangup('final_audio_done');
+          return;
+        }
+      }
+
+      if (it.type === 'function_call' && it.name === 'end_interview'){
+        requestEndNow(eventType);
+        return;
+      }
+
+      if (Array.isArray(it.content)) {
+        const texts = [];
+
+        for (const part of it.content) {
+          const txt =
+            part?.transcript ||
+            part?.text ||
+            part?.audio?.transcript ||
+            '';
+
+          if (String(txt || '').trim()) texts.push(String(txt).trim());
+        }
+
+        const finalText = texts.join('\n').trim();
+
+        if (finalText && !looksLikeToolNoise(finalText)) {
+          emitTranscript('assistant', finalText, {
+            itemId: it.id || data.item_id || '',
+            responseId: data.response_id || '',
+            sourceEvent: eventType,
+            final: true
+          });
+        }
+      }
+
+      return;
+    }
+
+    /* end_interview tool detection */
+    if (eventType === 'conversation.item.created' && data.item){
+      const it = data.item;
+
+      if (it.type === 'function_call' && it.name === 'end_interview'){
+        requestEndNow('conversation.item.created');
+        return;
       }
     }
 
-    return;
-  }
+    if (eventType === 'response.output_item.added' && data.item){
+      const it = data.item;
 
-  /*
-   * end_interview tool detection
-   */
-  if (eventType === 'conversation.item.created' && data.item){
-    const it = data.item;
+      if (it.type === 'function_call' && it.name === 'end_interview'){
+        requestEndNow(eventType);
+        return;
+      }
+    }
 
-    if (it.type === 'function_call' && it.name === 'end_interview'){
-      requestEndNow('conversation.item.created');
-      return;
+    if (eventType === 'response.function_call_arguments.done'){
+      const name =
+        data.name ||
+        data.tool_name ||
+        data.function_name ||
+        data?.function_call?.name;
+
+      if (name === 'end_interview'){
+        requestEndNow('function_call_arguments.done');
+        return;
+      }
     }
   }
-
-  if (eventType === 'response.output_item.added' && data.item){
-    const it = data.item;
-
-    if (it.type === 'function_call' && it.name === 'end_interview'){
-      requestEndNow(eventType);
-      return;
-    }
-  }
-
-  if (eventType === 'response.function_call_arguments.done'){
-    const name =
-      data.name ||
-      data.tool_name ||
-      data.function_name ||
-      data?.function_call?.name;
-
-    if (name === 'end_interview'){
-      requestEndNow('function_call_arguments.done');
-      return;
-    }
-  }
-}
 
   /* ===== Audio unlock ===== */
   async function ensureAudioUnlocked(){
@@ -823,13 +1144,14 @@ function onRealtimeEvent(ev){
       await $remoteA.play();
 
       audioUnlocked = true;
+      $audioBadge.textContent = t('audioReady');
       postToParent('clarity.live.audio_ready', {});
 
       return true;
     } catch(_) {}
 
     postToParent('clarity.live.audio_wait', {});
-    setStatus('warn','Bitte einmal hier klicken, um Audio zu aktivieren.');
+    setStatus('warn', t('audioClick'));
 
     return new Promise((resolve) => {
       const unlock = async () => {
@@ -843,6 +1165,7 @@ function onRealtimeEvent(ev){
           await $remoteA.play();
 
           audioUnlocked = true;
+          $audioBadge.textContent = t('audioReady');
           postToParent('clarity.live.audio_ready', {});
 
           window.removeEventListener('pointerdown', unlock);
@@ -859,7 +1182,10 @@ function onRealtimeEvent(ev){
 
   /* ===== Instructions / Knowledge ===== */
   function buildSystemInstructions(ctx){
-    const isDE = isInterviewDe(ctx);
+    const lk = langKey(ctx.lang || LANG);
+    const isDE = lk === 'de';
+    const isENFallback = lk !== 'de';
+    const finalClose = finalClosingText(ctx);
 
     const langLine = isDE
       ? 'Sprich ausschließlich DEUTSCH. Wechsle nie die Sprache.'
@@ -882,8 +1208,8 @@ function onRealtimeEvent(ev){
       : 'Ask the first question only after the user says “ready” (or after a fallback timeout).';
 
     const closing = isDE
-      ? 'Wenn alle Fragen gestellt sind, bedanke dich freundlich und sage ausdrücklich: „Bitte schließen Sie dieses Fenster noch nicht. Ihre Aufnahme, Analyse und der PDF-Report werden jetzt verarbeitet.“ Danach rufe end_interview auf.'
-      : 'When all questions are completed, thank the candidate and explicitly say: “Please do not close this window yet. Your recording, analysis, and PDF report are now being processed.” Then call end_interview.';
+      ? `Wenn alle Fragen gestellt sind, sage zum Abschluss EXAKT diesen Satz, ohne technische Details hinzuzufügen: „${finalClose}“ Danach rufe end_interview auf.`
+      : `When all questions are completed, say exactly this closing message and do not add technical details: “${finalClose}” Then call end_interview.`;
 
     const endRule = isDE
       ? `Rufe end_interview NUR auf, wenn das Interview wirklich abgeschlossen ist. Vorher NIEMALS. Mindestanforderung: mindestens ${MIN_USER_UTTERANCES} Kandidaten-Antworten und ein sinnvoller Abschluss/Verabschiedung.`
@@ -900,12 +1226,12 @@ function onRealtimeEvent(ev){
     ].join(' ');
   }
 
-  function chunkText(t, max = 1800) {
+  function chunkText(txt, max = 1800) {
     const out = [];
     let i = 0;
 
-    while (i < t.length) {
-      out.push(t.slice(i, i + max));
+    while (i < txt.length) {
+      out.push(txt.slice(i, i + max));
       i += max;
     }
 
@@ -936,112 +1262,85 @@ function onRealtimeEvent(ev){
   }
 
   function primeStrictLanguage(reportLang) {
-  const spoken = String(CTX.lang || LANG || 'de').toLowerCase().startsWith('de') ? 'de' : 'en';
-  const sys = buildSystemInstructions({
-    ...CTX,
-    lang: CTX.lang || LANG || 'de',
-    reportLang: CTX.reportLang || reportLang || 'de'
-  });
+    const spoken = String(CTX.lang || LANG || 'de').toLowerCase().startsWith('de') ? 'de' : 'en';
+    const sys = buildSystemInstructions({
+      ...CTX,
+      lang: CTX.lang || LANG || 'de',
+      reportLang: CTX.reportLang || reportLang || 'de'
+    });
 
-  const tools = [{
-    type: 'function',
-    name: 'end_interview',
-    description: 'Ends the interview. Use ONLY when interview is truly finished and you have said goodbye.',
-    parameters: {
-      type: 'object',
-      properties: {
-        reason: { type: 'string' }
-      },
-      required: []
-    }
-  }];
+    const tools = [{
+      type: 'function',
+      name: 'end_interview',
+      description: 'Ends the interview. Use ONLY when interview is truly finished and you have said the final processing message.',
+      parameters: {
+        type: 'object',
+        properties: {
+          reason: { type: 'string' }
+        },
+        required: []
+      }
+    }];
 
-  dcSend({
-    type: 'session.update',
-    session: {
-      voice: VOICE,
-      instructions: sys,
-      spoken_language: spoken,
-      input_audio_format: 'pcm16',
-      output_audio_format: 'pcm16',
-      input_audio_transcription: {
-        model: 'whisper-1',
-        language: spoken
-      },
-      turn_detection: {
-        type: 'none'
-      },
-      modalities: ['audio'],
-      tools,
-      tool_choice: 'auto'
-    }
-  });
+    dcSend({
+      type: 'session.update',
+      session: {
+        voice: VOICE,
+        instructions: sys,
+        spoken_language: spoken,
+        input_audio_format: 'pcm16',
+        output_audio_format: 'pcm16',
+        input_audio_transcription: {
+          model: 'whisper-1',
+          language: spoken
+        },
+        turn_detection: {
+          type: 'none'
+        },
+        modalities: ['audio'],
+        tools,
+        tool_choice: 'auto'
+      }
+    });
 
-  log('[PRIME] session.update (lang+tools+none VAD)', {
-    spoken,
-    interviewLang: CTX.lang || LANG || 'de',
-    reportLang: CTX.reportLang || reportLang || 'de'
-  });
+    log('[PRIME] session.update (lang+tools+none VAD)', {
+      spoken,
+      interviewLang: CTX.lang || LANG || 'de',
+      reportLang: CTX.reportLang || reportLang || 'de'
+    });
 
-  dcSend({ type: 'conversation.clear' });
-  log('[CONV] cleared');
+    dcSend({ type: 'conversation.clear' });
+    log('[CONV] cleared');
 
-  dcSend({
-    type: 'conversation.item.create',
-    item: {
-      type: 'message',
-      role: 'system',
-      content: [{ type: 'input_text', text: sys }]
-    }
-  });
+    dcSend({
+      type: 'conversation.item.create',
+      item: {
+        type: 'message',
+        role: 'system',
+        content: [{ type: 'input_text', text: sys }]
+      }
+    });
 
-  log('[CONV] system item created (instructions)');
+    log('[CONV] system item created (instructions)');
 
-  pushCompanyKnowledge();
-  log('[CONV] company knowledge injected (kbText/jobAd, if provided)');
-}
+    pushCompanyKnowledge();
+    log('[CONV] company knowledge injected (kbText/jobAd, if provided)');
+  }
 
+  function speakPrepThenWelcome() {
+    const isDE = isInterviewDe(CTX);
 
-function speakPrepThenWelcome() {
-  const isDE = isInterviewDe(CTX);
+    const prep = isDE
+      ? UI_TEXTS.de.welcomePrep
+      : UI_TEXTS.en.welcomePrep;
 
-  const prep = isDE
-    ? 'Einen Moment bitte, ich bereite das Interview vor.'
-    : 'One moment please, I am preparing the interview.';
+    const welcome = isDE
+      ? `Willkommen! Dieses Interview wird im Auftrag von ${CTX.companyName || 'Clarity'} geführt. Sind Sie bereit zu starten? Bitte sagen Sie „bereit“. `
+      : `Welcome! This interview is conducted on behalf of ${CTX.companyName || 'Clarity'}. Are you ready to begin? Please say “ready”.`;
 
-  const welcome = isDE
-    ? `Willkommen! Dieses Interview wird im Auftrag von ${CTX.companyName || 'Clarity'} geführt. Sind Sie bereit zu starten? Bitte sagen Sie „bereit“.`
-    : `Welcome! This interview is conducted on behalf of ${CTX.companyName || 'Clarity'}. Are you ready to begin? Please say “ready”.`;
+    dcSend({ type: 'response.cancel' });
+    log('[CONV] responses cancelled');
 
-  dcSend({ type: 'response.cancel' });
-  log('[CONV] responses cancelled');
-
-  // Robuster als response.instructions allein:
-  dcSend({
-    type: 'conversation.item.create',
-    item: {
-      type: 'message',
-      role: 'user',
-      content: [{
-        type: 'input_text',
-        text: isDE
-          ? `Bitte sage jetzt hörbar und freundlich: ${prep}`
-          : `Please say this out loud in a friendly way: ${prep}`
-      }]
-    }
-  });
-
-  dcSend({
-    type: 'response.create',
-    response: {
-      conversation: 'default',
-      modalities: ['audio']
-    }
-  });
-
-  log('[WELCOME] prep response requested');
-
-  setTimeout(() => {
     dcSend({
       type: 'conversation.item.create',
       item: {
@@ -1050,8 +1349,8 @@ function speakPrepThenWelcome() {
         content: [{
           type: 'input_text',
           text: isDE
-            ? `Bitte sage jetzt hörbar und freundlich: ${welcome}`
-            : `Please say this out loud in a friendly way: ${welcome}`
+            ? `Bitte sage jetzt hörbar und freundlich: ${prep}`
+            : `Please say this out loud in a friendly way: ${prep}`
         }]
       }
     });
@@ -1064,37 +1363,63 @@ function speakPrepThenWelcome() {
       }
     });
 
-    log('[WELCOME] welcome response requested');
+    log('[WELCOME] prep response requested');
 
     setTimeout(() => {
       dcSend({
-        type: 'session.update',
-        session: {
-          turn_detection: {
-            type: 'server_vad',
-            threshold: 0.9,
-            prefix_padding_ms: 200,
-            silence_duration_ms: 700
-          }
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'user',
+          content: [{
+            type: 'input_text',
+            text: isDE
+              ? `Bitte sage jetzt hörbar und freundlich: ${welcome}`
+              : `Please say this out loud in a friendly way: ${welcome}`
+          }]
         }
       });
 
-      log('[PRIME] VAD enabled');
+      dcSend({
+        type: 'response.create',
+        response: {
+          conversation: 'default',
+          modalities: ['audio']
+        }
+      });
 
-      enableMicUplink();
-
-      WELCOMED = true;
-      maybeStartRecorder();
-
-      postToParent('clarity.live.prepared', {});
+      log('[WELCOME] welcome response requested');
 
       setTimeout(() => {
-        firstQuestionFallbackElapsed = true;
-        maybeAskFirstQuestion();
-      }, 8000);
-    }, 600);
-  }, 1400);
-}
+        dcSend({
+          type: 'session.update',
+          session: {
+            turn_detection: {
+              type: 'server_vad',
+              threshold: 0.9,
+              prefix_padding_ms: 200,
+              silence_duration_ms: 700
+            }
+          }
+        });
+
+        log('[PRIME] VAD enabled');
+
+        enableMicUplink();
+
+        WELCOMED = true;
+        maybeStartRecorder();
+
+        postToParent('clarity.live.prepared', {});
+
+        setTimeout(() => {
+          firstQuestionFallbackElapsed = true;
+          maybeAskFirstQuestion();
+        }, 8000);
+      }, 600);
+    }, 1400);
+  }
+
   function buildInterviewPlan(ctx){
     const isDE = isInterviewDe(ctx);
 
@@ -1128,8 +1453,8 @@ function speakPrepThenWelcome() {
       .slice(0, 5);
 
     if (lines.length){
-      lines.forEach(l => {
-        seeds.push((isDE ? 'Bezug zur Ausschreibung: ' : 'Regarding the job ad: ') + l);
+      lines.forEach(line => {
+        seeds.push((isDE ? 'Bezug zur Ausschreibung: ' : 'Regarding the job ad: ') + line);
       });
     }
 
@@ -1139,41 +1464,41 @@ function speakPrepThenWelcome() {
   }
 
   function askFirstQuestion(){
-  if (FIRST_Q_SENT || !WELCOMED) return;
-  if (!READY_DETECTED && !firstQuestionFallbackElapsed) return;
+    if (FIRST_Q_SENT || !WELCOMED) return;
+    if (!READY_DETECTED && !firstQuestionFallbackElapsed) return;
 
-  FIRST_Q_SENT = true;
+    FIRST_Q_SENT = true;
 
-  const plan = buildInterviewPlan(CTX);
-  const isDE = isInterviewDe(CTX);
-  const first = plan[0] || (isDE ? 'Bitte stellen Sie sich kurz vor.' : 'Please introduce yourself.');
+    const plan = buildInterviewPlan(CTX);
+    const isDE = isInterviewDe(CTX);
+    const first = plan[0] || (isDE ? 'Bitte stellen Sie sich kurz vor.' : 'Please introduce yourself.');
 
-  dcSend({
-    type: 'conversation.item.create',
-    item: {
-      type: 'message',
-      role: 'user',
-      content: [{
-        type: 'input_text',
-        text: isDE
-          ? `Bitte stelle jetzt hörbar genau diese erste Interviewfrage und warte danach auf die Antwort des Kandidaten: ${first}`
-          : `Please now ask exactly this first interview question out loud and then wait for the candidate's answer: ${first}`
-      }]
-    }
-  });
+    dcSend({
+      type: 'conversation.item.create',
+      item: {
+        type: 'message',
+        role: 'user',
+        content: [{
+          type: 'input_text',
+          text: isDE
+            ? `Bitte stelle jetzt hörbar genau diese erste Interviewfrage und warte danach auf die Antwort des Kandidaten: ${first}`
+            : `Please now ask exactly this first interview question out loud and then wait for the candidate's answer: ${first}`
+        }]
+      }
+    });
 
-  log('[QUESTION] first item created', first);
+    log('[QUESTION] first item created', first);
 
-  dcSend({
-    type: 'response.create',
-    response: {
-      conversation: 'default',
-      modalities: ['audio']
-    }
-  });
+    dcSend({
+      type: 'response.create',
+      response: {
+        conversation: 'default',
+        modalities: ['audio']
+      }
+    });
 
-  log('[QUESTION] first response requested');
-}
+    log('[QUESTION] first response requested');
+  }
 
   function maybeAskFirstQuestion(){
     if (READY_DETECTED || firstQuestionFallbackElapsed) {
@@ -1193,7 +1518,7 @@ function speakPrepThenWelcome() {
         video: true
       });
     } catch(e) {
-      setStatus('warn','Mic/Kamera blockiert.');
+      setStatus('warn', t('mediaBlocked'));
       log('[Media] getUserMedia error', errMsg(e));
       postToParent('clarity.live.permission_error', { message:String(e?.name || e) });
       localStream = null;
@@ -1235,6 +1560,13 @@ function speakPrepThenWelcome() {
     try {
       localStream?.getAudioTracks()?.forEach(t => t.enabled = true);
       log('[MIC] uplink enabled');
+    } catch(_) {}
+  }
+
+  function disableMicUplink(){
+    try {
+      localStream?.getAudioTracks()?.forEach(t => t.enabled = false);
+      log('[MIC] uplink disabled');
     } catch(_) {}
   }
 
@@ -1388,6 +1720,7 @@ function speakPrepThenWelcome() {
     try {
       $muxState.textContent = 'creating';
       setProg(15);
+      setStatus('warn', t('uploadPreparing'));
 
       const created = await createMuxUpload(blob, kind);
 
@@ -1439,9 +1772,9 @@ function speakPrepThenWelcome() {
       uploadFinished = true;
 
       if (finalAsset?.assetStatus === 'ready') {
-        setStatus('ok','Upload erfolgreich. Bitte Fenster noch offen halten, die Analyse wird vorbereitet.');
+        setStatus('ok', t('uploadReady'));
       } else {
-        setStatus('warn','Upload abgeschlossen. Mux verarbeitet noch.');
+        setStatus('warn', t('uploadStillProcessing'));
       }
 
       postToParent('recorder:finished', payload);
@@ -1452,6 +1785,7 @@ function speakPrepThenWelcome() {
 
       $muxState.textContent = 'upload failed';
       setProg(0);
+      setStatus('warn', t('uploadStillProcessing'));
 
       const durationMs = recordingStartedAt ? (Date.now() - recordingStartedAt) : 0;
 
@@ -1484,180 +1818,179 @@ function speakPrepThenWelcome() {
   }
 
   function blobToDataUrl(blob) {
-  return new Promise((resolve, reject) => {
+    return new Promise((resolve, reject) => {
+      try {
+        const reader = new FileReader();
+
+        reader.onloadend = () => {
+          resolve(String(reader.result || ''));
+        };
+
+        reader.onerror = () => {
+          reject(new Error('candidate_audio_file_reader_failed'));
+        };
+
+        reader.readAsDataURL(blob);
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
+
+  async function sendCandidateAudioToParent(blob, meta = {}) {
     try {
-      const reader = new FileReader();
+      if (!blob || !blob.size) {
+        log('[CANDIDATE-AUDIO] skip send - empty blob', {
+          size: blob?.size || 0
+        });
 
-      reader.onloadend = () => {
-        resolve(String(reader.result || ''));
+        postToParent('candidate-audio:error', {
+          message: 'candidate_audio_empty',
+          uid: UID,
+          companyId: COMPANY_ID,
+          ts: new Date().toISOString()
+        });
+
+        return;
+      }
+
+      const dataUrl = await blobToDataUrl(blob);
+
+      const payload = {
+        dataUrl,
+        durationMs: meta.durationMs || 0,
+        size: blob.size,
+        mimeType: blob.type || meta.mimeType || 'audio/webm',
+        uid: UID,
+        companyId: COMPANY_ID,
+        ts: new Date().toISOString()
       };
 
-      reader.onerror = () => {
-        reject(new Error('candidate_audio_file_reader_failed'));
-      };
+      postToParent('candidate-audio:finished', payload);
 
-      reader.readAsDataURL(blob);
+      log('[CANDIDATE-AUDIO] event posted to parent', {
+        type: 'candidate-audio:finished',
+        durationMs: payload.durationMs,
+        size: payload.size,
+        mimeType: payload.mimeType,
+        dataUrlPresent: !!payload.dataUrl,
+        dataUrlPrefix: payload.dataUrl ? payload.dataUrl.slice(0, 32) : ''
+      });
     } catch (e) {
-      reject(e);
-    }
-  });
-}
+      const msg = errMsg(e);
 
-async function sendCandidateAudioToParent(blob, meta = {}) {
-  try {
-    if (!blob || !blob.size) {
-      log('[CANDIDATE-AUDIO] skip send - empty blob', {
-        size: blob?.size || 0
+      log('[CANDIDATE-AUDIO] send failed', {
+        message: msg
       });
 
       postToParent('candidate-audio:error', {
-        message: 'candidate_audio_empty',
+        message: msg,
         uid: UID,
         companyId: COMPANY_ID,
         ts: new Date().toISOString()
       });
-
-      return;
     }
-
-    const dataUrl = await blobToDataUrl(blob);
-
-    const payload = {
-      dataUrl,
-      durationMs: meta.durationMs || 0,
-      size: blob.size,
-      mimeType: blob.type || meta.mimeType || 'audio/webm',
-      uid: UID,
-      companyId: COMPANY_ID,
-      ts: new Date().toISOString()
-    };
-
-    postToParent('candidate-audio:finished', payload);
-
-    log('[CANDIDATE-AUDIO] event posted to parent', {
-      type: 'candidate-audio:finished',
-      durationMs: payload.durationMs,
-      size: payload.size,
-      mimeType: payload.mimeType,
-      dataUrlPresent: !!payload.dataUrl,
-      dataUrlPrefix: payload.dataUrl ? payload.dataUrl.slice(0, 32) : ''
-    });
-  } catch (e) {
-    const msg = errMsg(e);
-
-    log('[CANDIDATE-AUDIO] send failed', {
-      message: msg
-    });
-
-    postToParent('candidate-audio:error', {
-      message: msg,
-      uid: UID,
-      companyId: COMPANY_ID,
-      ts: new Date().toISOString()
-    });
   }
-}
 
-/* ===== Candidate-only Audio Recorder ===== */
-function prepareCandidateAudioRecording() {
-  candidateAudioReady = false;
-  candidateChunks = [];
+  /* ===== Candidate-only Audio Recorder ===== */
+  function prepareCandidateAudioRecording() {
+    candidateAudioReady = false;
+    candidateChunks = [];
 
-  try {
-    const audioTracks = localStream?.getAudioTracks?.() || [];
+    try {
+      const audioTracks = localStream?.getAudioTracks?.() || [];
 
-    if (!audioTracks.length) {
-      log('[CANDIDATE-AUDIO] no local audio track available');
-      return;
-    }
-
-    const candidateStream = new MediaStream();
-    audioTracks.forEach(track => candidateStream.addTrack(track));
-
-    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-      ? 'audio/webm;codecs=opus'
-      : 'audio/webm';
-
-    candidateRecorder = new MediaRecorder(candidateStream, {
-      mimeType,
-      audioBitsPerSecond: 96_000
-    });
-
-    candidateRecorder.onstart = () => {
-      candidateRecordingStartedAt = Date.now();
-      candidateAudioReady = true;
-
-      log('[CANDIDATE-AUDIO] started', {
-        mimeType
-      });
-    };
-
-    candidateRecorder.ondataavailable = (e) => {
-      if (e.data && e.data.size > 0) {
-        candidateChunks.push(e.data);
+      if (!audioTracks.length) {
+        log('[CANDIDATE-AUDIO] no local audio track available');
+        return;
       }
-    };
 
-    candidateRecorder.onstop = async () => {
-      const durationMs = candidateRecordingStartedAt
-        ? Date.now() - candidateRecordingStartedAt
-        : 0;
+      const candidateStream = new MediaStream();
+      audioTracks.forEach(track => candidateStream.addTrack(track));
 
-      const blob = new Blob(candidateChunks, {
-        type: mimeType || 'audio/webm'
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : 'audio/webm';
+
+      candidateRecorder = new MediaRecorder(candidateStream, {
+        mimeType,
+        audioBitsPerSecond: 48_000
       });
 
-      log('[CANDIDATE-AUDIO] stopped', {
-        size: blob.size,
-        durationMs,
-        chunks: candidateChunks.length,
-        mimeType: blob.type
+      candidateRecorder.onstart = () => {
+        candidateRecordingStartedAt = Date.now();
+        candidateAudioReady = true;
+
+        log('[CANDIDATE-AUDIO] started', {
+          mimeType
+        });
+      };
+
+      candidateRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          candidateChunks.push(e.data);
+        }
+      };
+
+      candidateRecorder.onstop = async () => {
+        const durationMs = candidateRecordingStartedAt
+          ? Date.now() - candidateRecordingStartedAt
+          : 0;
+
+        const blob = new Blob(candidateChunks, {
+          type: mimeType || 'audio/webm'
+        });
+
+        log('[CANDIDATE-AUDIO] stopped', {
+          size: blob.size,
+          durationMs,
+          chunks: candidateChunks.length,
+          mimeType: blob.type
+        });
+
+        await sendCandidateAudioToParent(blob, {
+          durationMs,
+          mimeType: blob.type
+        });
+
+        candidateChunks.length = 0;
+        candidateAudioReady = false;
+      };
+
+      log('[CANDIDATE-AUDIO] ready');
+    } catch (e) {
+      log('[CANDIDATE-AUDIO] prepare failed', {
+        message: errMsg(e)
       });
 
-      await sendCandidateAudioToParent(blob, {
-        durationMs,
-        mimeType: blob.type
+      postToParent('candidate-audio:error', {
+        message: errMsg(e),
+        uid: UID,
+        companyId: COMPANY_ID,
+        ts: new Date().toISOString()
       });
-
-      candidateChunks.length = 0;
-      candidateAudioReady = false;
-    };
-
-    log('[CANDIDATE-AUDIO] ready');
-  } catch (e) {
-    log('[CANDIDATE-AUDIO] prepare failed', {
-      message: errMsg(e)
-    });
-
-    postToParent('candidate-audio:error', {
-      message: errMsg(e),
-      uid: UID,
-      companyId: COMPANY_ID,
-      ts: new Date().toISOString()
-    });
-  }
-}
-
-function startCandidateAudioRecording() {
-  try {
-    if (candidateRecorder && candidateRecorder.state === 'inactive') {
-      candidateRecorder.start(1000);
     }
-  } catch (e) {
-    log('[CANDIDATE-AUDIO] start failed', errMsg(e));
   }
-}
 
-function stopCandidateAudioRecording() {
-  try {
-    if (candidateRecorder && candidateRecorder.state !== 'inactive') {
-      candidateRecorder.stop();
+  function startCandidateAudioRecording() {
+    try {
+      if (candidateRecorder && candidateRecorder.state === 'inactive') {
+        candidateRecorder.start(1000);
+      }
+    } catch (e) {
+      log('[CANDIDATE-AUDIO] start failed', errMsg(e));
     }
-  } catch (e) {
-    log('[CANDIDATE-AUDIO] stop failed', errMsg(e));
   }
-}
-         
+
+  function stopCandidateAudioRecording() {
+    try {
+      if (candidateRecorder && candidateRecorder.state !== 'inactive') {
+        candidateRecorder.stop();
+      }
+    } catch (e) {
+      log('[CANDIDATE-AUDIO] stop failed', errMsg(e));
+    }
+  }
 
   /* ===== Recorder ===== */
   function prepareRecording(){
@@ -1682,7 +2015,7 @@ function stopCandidateAudioRecording() {
 
     mixedStream = new MediaStream();
 
-    dest.stream.getAudioTracks().forEach(t => mixedStream.addTrack(t));
+    dest.stream.getAudioTracks().forEach(track => mixedStream.addTrack(track));
 
     const cam = localStream?.getVideoTracks?.()[0];
 
@@ -1748,37 +2081,37 @@ function stopCandidateAudioRecording() {
     $recState.textContent = 'ready';
   }
 
-function startRecorder(){
-  try{
-    if (mediaRecorder && mediaRecorder.state === 'inactive') {
-      mediaRecorder.start(1000);
+  function startRecorder(){
+    try{
+      if (mediaRecorder && mediaRecorder.state === 'inactive') {
+        mediaRecorder.start(1000);
+      }
+
+      startCandidateAudioRecording();
+    } catch(e){
+      log('[REC] start error', errMsg(e));
+    }
+  }
+
+  function stopRecording(){
+    try{
+      stopCandidateAudioRecording();
+    } catch(e){
+      log('[CANDIDATE-AUDIO] stop wrapper failed', errMsg(e));
     }
 
-    startCandidateAudioRecording();
-  }catch(e){
-    log('[REC] start error', errMsg(e));
-  }
-}
-
-function stopRecording(){
-  try{
-    stopCandidateAudioRecording();
-  }catch(e){
-    log('[CANDIDATE-AUDIO] stop wrapper failed', errMsg(e));
-  }
-
-  try{
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-      mediaRecorder.stop();
+    try{
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+      }
+    } catch(e){
+      log('[REC] stop error', errMsg(e));
     }
-  }catch(e){
-    log('[REC] stop error', errMsg(e));
-  }
 
-  try{
-    mixedStream?.getTracks()?.forEach(t=>t.stop());
-  }catch(_){}
-}
+    try{
+      mixedStream?.getTracks()?.forEach(track => track.stop());
+    } catch(_) {}
+  }
 
   function maybeStartRecorder(){
     if (!WELCOMED) return;
@@ -1796,13 +2129,17 @@ function stopRecording(){
     interviewStartedAt = Date.now();
     userUtterances = 0;
     END_CALLED = false;
+    END_REQUESTED_BY_MODEL = false;
+    FINAL_MESSAGE_SPOKEN = false;
+    FINAL_MESSAGE_ITEM_ID = '';
     uploadStarted = false;
     uploadFinished = false;
     lastPutStatus = null;
 
     try {
       destroyed = false;
-      setStatus('info','Initialisiere…');
+      applyStaticTexts();
+      setStatus('info', t('init'));
 
       await setupLocalMedia();
 
@@ -1815,51 +2152,68 @@ function stopRecording(){
         allowNoInvite: true
       });
 
-await connectRealtime(secret);
-prepareRecording();
-prepareCandidateAudioRecording();
+      await connectRealtime(secret);
+      prepareRecording();
+      prepareCandidateAudioRecording();
 
-CTX = { ...CTX, ...ctx };
+      CTX = { ...CTX, ...ctx };
+      applyStaticTexts();
 
       await remoteTrackReady;
       await ensureAudioUnlocked();
 
       postToParent('clarity.live.ready', {});
-      setStatus('ok','Verbunden • Interview läuft');
+      setStatus('ok', t('connected'));
     } catch(e) {
-      setStatus('err','Startfehler: ' + errMsg(e));
+      setStatus('err', t('startError'));
       log('[Start error]', errMsg(e));
       postToParent('clarity.live.error', { message: errMsg(e) });
     }
   }
 
   async function hangup(reason){
-    destroyed = true;
+    if (destroyed && reason !== 'user_fallback_end') return;
 
-    setStatus('warn','Interview beendet. Bitte Fenster offen halten, Upload läuft …');
+    destroyed = true;
+    setStatus('warn', t('processing'));
+    postToParent('clarity.live.processing_started', {
+      uid: UID,
+      companyId: COMPANY_ID,
+      reason: reason || '',
+      ts: new Date().toISOString()
+    });
+
+    disableMicUplink();
+
+    try {
+      if ($remoteA) {
+        $remoteA.pause();
+        $remoteA.srcObject = null;
+      }
+    } catch(_) {}
+
+    stopRecording();
 
     try { DC?.close(); } catch(_) {}
 
     try {
-      pc?.getSenders()?.forEach(s => s.track && s.track.stop());
+      pc?.getSenders()?.forEach(sender => sender.track && sender.track.stop());
     } catch(_) {}
 
     try {
-      pc?.getReceivers()?.forEach(r => r.track && r.track.stop());
+      pc?.getReceivers()?.forEach(receiver => receiver.track && receiver.track.stop());
     } catch(_) {}
 
     try {
       pc?.close();
     } catch(_) {}
 
-    stopRecording();
-
     try {
-      localStream?.getTracks()?.forEach(t => t.stop());
+      localStream?.getTracks()?.forEach(track => track.stop());
     } catch(_) {}
 
     try {
-      remoteStream?.getTracks()?.forEach(t => t.stop());
+      remoteStream?.getTracks()?.forEach(track => track.stop());
     } catch(_) {}
 
     log('[Live] hangup done', reason || '');
@@ -1872,6 +2226,7 @@ CTX = { ...CTX, ...ctx };
 
     if (type === 'clarity.live.context'){
       CTX = { ...CTX, ...(msg.data || {}) };
+      applyStaticTexts();
       log('[CTX]', CTX);
     }
 
@@ -1881,30 +2236,34 @@ CTX = { ...CTX, ...ctx };
       maybeStartRecorder();
     }
 
-else if (type === 'clarity.live.prime'){
-  CTX = { ...CTX, ...(msg.data || {}) };
+    else if (type === 'clarity.live.prime'){
+      CTX = { ...CTX, ...(msg.data || {}) };
+      applyStaticTexts();
 
-  const rep = CTX.reportLang || LANG;
-  log('[PRIME] received from parent', {
-    lang: CTX.lang || LANG,
-    reportLang: rep,
-    companyName: CTX.companyName || ''
-  });
+      const rep = CTX.reportLang || LANG;
+      log('[PRIME] received from parent', {
+        lang: CTX.lang || LANG,
+        reportLang: rep,
+        companyName: CTX.companyName || ''
+      });
 
-  primeStrictLanguage(rep);
-  speakPrepThenWelcome();
-}
+      primeStrictLanguage(rep);
+      speakPrepThenWelcome();
+    }
 
     else if (type === 'clarity.live.start'){
       startInterview();
     }
 
     else if (type === 'clarity.live.stop' || type === 'clarity.live.hangup'){
+      setStatus('warn', t('fallbackEnd'));
       hangup('parent_stop');
     }
   });
 
   window.addEventListener('load', () => {
+    applyStaticTexts();
+
     postToParent('clarity.live.hello', {
       uid: UID,
       companyId: COMPANY_ID
@@ -1920,7 +2279,10 @@ else if (type === 'clarity.live.prime'){
     }
   });
 
-  document.getElementById('btnStop').addEventListener('click', () => hangup('user_abort'));
+  $btnStop.addEventListener('click', () => {
+    setStatus('warn', t('fallbackEnd'));
+    hangup('user_fallback_end');
+  });
 
   })();
   </script>
