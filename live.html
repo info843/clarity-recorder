@@ -187,6 +187,15 @@
   const API_BASE = (Q.get('api') || window.location.origin).replace(/\/+$/, '');
   const DEBUG_UI = Q.get('debugUi') === '1' || Q.get('debugui') === '1' || Q.get('showLogs') === '1';
 
+  // Realtime liefert transcript.done/output_item.done teilweise früher,
+  // als der Satz beim User vollständig hörbar abgespielt wurde.
+  // Deshalb bekommt der finale Abschlusssatz bewusst einen Puffer,
+  // bevor Audio, Mikrofon, Kamera und Recorder gestoppt werden.
+  const FINAL_HANGUP_BUFFER_MS = Math.max(
+    2500,
+    Math.min(12000, Number(Q.get('finalHangupBufferMs') || 6500) || 6500)
+  );
+
   if (DEBUG_UI) document.body.classList.add('debug-ui');
 
   /* ===== UI ===== */
@@ -438,6 +447,7 @@
   let END_REQUESTED_BY_MODEL = false;
   let FINAL_MESSAGE_SPOKEN = false;
   let FINAL_MESSAGE_ITEM_ID = '';
+  let FINAL_HANGUP_TIMER = null;
   let interviewStartedAt = 0;
   let userUtterances = 0;
   const MIN_SECONDS_BEFORE_END = 120;
@@ -568,23 +578,45 @@
 
   function beginFinalHangup(source){
     if (END_CALLED) return;
+    if (FINAL_HANGUP_TIMER) return;
 
-    END_CALLED = true;
-    log('[END] final hangup accepted', {
+    log('[END] final hangup scheduled', {
       source: source || 'unknown',
       finalMessageSpoken: FINAL_MESSAGE_SPOKEN,
-      itemId: FINAL_MESSAGE_ITEM_ID || ''
+      itemId: FINAL_MESSAGE_ITEM_ID || '',
+      bufferMs: FINAL_HANGUP_BUFFER_MS
     });
 
     setStatus('warn', t('processing'));
-    postToParent('clarity.live.final_message_done', {
+
+    postToParent('clarity.live.final_message_pending', {
       uid: UID,
       companyId: COMPANY_ID,
       source: source || '',
+      bufferMs: FINAL_HANGUP_BUFFER_MS,
       ts: new Date().toISOString()
     });
 
-    setTimeout(() => hangup(source || 'final_message_done'), 250);
+    FINAL_HANGUP_TIMER = setTimeout(() => {
+      if (END_CALLED) return;
+
+      END_CALLED = true;
+
+      log('[END] final hangup accepted after buffer', {
+        source: source || 'unknown',
+        bufferMs: FINAL_HANGUP_BUFFER_MS
+      });
+
+      postToParent('clarity.live.final_message_done', {
+        uid: UID,
+        companyId: COMPANY_ID,
+        source: source || '',
+        bufferMs: FINAL_HANGUP_BUFFER_MS,
+        ts: new Date().toISOString()
+      });
+
+      hangup(source || 'final_message_done');
+    }, FINAL_HANGUP_BUFFER_MS);
   }
 
   function requestEndNow(source){
@@ -2132,6 +2164,10 @@
     END_REQUESTED_BY_MODEL = false;
     FINAL_MESSAGE_SPOKEN = false;
     FINAL_MESSAGE_ITEM_ID = '';
+    if (FINAL_HANGUP_TIMER) {
+      try { clearTimeout(FINAL_HANGUP_TIMER); } catch(_) {}
+    }
+    FINAL_HANGUP_TIMER = null;
     uploadStarted = false;
     uploadFinished = false;
     lastPutStatus = null;
@@ -2172,6 +2208,11 @@
   }
 
   async function hangup(reason){
+    if (FINAL_HANGUP_TIMER) {
+      try { clearTimeout(FINAL_HANGUP_TIMER); } catch(_) {}
+      FINAL_HANGUP_TIMER = null;
+    }
+
     if (destroyed && reason !== 'user_fallback_end') return;
 
     destroyed = true;
