@@ -193,7 +193,7 @@
   // bevor Audio, Mikrofon, Kamera und Recorder gestoppt werden.
   const FINAL_HANGUP_BUFFER_MS = Math.max(
     2500,
-    Math.min(12000, Number(Q.get('finalHangupBufferMs') || 6500) || 6500)
+    Math.min(12000, Number(Q.get('finalHangupBufferMs') || 8500) || 8500)
   );
 
   if (DEBUG_UI) document.body.classList.add('debug-ui');
