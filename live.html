@@ -119,6 +119,19 @@
     .debugOnly{display:none}
     body.debug-ui .debugOnly{display:block}
 
+    body.audio-only #cameraLabel,
+    body.audio-only #localVideo{
+      display:none;
+    }
+
+    body.audio-only .wrap{
+      grid-template-columns:1fr;
+    }
+
+    body.audio-only .grid2{
+      grid-template-columns:1fr;
+    }
+
     @media (max-width:900px){
       .wrap{grid-template-columns:1fr}
       .grid2{grid-template-columns:1fr}
@@ -186,6 +199,18 @@
   const AUTOSTART = Q.get('autostart') !== '0';
   const API_BASE = (Q.get('api') || window.location.origin).replace(/\/+$/, '');
   const DEBUG_UI = Q.get('debugUi') === '1' || Q.get('debugui') === '1' || Q.get('showLogs') === '1';
+
+  // Audio-only/no-camera mode. Used by the Wix User Interview page for audio interviews:
+  // the same live AI conversation runs, but only the microphone is requested and the recording is audio-only.
+  const MODE_RAW = String(Q.get('mode') || Q.get('interviewMode') || '').toLowerCase();
+  const AUDIO_ONLY =
+    MODE_RAW === 'audio' ||
+    Q.get('audioOnly') === '1' ||
+    Q.get('audioonly') === '1' ||
+    Q.get('noVideo') === '1' ||
+    Q.get('novideo') === '1';
+
+  if (AUDIO_ONLY) document.body.classList.add('audio-only');
 
   // Realtime liefert transcript.done/output_item.done teilweise früher,
   // als der Satz beim User vollständig hörbar abgespielt wurde.
@@ -709,12 +734,12 @@
   function applyStaticTexts(){
     try {
       $btnStop.textContent = t('stopButton');
-      document.getElementById('cameraLabel').textContent = t('cameraLabel');
+      document.getElementById('cameraLabel').textContent = AUDIO_ONLY ? '' : t('cameraLabel');
       document.getElementById('micLabel').textContent = t('micLabel');
       document.getElementById('assistantAudioLabel').textContent = t('assistantAudioLabel');
       document.getElementById('systemLabel').textContent = t('systemLabel');
       document.getElementById('autoplayHint').textContent = t('autoplayHint');
-      $audioBadge.textContent = t('audioPreparing');
+      $audioBadge.textContent = AUDIO_ONLY ? t('audioReady') : t('audioPreparing');
     } catch(_) {}
   }
 
@@ -1165,7 +1190,15 @@
         pc.addTrack(t, localStream);
       });
 
-      localStream.getVideoTracks().forEach(t => pc.addTrack(t, localStream));
+      if (!AUDIO_ONLY) {
+        localStream.getVideoTracks().forEach(t => pc.addTrack(t, localStream));
+      }
+
+      log('[RTC] local tracks added', {
+        audioOnly: AUDIO_ONLY,
+        audioTracks: localStream.getAudioTracks().length,
+        videoTracks: localStream.getVideoTracks().length
+      });
     }
 
     DC = pc.createDataChannel('oai-events');
@@ -1911,24 +1944,33 @@
 
   /* ===== Media ===== */
   async function setupLocalMedia(){
+    const constraints = {
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      },
+      video: AUDIO_ONLY ? false : true
+    };
+
     try {
-      localStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        },
-        video: true
-      });
+      localStream = await navigator.mediaDevices.getUserMedia(constraints);
     } catch(e) {
       setStatus('warn', t('mediaBlocked'));
-      log('[Media] getUserMedia error', errMsg(e));
-      postToParent('clarity.live.permission_error', { message:String(e?.name || e) });
+      log('[Media] getUserMedia error', {
+        audioOnly: AUDIO_ONLY,
+        message: errMsg(e)
+      });
+      postToParent('clarity.live.permission_error', { message:String(e?.name || e), audioOnly: AUDIO_ONLY });
       localStream = null;
     }
 
     if (localStream){
-      $localV.srcObject = localStream;
+      if (!AUDIO_ONLY) {
+        $localV.srcObject = localStream;
+      } else {
+        try { $localV.srcObject = null; } catch(_) {}
+      }
 
       try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -2420,7 +2462,7 @@
 
     dest.stream.getAudioTracks().forEach(track => mixedStream.addTrack(track));
 
-    const cam = localStream?.getVideoTracks?.()[0];
+    const cam = AUDIO_ONLY ? null : localStream?.getVideoTracks?.()[0];
 
     if (cam) mixedStream.addTrack(cam);
 
@@ -2552,12 +2594,23 @@
 
       const initialInterviewLang = activeInterviewLang(CTX);
 
+      log('[LIVE] startInterview', {
+        audioOnly: AUDIO_ONLY,
+        mode: AUDIO_ONLY ? 'audio' : 'video',
+        uid: UID,
+        companyId: COMPANY_ID,
+        lang: initialInterviewLang
+      });
+
       const { secret, ctx } = await getRealtimeToken({
         uid: UID,
         companyId: COMPANY_ID,
         lang: initialInterviewLang,
         interviewLang: initialInterviewLang,
         userCommLang: getInterviewLangRaw(CTX),
+        mode: AUDIO_ONLY ? 'audio' : 'video',
+        audioOnly: AUDIO_ONLY,
+        noVideo: AUDIO_ONLY,
         voice: VOICE,
         debug: true,
         allowNoInvite: true
@@ -2686,7 +2739,9 @@
 
     postToParent('clarity.live.hello', {
       uid: UID,
-      companyId: COMPANY_ID
+      companyId: COMPANY_ID,
+      audioOnly: AUDIO_ONLY,
+      mode: AUDIO_ONLY ? 'audio' : 'video'
     });
 
     if (AUTOSTART){
