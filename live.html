@@ -1624,6 +1624,52 @@
   }
 
   /* ===== Instructions / Knowledge ===== */
+  function interviewMaxQuestions(ctx = CTX){
+    const direct = Number(ctx?.interviewConfig?.maxQuestions || ctx?.questionCount || ctx?.maxQuestions || 0);
+    if (Number.isFinite(direct) && direct > 0) return Math.max(1, Math.min(50, Math.round(direct)));
+    const raw = String(ctx?.questionSet || ctx?.interviewConfig?.questionSet || '').toUpperCase();
+    const m = raw.match(/(10|20|30|40|50)/);
+    return m ? Number(m[1]) : 10;
+  }
+
+  function parseQuestionLines(text){
+    const raw = String(text || '').trim();
+    if (!raw) return [];
+
+    const out = [];
+    const seen = new Set();
+    raw
+      .split(/\r?\n|(?=\b\d{1,2}[.)]\s+)/g)
+      .map(line => line.replace(/^\s*[-•*]+\s*/, '').replace(/^\s*\d{1,2}[.)]\s*/, '').trim())
+      .filter(Boolean)
+      .forEach(line => {
+        const clean = line.replace(/\s+/g, ' ');
+        const key = clean.toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          out.push(clean);
+        }
+      });
+    return out;
+  }
+
+  function questionPolicyText(ctx = CTX){
+    const maxQ = interviewMaxQuestions(ctx);
+    const qset = String(ctx?.questionSet || ctx?.interviewConfig?.questionSet || `Q${maxQ}`).toUpperCase();
+    const customQuestions = parseQuestionLines(ctx?.customQuestionsText || ctx?.questionsText || '');
+    const missing = Math.max(0, maxQ - customQuestions.length);
+
+    if (activeInterviewLang(ctx) === 'de') {
+      return customQuestions.length
+        ? `Fragenset ${qset}: Stelle maximal ${maxQ} Hauptfragen. Nutze zuerst die kundeneigenen Fragen aus dem Kontext. Wenn weniger als ${maxQ} kundeneigene Fragen vorhanden sind, ergänze ${missing} passende rollenbezogene Fragen. Beende das Interview nach maximal ${maxQ} Hauptfragen.`
+        : `Fragenset ${qset}: Stelle maximal ${maxQ} passende rollenbezogene Hauptfragen. Beende das Interview nach maximal ${maxQ} Hauptfragen.`;
+    }
+
+    return customQuestions.length
+      ? `Question set ${qset}: Ask at most ${maxQ} main questions. Use the customer's own questions from context first. If fewer than ${maxQ} customer questions are available, add ${missing} suitable role-specific questions. End the interview after at most ${maxQ} main questions.`
+      : `Question set ${qset}: Ask at most ${maxQ} suitable role-specific main questions. End the interview after at most ${maxQ} main questions.`;
+  }
+
   function buildSystemInstructions(ctx){
     const lk = activeInterviewLang(ctx);
     const profile = langProfile(lk);
@@ -1633,6 +1679,7 @@
       return [
         'Sprich ausschließlich DEUTSCH. Wechsle nie die Sprache.',
         'Führe ein strukturiertes Job-Interview: nur EINE Frage zur Zeit, max. 1 Nachfrage, strikt am Jobprofil bleiben. Stelle keine zwei Fragen in einer Nachricht.',
+        questionPolicyText(ctx),
         'Nach jeder Frage warten, bis die Kandidatin/der Kandidat fertig ist.',
         'Nutze ausschließlich die FIRMENKENNTNISSE aus „KONTEXT“ für Antworten zu Firma, Stelle, Prozessen, Benefits usw. Wenn etwas nicht im KONTEXT steht, sage freundlich, dass dies mit der Firma direkt zu klären ist.',
         'Starte die erste Frage erst, nachdem die Person „bereit“ gesagt hat (oder nach Fallback-Timeout).',
@@ -1645,6 +1692,7 @@
       `Speak strictly in ${profile.englishName.toUpperCase()}. Do not switch languages.`,
       `The full interview, welcome messages, questions, follow-ups, candidate-facing explanations, and closing message must be spoken in ${profile.englishName}.`,
       'Conduct a structured job interview: one question at a time, max one follow-up, stick to the job profile. Never ask two questions in one message.',
+      questionPolicyText(ctx),
       'After each question, wait until the candidate is finished.',
       'Use only the COMPANY KNOWLEDGE from “CONTEXT” to answer company/job/process/benefits questions. If it is not in CONTEXT, politely say the candidate should check with the company.',
       `Ask the first question only after the user says one of these readiness words or after the fallback timeout: ${(profile.readyWords || ['ready']).join(', ')}.`,
@@ -1673,7 +1721,16 @@
 
     const header = '=== KONTEXT / CONTEXT START ===';
     const footer = '=== KONTEXT / CONTEXT ENDE ===';
-    const body = [kb, job].filter(Boolean).join('\n\n');
+    const questions = parseQuestionLines(CTX.customQuestionsText || CTX.questionsText || '')
+      .map((q, i) => `${i + 1}. ${q}`)
+      .join('\n');
+
+    const questionBlock = [
+      questionPolicyText(CTX),
+      questions ? `CUSTOMER QUESTIONS / KUNDENEIGENE FRAGEN:\n${questions}` : ''
+    ].filter(Boolean).join('\n\n');
+
+    const body = [kb, job, questionBlock].filter(Boolean).join('\n\n');
     const pieces = chunkText(`${header}\n${body}\n${footer}`, 1800);
 
     for (const p of pieces) {
@@ -1860,8 +1917,15 @@
   function buildInterviewPlan(ctx){
     const lk = activeInterviewLang(ctx);
     const profile = langProfile(lk);
-    const seeds = (profile.baseQuestions || LANG_PROFILES.en.baseQuestions).slice();
+    const seeds = [];
     const prefix = profile.jobPrefix || LANG_PROFILES.en.jobPrefix;
+    const maxQ = interviewMaxQuestions(ctx);
+
+    const customQuestions = parseQuestionLines(ctx.customQuestionsText || ctx.questionsText || '').slice(0, maxQ);
+    customQuestions.forEach(q => seeds.push(q));
+
+    const base = (profile.baseQuestions || LANG_PROFILES.en.baseQuestions).slice();
+    base.forEach(q => seeds.push(q));
 
     const text =
       (ctx.roleProfileText || '').trim() +
@@ -1872,7 +1936,8 @@
       .split(/\r?\n/)
       .map(s => s.trim())
       .filter(Boolean)
-      .slice(0, 5);
+      .filter(line => !/^\d{1,2}[.)]\s*/.test(line))
+      .slice(0, Math.max(0, maxQ - seeds.length));
 
     if (lines.length){
       lines.forEach(line => {
@@ -1880,9 +1945,19 @@
       });
     }
 
-    const maxQ = Number(ctx.interviewConfig?.maxQuestions || 5);
+    const unique = [];
+    const seen = new Set();
+    for (const q of seeds){
+      const clean = String(q || '').replace(/\s+/g, ' ').trim();
+      if (!clean) continue;
+      const key = clean.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(clean);
+      if (unique.length >= maxQ) break;
+    }
 
-    return seeds.slice(0, Math.max(1, maxQ));
+    return unique.slice(0, Math.max(1, maxQ));
   }
 
   function firstQuestionInstruction(question, lk){
