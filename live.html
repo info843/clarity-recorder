@@ -335,18 +335,99 @@
     }
   };
 
+  function firstNonEmpty(...values){
+    for (const value of values) {
+      const s = String(value || '').trim();
+      if (s) return s;
+    }
+    return '';
+  }
+
+  function getInterviewLangRaw(ctx = {}){
+    return firstNonEmpty(
+      ctx.userCommLang,
+      ctx.interviewLang,
+      ctx.interviewLanguage,
+      ctx.userLanguage,
+      ctx.userLang,
+      ctx.spokenLang,
+      ctx.language,
+      ctx.lang,
+      LANG
+    );
+  }
+
   function langKey(raw){
-    const s = String(raw || LANG || 'en').toLowerCase();
-    if (s.startsWith('de')) return 'de';
-    if (s.startsWith('es')) return 'es';
-    if (s.startsWith('fr')) return 'fr';
-    if (s.startsWith('it')) return 'it';
-    if (s.startsWith('en')) return 'en';
+    const s = String(raw || LANG || 'en').trim().toLowerCase();
+
+    if (!s) return 'en';
+
+    if (
+      s === 'de' ||
+      s.startsWith('de-') ||
+      s.startsWith('de_') ||
+      s.includes('deutsch') ||
+      s.includes('german')
+    ) return 'de';
+
+    if (
+      s === 'en' ||
+      s.startsWith('en-') ||
+      s.startsWith('en_') ||
+      s.includes('english') ||
+      s.includes('englisch')
+    ) return 'en';
+
+    if (
+      s === 'es' ||
+      s.startsWith('es-') ||
+      s.startsWith('es_') ||
+      s.includes('spanish') ||
+      s.includes('spanisch') ||
+      s.includes('español') ||
+      s.includes('espanol')
+    ) return 'es';
+
+    if (
+      s === 'fr' ||
+      s.startsWith('fr-') ||
+      s.startsWith('fr_') ||
+      s.includes('french') ||
+      s.includes('französisch') ||
+      s.includes('franzoesisch') ||
+      s.includes('français') ||
+      s.includes('francais')
+    ) return 'fr';
+
+    if (
+      s === 'it' ||
+      s.startsWith('it-') ||
+      s.startsWith('it_') ||
+      s.includes('italian') ||
+      s.includes('italienisch') ||
+      s.includes('italiano')
+    ) return 'it';
+
     return 'en';
   }
 
+  function activeInterviewLang(ctx = CTX){
+    return langKey(getInterviewLangRaw(ctx || {}));
+  }
+
+  function normalizeIncomingContext(data = {}){
+    const incoming = data || {};
+    const merged = { ...CTX, ...incoming };
+
+    // Wichtig: Die Interview-Sprache kommt je nach Seite/DB unter verschiedenen Feldnamen.
+    // Für die Live-KI wird sie zentral als CTX.lang normalisiert.
+    merged.lang = getInterviewLangRaw(merged);
+
+    return merged;
+  }
+
   function t(key){
-    const lk = langKey(CTX?.lang || LANG);
+    const lk = activeInterviewLang(CTX);
     return UI_TEXTS[lk]?.[key] || UI_TEXTS.en[key] || key;
   }
 
@@ -526,20 +607,16 @@
   }
 
   function isInterviewDe(ctx = {}) {
-    return String(ctx.lang || LANG || 'de').toLowerCase().startsWith('de');
-  }
-
-  function isEnglishInterview(ctx = {}) {
-    return langKey(ctx.lang || LANG) !== 'de';
+    return activeInterviewLang(ctx) === 'de';
   }
 
   function finalClosingText(ctx = {}){
-    return UI_TEXTS[langKey(ctx.lang || LANG)]?.finalClose || UI_TEXTS.en.finalClose;
+    return UI_TEXTS[activeInterviewLang(ctx)]?.finalClose || UI_TEXTS.en.finalClose;
   }
 
   function finalClosingDetected(text){
     const low = String(text || '').toLowerCase();
-    const lk = langKey(CTX.lang || LANG);
+    const lk = activeInterviewLang(CTX);
 
     if (lk === 'de') {
       return low.includes('bitte schließen sie dieses fenster noch nicht') &&
@@ -1214,47 +1291,67 @@
 
   /* ===== Instructions / Knowledge ===== */
   function buildSystemInstructions(ctx){
-    const lk = langKey(ctx.lang || LANG);
-    const isDE = lk === 'de';
-    const isENFallback = lk !== 'de';
+    const lk = activeInterviewLang(ctx);
     const finalClose = finalClosingText(ctx);
 
-    const langLine = isDE
-      ? 'Sprich ausschließlich DEUTSCH. Wechsle nie die Sprache.'
-      : 'Speak strictly in ENGLISH. Do not switch languages.';
+    const LANG_RULES = {
+      de: {
+        langLine: 'Sprich ausschließlich DEUTSCH. Wechsle nie die Sprache.',
+        structure: 'Führe ein strukturiertes Job-Interview: nur EINE Frage zur Zeit, max. 1 Nachfrage, strikt am Jobprofil bleiben. Stelle keine zwei Fragen in einer Nachricht.',
+        waiting: 'Nach jeder Frage warten, bis die Kandidatin/der Kandidat fertig ist.',
+        kbRule: 'Nutze ausschließlich die FIRMENKENNTNISSE aus „KONTEXT“ für Antworten zu Firma, Stelle, Prozessen, Benefits usw. Wenn etwas nicht im KONTEXT steht, sage freundlich, dass dies mit der Firma direkt zu klären ist.',
+        readyGate: 'Starte die erste Frage erst, nachdem die Person „bereit“ gesagt hat (oder nach Fallback-Timeout).',
+        closing: `Wenn alle Fragen gestellt sind, sage zum Abschluss EXAKT diesen Satz, ohne technische Details hinzuzufügen: „${finalClose}“ Danach rufe end_interview auf.`,
+        endRule: `Rufe end_interview NUR auf, wenn das Interview wirklich abgeschlossen ist. Vorher NIEMALS. Mindestanforderung: mindestens ${MIN_USER_UTTERANCES} Kandidaten-Antworten und ein sinnvoller Abschluss/Verabschiedung.`
+      },
+      en: {
+        langLine: 'Speak strictly in ENGLISH. Do not switch languages.',
+        structure: 'Conduct a structured job interview: one question at a time, max one follow-up, stick to the job profile. Never ask two questions in one message.',
+        waiting: 'After each question, wait until the candidate is finished.',
+        kbRule: 'Use only the COMPANY KNOWLEDGE from “CONTEXT” to answer company/job/process/benefits questions. If it is not in CONTEXT, politely say the candidate should check with the company.',
+        readyGate: 'Ask the first question only after the user says “ready” (or after a fallback timeout).',
+        closing: `When all questions are completed, say exactly this closing message and do not add technical details: “${finalClose}” Then call end_interview.`,
+        endRule: `Call end_interview ONLY when the interview is truly complete. NEVER before. Minimum: at least ${MIN_USER_UTTERANCES} candidate answers and a proper closing/goodbye.`
+      },
+      es: {
+        langLine: 'Habla exclusivamente en ESPAÑOL. No cambies de idioma.',
+        structure: 'Realiza una entrevista laboral estructurada: solo UNA pregunta a la vez, como máximo una repregunta, y mantente estrictamente dentro del perfil del puesto. No hagas dos preguntas en un mismo mensaje.',
+        waiting: 'Después de cada pregunta, espera hasta que la candidata o el candidato haya terminado de responder.',
+        kbRule: 'Utiliza exclusivamente el CONOCIMIENTO DE LA EMPRESA incluido en “CONTEXTO” para responder preguntas sobre la empresa, el puesto, los procesos, beneficios, etc. Si algo no está en el CONTEXTO, indica amablemente que debe aclararse directamente con la empresa.',
+        readyGate: 'Haz la primera pregunta solo después de que la persona diga “listo”, “lista” o “sí” (o después del tiempo de espera de respaldo).',
+        closing: `Cuando se hayan completado todas las preguntas, di exactamente este mensaje de cierre y no añadas detalles técnicos: “${finalClose}” Después llama a end_interview.`,
+        endRule: `Llama a end_interview SOLO cuando la entrevista esté realmente terminada. NUNCA antes. Requisito mínimo: al menos ${MIN_USER_UTTERANCES} respuestas del candidato y un cierre/despedida adecuado.`
+      },
+      fr: {
+        langLine: 'Parle exclusivement en FRANÇAIS. Ne change jamais de langue.',
+        structure: 'Mène un entretien d’embauche structuré : une seule question à la fois, au maximum une relance, et reste strictement lié au profil du poste. Ne pose jamais deux questions dans le même message.',
+        waiting: 'Après chaque question, attends que la candidate ou le candidat ait terminé sa réponse.',
+        kbRule: 'Utilise exclusivement les CONNAISSANCES ENTREPRISE indiquées dans « CONTEXTE » pour répondre aux questions sur l’entreprise, le poste, les processus, les avantages, etc. Si une information n’est pas dans le CONTEXTE, indique poliment qu’elle doit être clarifiée directement avec l’entreprise.',
+        readyGate: 'Pose la première question uniquement après que la personne a dit « prêt », « prête » ou « oui » (ou après le délai de secours).',
+        closing: `Lorsque toutes les questions sont terminées, dis exactement ce message de clôture sans ajouter de détails techniques : « ${finalClose} » Ensuite, appelle end_interview.`,
+        endRule: `Appelle end_interview UNIQUEMENT lorsque l’entretien est réellement terminé. JAMAIS avant. Condition minimale : au moins ${MIN_USER_UTTERANCES} réponses du candidat et une clôture/despedida appropriée.`
+      },
+      it: {
+        langLine: 'Parla esclusivamente in ITALIANO. Non cambiare lingua.',
+        structure: 'Conduci un colloquio di lavoro strutturato: una sola domanda alla volta, al massimo una domanda di approfondimento, e resta strettamente aderente al profilo della posizione. Non fare mai due domande nello stesso messaggio.',
+        waiting: 'Dopo ogni domanda, attendi che la candidata o il candidato abbia terminato la risposta.',
+        kbRule: 'Utilizza esclusivamente le CONOSCENZE AZIENDALI indicate nel “CONTESTO” per rispondere a domande su azienda, posizione, processi, benefit, ecc. Se un’informazione non è nel CONTESTO, spiega gentilmente che deve essere chiarita direttamente con l’azienda.',
+        readyGate: 'Poni la prima domanda solo dopo che la persona dice “pronto”, “pronta” o “sì” (oppure dopo il timeout di fallback).',
+        closing: `Quando tutte le domande sono state completate, pronuncia esattamente questo messaggio di chiusura senza aggiungere dettagli tecnici: “${finalClose}” Poi chiama end_interview.`,
+        endRule: `Chiama end_interview SOLO quando il colloquio è davvero concluso. MAI prima. Requisito minimo: almeno ${MIN_USER_UTTERANCES} risposte del candidato e una chiusura/saluto appropriato.`
+      }
+    };
 
-    const structure = isDE
-      ? 'Führe ein strukturiertes Job-Interview: nur EINE Frage zur Zeit, max. 1 Nachfrage, strikt am Jobprofil bleiben. Stelle keine zwei Fragen in einer Nachricht.'
-      : 'Conduct a structured job interview: one question at a time, max one follow-up, stick to the job profile. Never ask two questions in one message.';
-
-    const waiting = isDE
-      ? 'Nach jeder Frage warten, bis die Kandidatin/der Kandidat fertig ist.'
-      : 'After each question, wait until the candidate is finished.';
-
-    const kbRule = isDE
-      ? 'Nutze ausschließlich die FIRMENKENNTNISSE aus „KONTEXT“ für Antworten zu Firma, Stelle, Prozessen, Benefits usw. Wenn etwas nicht im KONTEXT steht, sage freundlich, dass dies mit der Firma direkt zu klären ist.'
-      : 'Use only the COMPANY KNOWLEDGE from “CONTEXT” to answer company/job/process/benefits questions. If it is not in CONTEXT, politely say the candidate should check with the company.';
-
-    const readyGate = isDE
-      ? 'Starte die erste Frage erst, nachdem die Person „bereit“ gesagt hat (oder nach Fallback-Timeout).'
-      : 'Ask the first question only after the user says “ready” (or after a fallback timeout).';
-
-    const closing = isDE
-      ? `Wenn alle Fragen gestellt sind, sage zum Abschluss EXAKT diesen Satz, ohne technische Details hinzuzufügen: „${finalClose}“ Danach rufe end_interview auf.`
-      : `When all questions are completed, say exactly this closing message and do not add technical details: “${finalClose}” Then call end_interview.`;
-
-    const endRule = isDE
-      ? `Rufe end_interview NUR auf, wenn das Interview wirklich abgeschlossen ist. Vorher NIEMALS. Mindestanforderung: mindestens ${MIN_USER_UTTERANCES} Kandidaten-Antworten und ein sinnvoller Abschluss/Verabschiedung.`
-      : `Call end_interview ONLY when the interview is truly complete. NEVER before. Minimum: at least ${MIN_USER_UTTERANCES} candidate answers and a proper closing/goodbye.`;
+    const rules = LANG_RULES[lk] || LANG_RULES.en;
 
     return [
-      langLine,
-      structure,
-      waiting,
-      kbRule,
-      readyGate,
-      closing,
-      endRule
+      rules.langLine,
+      rules.structure,
+      rules.waiting,
+      rules.kbRule,
+      rules.readyGate,
+      rules.closing,
+      rules.endRule
     ].join(' ');
   }
 
@@ -1294,10 +1391,10 @@
   }
 
   function primeStrictLanguage(reportLang) {
-    const spoken = String(CTX.lang || LANG || 'de').toLowerCase().startsWith('de') ? 'de' : 'en';
+    const spoken = activeInterviewLang(CTX);
     const sys = buildSystemInstructions({
       ...CTX,
-      lang: CTX.lang || LANG || 'de',
+      lang: spoken,
       reportLang: CTX.reportLang || reportLang || 'de'
     });
 
@@ -1359,16 +1456,37 @@
     log('[CONV] company knowledge injected (kbText/jobAd, if provided)');
   }
 
+  function instructionToSay(textToSpeak, lk){
+    const prompts = {
+      de: `Bitte sage jetzt hörbar und freundlich: ${textToSpeak}`,
+      en: `Please say this out loud in a friendly way: ${textToSpeak}`,
+      es: `Por favor, diga ahora esto en voz alta y de forma amable: ${textToSpeak}`,
+      fr: `Veuillez dire maintenant ceci clairement et de manière aimable : ${textToSpeak}`,
+      it: `Per favore, pronuncia ora questo testo ad alta voce e in modo cordiale: ${textToSpeak}`
+    };
+
+    return prompts[lk] || prompts.en;
+  }
+
+  function welcomeText(ctx = CTX){
+    const lk = activeInterviewLang(ctx);
+    const company = ctx.companyName || 'Clarity';
+
+    const texts = {
+      de: `Willkommen! Dieses Interview wird im Auftrag von ${company} geführt. Sind Sie bereit zu starten? Bitte sagen Sie „bereit“.`,
+      en: `Welcome! This interview is conducted on behalf of ${company}. Are you ready to begin? Please say “ready”.`,
+      es: `¡Bienvenido! Esta entrevista se realiza en nombre de ${company}. ¿Está listo para comenzar? Por favor, diga “listo”.`,
+      fr: `Bienvenue ! Cet entretien est mené pour le compte de ${company}. Êtes-vous prêt à commencer ? Veuillez dire « prêt ».`,
+      it: `Benvenuto! Questo colloquio viene condotto per conto di ${company}. È pronto per iniziare? Per favore, dica “pronto”.`
+    };
+
+    return texts[lk] || texts.en;
+  }
+
   function speakPrepThenWelcome() {
-    const isDE = isInterviewDe(CTX);
-
-    const prep = isDE
-      ? UI_TEXTS.de.welcomePrep
-      : UI_TEXTS.en.welcomePrep;
-
-    const welcome = isDE
-      ? `Willkommen! Dieses Interview wird im Auftrag von ${CTX.companyName || 'Clarity'} geführt. Sind Sie bereit zu starten? Bitte sagen Sie „bereit“. `
-      : `Welcome! This interview is conducted on behalf of ${CTX.companyName || 'Clarity'}. Are you ready to begin? Please say “ready”.`;
+    const lk = activeInterviewLang(CTX);
+    const prep = UI_TEXTS[lk]?.welcomePrep || UI_TEXTS.en.welcomePrep;
+    const welcome = welcomeText(CTX);
 
     dcSend({ type: 'response.cancel' });
     log('[CONV] responses cancelled');
@@ -1380,9 +1498,7 @@
         role: 'user',
         content: [{
           type: 'input_text',
-          text: isDE
-            ? `Bitte sage jetzt hörbar und freundlich: ${prep}`
-            : `Please say this out loud in a friendly way: ${prep}`
+          text: instructionToSay(prep, lk)
         }]
       }
     });
@@ -1405,9 +1521,7 @@
           role: 'user',
           content: [{
             type: 'input_text',
-            text: isDE
-              ? `Bitte sage jetzt hörbar und freundlich: ${welcome}`
-              : `Please say this out loud in a friendly way: ${welcome}`
+            text: instructionToSay(welcome, lk)
           }]
         }
       });
@@ -1420,7 +1534,10 @@
         }
       });
 
-      log('[WELCOME] welcome response requested');
+      log('[WELCOME] welcome response requested', {
+        lang: lk,
+        welcomePreview: welcome.slice(0, 160)
+      });
 
       setTimeout(() => {
         dcSend({
@@ -1453,25 +1570,55 @@
   }
 
   function buildInterviewPlan(ctx){
-    const isDE = isInterviewDe(ctx);
+    const lk = activeInterviewLang(ctx);
 
-    const baseDE = [
-      'Bitte stellen Sie sich kurz vor.',
-      'Warum passt diese Position zu Ihnen?',
-      'Beschreiben Sie ein Projekt, auf das Sie stolz sind.',
-      'Wie gehen Sie mit knappen Deadlines um?',
-      'Welche Erwartungen haben Sie an die Rolle und das Team?'
-    ];
+    const baseByLang = {
+      de: [
+        'Bitte stellen Sie sich kurz vor.',
+        'Warum passt diese Position zu Ihnen?',
+        'Beschreiben Sie ein Projekt, auf das Sie stolz sind.',
+        'Wie gehen Sie mit knappen Deadlines um?',
+        'Welche Erwartungen haben Sie an die Rolle und das Team?'
+      ],
+      en: [
+        'Please introduce yourself briefly.',
+        'Why is this position a good fit for you?',
+        'Describe a project you are proud of.',
+        'How do you handle tight deadlines?',
+        'What are your expectations for the role and the team?'
+      ],
+      es: [
+        'Por favor, preséntese brevemente.',
+        '¿Por qué considera que esta posición encaja con usted?',
+        'Describa un proyecto del que se sienta especialmente orgulloso.',
+        '¿Cómo gestiona plazos ajustados?',
+        '¿Qué expectativas tiene respecto al puesto y al equipo?'
+      ],
+      fr: [
+        'Veuillez vous présenter brièvement.',
+        'Pourquoi pensez-vous que ce poste vous correspond ?',
+        'Décrivez un projet dont vous êtes particulièrement fier.',
+        'Comment gérez-vous les délais serrés ?',
+        'Quelles sont vos attentes concernant le poste et l’équipe ?'
+      ],
+      it: [
+        'La prego di presentarsi brevemente.',
+        'Perché ritiene che questa posizione sia adatta a lei?',
+        'Descriva un progetto di cui è particolarmente orgoglioso.',
+        'Come gestisce scadenze ravvicinate?',
+        'Quali aspettative ha rispetto al ruolo e al team?'
+      ]
+    };
 
-    const baseEN = [
-      'Please introduce yourself briefly.',
-      'Why is this position a good fit for you?',
-      'Describe a project you are proud of.',
-      'How do you handle tight deadlines?',
-      'What are your expectations for the role and the team?'
-    ];
+    const prefixByLang = {
+      de: 'Bezug zur Ausschreibung: ',
+      en: 'Regarding the job ad: ',
+      es: 'En relación con la oferta de empleo: ',
+      fr: 'Concernant l’offre d’emploi : ',
+      it: 'In riferimento all’annuncio di lavoro: '
+    };
 
-    const seeds = (isDE ? baseDE : baseEN).slice();
+    const seeds = (baseByLang[lk] || baseByLang.en).slice();
 
     const text =
       (ctx.roleProfileText || '').trim() +
@@ -1486,7 +1633,7 @@
 
     if (lines.length){
       lines.forEach(line => {
-        seeds.push((isDE ? 'Bezug zur Ausschreibung: ' : 'Regarding the job ad: ') + line);
+        seeds.push((prefixByLang[lk] || prefixByLang.en) + line);
       });
     }
 
@@ -1495,15 +1642,39 @@
     return seeds.slice(0, Math.max(1, maxQ));
   }
 
+  function firstQuestionInstruction(question, lk){
+    const prompts = {
+      de: `Bitte stelle jetzt hörbar genau diese erste Interviewfrage und warte danach auf die Antwort des Kandidaten: ${question}`,
+      en: `Please now ask exactly this first interview question out loud and then wait for the candidate's answer: ${question}`,
+      es: `Por favor, formule ahora en voz alta exactamente esta primera pregunta de la entrevista y espere después la respuesta del candidato: ${question}`,
+      fr: `Veuillez maintenant poser clairement à voix haute exactement cette première question d’entretien, puis attendre la réponse du candidat : ${question}`,
+      it: `Per favore, poni ora ad alta voce esattamente questa prima domanda del colloquio e poi attendi la risposta del candidato: ${question}`
+    };
+
+    return prompts[lk] || prompts.en;
+  }
+
+  function fallbackFirstQuestion(lk){
+    const fallback = {
+      de: 'Bitte stellen Sie sich kurz vor.',
+      en: 'Please introduce yourself.',
+      es: 'Por favor, preséntese brevemente.',
+      fr: 'Veuillez vous présenter brièvement.',
+      it: 'La prego di presentarsi brevemente.'
+    };
+
+    return fallback[lk] || fallback.en;
+  }
+
   function askFirstQuestion(){
     if (FIRST_Q_SENT || !WELCOMED) return;
     if (!READY_DETECTED && !firstQuestionFallbackElapsed) return;
 
     FIRST_Q_SENT = true;
 
+    const lk = activeInterviewLang(CTX);
     const plan = buildInterviewPlan(CTX);
-    const isDE = isInterviewDe(CTX);
-    const first = plan[0] || (isDE ? 'Bitte stellen Sie sich kurz vor.' : 'Please introduce yourself.');
+    const first = plan[0] || fallbackFirstQuestion(lk);
 
     dcSend({
       type: 'conversation.item.create',
@@ -1512,14 +1683,15 @@
         role: 'user',
         content: [{
           type: 'input_text',
-          text: isDE
-            ? `Bitte stelle jetzt hörbar genau diese erste Interviewfrage und warte danach auf die Antwort des Kandidaten: ${first}`
-            : `Please now ask exactly this first interview question out loud and then wait for the candidate's answer: ${first}`
+          text: firstQuestionInstruction(first, lk)
         }]
       }
     });
 
-    log('[QUESTION] first item created', first);
+    log('[QUESTION] first item created', {
+      lang: lk,
+      question: first
+    });
 
     dcSend({
       type: 'response.create',
@@ -2179,10 +2351,14 @@
 
       await setupLocalMedia();
 
+      const initialInterviewLang = activeInterviewLang(CTX);
+
       const { secret, ctx } = await getRealtimeToken({
         uid: UID,
         companyId: COMPANY_ID,
-        lang: LANG,
+        lang: initialInterviewLang,
+        interviewLang: initialInterviewLang,
+        userCommLang: getInterviewLangRaw(CTX),
         voice: VOICE,
         debug: true,
         allowNoInvite: true
@@ -2192,7 +2368,7 @@
       prepareRecording();
       prepareCandidateAudioRecording();
 
-      CTX = { ...CTX, ...ctx };
+      CTX = normalizeIncomingContext(ctx);
       applyStaticTexts();
 
       await remoteTrackReady;
@@ -2266,9 +2442,12 @@
     const type = msg.type;
 
     if (type === 'clarity.live.context'){
-      CTX = { ...CTX, ...(msg.data || {}) };
+      CTX = normalizeIncomingContext(msg.data || {});
       applyStaticTexts();
-      log('[CTX]', CTX);
+      log('[CTX]', {
+        ...CTX,
+        normalizedInterviewLang: activeInterviewLang(CTX)
+      });
     }
 
     else if (type === 'clarity.live.record'){
@@ -2278,12 +2457,13 @@
     }
 
     else if (type === 'clarity.live.prime'){
-      CTX = { ...CTX, ...(msg.data || {}) };
+      CTX = normalizeIncomingContext(msg.data || {});
       applyStaticTexts();
 
       const rep = CTX.reportLang || LANG;
       log('[PRIME] received from parent', {
         lang: CTX.lang || LANG,
+        normalizedInterviewLang: activeInterviewLang(CTX),
         reportLang: rep,
         companyName: CTX.companyName || ''
       });
