@@ -335,6 +335,283 @@
     }
   };
 
+  const LANG_PROFILES = {
+    de: {
+      code:'de', englishName:'German', name:'Deutsch', readyWords:['bereit','ja','startklar'],
+      welcomePrep:'Einen Moment bitte, ich bereite das Interview vor.',
+      finalClose:'Vielen Dank für das Gespräch und für Ihre detaillierten Antworten sowie Ihre Zeit. Bitte schließen Sie dieses Fenster noch nicht, bleiben Sie noch auf der Seite. Das Interview wird verarbeitet. Sie können in der Zwischenzeit eine Bewertung abgeben, wenn Sie möchten. Das Bewertungsfeld wird weiter unten angezeigt.',
+      welcome: company => `Willkommen! Dieses Interview wird im Auftrag von ${company} geführt. Sind Sie bereit zu starten? Bitte sagen Sie „bereit“.`,
+      baseQuestions:['Bitte stellen Sie sich kurz vor.','Warum passt diese Position zu Ihnen?','Beschreiben Sie ein Projekt, auf das Sie stolz sind.','Wie gehen Sie mit knappen Deadlines um?','Welche Erwartungen haben Sie an die Rolle und das Team?'],
+      jobPrefix:'Bezug zur Ausschreibung: ',
+      firstQuestionInstruction: q => `Bitte stelle jetzt hörbar genau diese erste Interviewfrage und warte danach auf die Antwort des Kandidaten: ${q}`,
+      sayInstruction: txt => `Bitte sage jetzt hörbar und freundlich: ${txt}`
+    },
+    en: {
+      code:'en', englishName:'English', name:'English', readyWords:['ready','yes','start'],
+      welcomePrep:'One moment please, I am preparing the interview.',
+      finalClose:'Thank you for the conversation and for your detailed answers as well as your time. Please do not close this window yet, stay on this page. The interview is being processed. You may leave a rating in the meantime if you wish. The rating field will be displayed further down.',
+      welcome: company => `Welcome! This interview is conducted on behalf of ${company}. Are you ready to begin? Please say “ready”.`,
+      baseQuestions:['Please introduce yourself briefly.','Why is this position a good fit for you?','Describe a project you are proud of.','How do you handle tight deadlines?','What are your expectations for the role and the team?'],
+      jobPrefix:'Regarding the job ad: ',
+      firstQuestionInstruction: q => `Please now ask exactly this first interview question out loud and then wait for the candidate's answer: ${q}`,
+      sayInstruction: txt => `Please say this out loud in a friendly way: ${txt}`
+    },
+    es: {
+      code:'es', englishName:'Spanish', name:'Spanish', readyWords:['listo','lista','sí','si','preparado','preparada'],
+      welcomePrep:'Un momento, por favor, estoy preparando la entrevista.',
+      finalClose:'Gracias por la conversación, por sus respuestas detalladas y por su tiempo. No cierre esta ventana todavía, permanezca en esta página. La entrevista se está procesando. Mientras tanto, puede dejar una valoración si lo desea. El campo de valoración se mostrará más abajo.',
+      welcome: company => `¡Bienvenido! Esta entrevista se realiza en nombre de ${company}. ¿Está listo para comenzar? Por favor, diga “listo”.`,
+      baseQuestions:['Por favor, preséntese brevemente.','¿Por qué considera que esta posición encaja con usted?','Describa un proyecto del que se sienta especialmente orgulloso.','¿Cómo gestiona plazos ajustados?','¿Qué expectativas tiene respecto al puesto y al equipo?'],
+      jobPrefix:'En relación con la oferta de empleo: ',
+      firstQuestionInstruction: q => `Por favor, formule ahora en voz alta exactamente esta primera pregunta de la entrevista y espere después la respuesta del candidato: ${q}`,
+      sayInstruction: txt => `Por favor, diga ahora esto en voz alta y de forma amable: ${txt}`
+    },
+    fr: {
+      code:'fr', englishName:'French', name:'French', readyWords:['prêt','prête','oui','pret','prete'],
+      welcomePrep:'Un instant, je prépare l’entretien.',
+      finalClose:'Merci pour cet échange, pour vos réponses détaillées ainsi que pour votre temps. Veuillez ne pas fermer cette fenêtre pour le moment, restez sur cette page. L’entretien est en cours de traitement. Vous pouvez laisser une évaluation entre-temps si vous le souhaitez. Le champ d’évaluation sera affiché plus bas.',
+      welcome: company => `Bienvenue ! Cet entretien est mené pour le compte de ${company}. Êtes-vous prêt à commencer ? Veuillez dire « prêt ».`,
+      baseQuestions:['Veuillez vous présenter brièvement.','Pourquoi pensez-vous que ce poste vous correspond ?','Décrivez un projet dont vous êtes particulièrement fier.','Comment gérez-vous les délais serrés ?','Quelles sont vos attentes concernant le poste et l’équipe ?'],
+      jobPrefix:'Concernant l’offre d’emploi : ',
+      firstQuestionInstruction: q => `Veuillez maintenant poser clairement à voix haute exactement cette première question d’entretien, puis attendre la réponse du candidat : ${q}`,
+      sayInstruction: txt => `Veuillez dire maintenant ceci clairement et de manière aimable : ${txt}`
+    },
+    it: {
+      code:'it', englishName:'Italian', name:'Italian', readyWords:['pronto','pronta','sì','si'],
+      welcomePrep:'Un momento, sto preparando il colloquio.',
+      finalClose:'Grazie per il colloquio, per le sue risposte dettagliate e per il tempo dedicato. Non chiuda ancora questa finestra, rimanga su questa pagina. Il colloquio è in fase di elaborazione. Nel frattempo può lasciare una valutazione, se lo desidera. Il campo per la valutazione verrà mostrato più in basso.',
+      welcome: company => `Benvenuto! Questo colloquio viene condotto per conto di ${company}. È pronto per iniziare? Per favore, dica “pronto”.`,
+      baseQuestions:['La prego di presentarsi brevemente.','Perché ritiene che questa posizione sia adatta a lei?','Descriva un progetto di cui è particolarmente orgoglioso.','Come gestisce scadenze ravvicinate?','Quali aspettative ha rispetto al ruolo e al team?'],
+      jobPrefix:'In riferimento all’annuncio di lavoro: ',
+      firstQuestionInstruction: q => `Per favore, poni ora ad alta voce esattamente questa prima domanda del colloquio e poi attendi la risposta del candidato: ${q}`,
+      sayInstruction: txt => `Per favore, pronuncia ora questo testo ad alta voce e in modo cordiale: ${txt}`
+    },
+    pt: {
+      code:'pt', englishName:'Portuguese', name:'Portuguese', readyWords:['pronto','pronta','sim'],
+      welcomePrep:'Um momento, por favor, estou preparando a entrevista.',
+      finalClose:'Obrigado pela conversa, pelas suas respostas detalhadas e pelo seu tempo. Por favor, não feche esta janela ainda; permaneça nesta página. A entrevista está sendo processada. Enquanto isso, você pode deixar uma avaliação, se desejar. O campo de avaliação será exibido mais abaixo.',
+      welcome: company => `Bem-vindo! Esta entrevista é realizada em nome de ${company}. Está pronto para começar? Por favor, diga “pronto”.`,
+      baseQuestions:['Por favor, apresente-se brevemente.','Por que esta posição combina com você?','Descreva um projeto do qual você se orgulha.','Como você lida com prazos apertados?','Quais são suas expectativas em relação à função e à equipe?'],
+      jobPrefix:'Em relação à vaga: '
+    },
+    nl: {
+      code:'nl', englishName:'Dutch', name:'Dutch', readyWords:['klaar','ja','gereed'],
+      welcomePrep:'Een moment alstublieft, ik bereid het interview voor.',
+      finalClose:'Dank u voor het gesprek, uw uitgebreide antwoorden en uw tijd. Sluit dit venster alstublieft nog niet en blijf op deze pagina. Het interview wordt verwerkt. U kunt ondertussen desgewenst een beoordeling achterlaten. Het beoordelingsveld wordt hieronder weergegeven.',
+      welcome: company => `Welkom! Dit interview wordt uitgevoerd namens ${company}. Bent u klaar om te beginnen? Zeg alstublieft “klaar”.`,
+      baseQuestions:['Kunt u zich kort voorstellen?','Waarom past deze functie goed bij u?','Beschrijf een project waar u trots op bent.','Hoe gaat u om met strakke deadlines?','Wat zijn uw verwachtingen van de functie en het team?'],
+      jobPrefix:'Met betrekking tot de vacature: '
+    },
+    pl: {
+      code:'pl', englishName:'Polish', name:'Polish', readyWords:['gotowy','gotowa','tak'],
+      welcomePrep:'Chwileczkę, przygotowuję rozmowę kwalifikacyjną.',
+      finalClose:'Dziękujemy za rozmowę, szczegółowe odpowiedzi oraz poświęcony czas. Proszę jeszcze nie zamykać tego okna i pozostać na stronie. Rozmowa jest przetwarzana. W międzyczasie można, jeśli zechcesz, zostawić ocenę. Pole oceny zostanie wyświetlone niżej.',
+      welcome: company => `Witamy! Ta rozmowa jest prowadzona w imieniu ${company}. Czy jest Pan/Pani gotowy/gotowa rozpocząć? Proszę powiedzieć „gotowy”.`,
+      baseQuestions:['Proszę krótko się przedstawić.','Dlaczego uważa Pan/Pani, że to stanowisko jest odpowiednie?','Proszę opisać projekt, z którego jest Pan/Pani dumny/dumna.','Jak radzi sobie Pan/Pani z krótkimi terminami?','Jakie ma Pan/Pani oczekiwania wobec stanowiska i zespołu?'],
+      jobPrefix:'W odniesieniu do ogłoszenia o pracę: '
+    },
+    tr: {
+      code:'tr', englishName:'Turkish', name:'Turkish', readyWords:['hazırım','hazir','evet'],
+      welcomePrep:'Bir dakika lütfen, görüşmeyi hazırlıyorum.',
+      finalClose:'Görüşme, ayrıntılı yanıtlarınız ve ayırdığınız zaman için teşekkür ederiz. Lütfen bu pencereyi henüz kapatmayın ve sayfada kalın. Görüşme işleniyor. İsterseniz bu sırada bir değerlendirme bırakabilirsiniz. Değerlendirme alanı aşağıda gösterilecektir.',
+      welcome: company => `Hoş geldiniz! Bu görüşme ${company} adına gerçekleştirilmektedir. Başlamaya hazır mısınız? Lütfen “hazırım” deyin.`,
+      baseQuestions:['Lütfen kendinizi kısaca tanıtın.','Bu pozisyonun size neden uygun olduğunu düşünüyorsunuz?','Gurur duyduğunuz bir projeyi anlatın.','Sıkı teslim tarihleriyle nasıl başa çıkarsınız?','Rol ve ekipten beklentileriniz nelerdir?'],
+      jobPrefix:'İş ilanıyla ilgili olarak: '
+    },
+    ar: {
+      code:'ar', englishName:'Arabic', name:'Arabic', readyWords:['جاهز','جاهزة','نعم'],
+      welcomePrep:'لحظة من فضلك، أقوم بتحضير المقابلة.',
+      finalClose:'شكرًا لك على هذه المقابلة وعلى إجاباتك المفصلة ووقتك. يرجى عدم إغلاق هذه النافذة الآن والبقاء في هذه الصفحة. تتم معالجة المقابلة. يمكنك في هذه الأثناء ترك تقييم إذا رغبت في ذلك. سيظهر حقل التقييم في الأسفل.',
+      welcome: company => `مرحبًا! تُجرى هذه المقابلة نيابةً عن ${company}. هل أنت مستعد للبدء؟ من فضلك قل: «جاهز».`,
+      baseQuestions:['يرجى تقديم نفسك بإيجاز.','لماذا تعتقد أن هذا المنصب مناسب لك؟','صف مشروعًا تفخر به.','كيف تتعامل مع المواعيد النهائية الضيقة؟','ما توقعاتك من الدور والفريق؟'],
+      jobPrefix:'فيما يتعلق بإعلان الوظيفة: '
+    },
+    ru: {
+      code:'ru', englishName:'Russian', name:'Russian', readyWords:['готов','готова','да'],
+      welcomePrep:'Один момент, пожалуйста, я готовлю интервью.',
+      finalClose:'Спасибо за беседу, подробные ответы и уделенное время. Пожалуйста, пока не закрывайте это окно и оставайтесь на странице. Интервью обрабатывается. При желании вы можете оставить оценку. Поле для оценки появится ниже.',
+      welcome: company => `Добро пожаловать! Это интервью проводится от имени ${company}. Вы готовы начать? Пожалуйста, скажите «готов».`,
+      baseQuestions:['Пожалуйста, кратко представьтесь.','Почему эта позиция подходит вам?','Опишите проект, которым вы гордитесь.','Как вы справляетесь с жесткими сроками?','Какие у вас ожидания от роли и команды?'],
+      jobPrefix:'Относительно вакансии: '
+    },
+    zh: {
+      code:'zh', englishName:'Chinese', name:'Chinese', readyWords:['准备好了','可以','是的'],
+      welcomePrep:'请稍等，我正在准备面试。',
+      finalClose:'感谢您参加本次面试，也感谢您详细的回答和宝贵时间。请暂时不要关闭此窗口，请继续停留在本页面。面试正在处理中。如果愿意，您可以在此期间留下评价。评价区域会在下方显示。',
+      welcome: company => `欢迎！本次面试代表 ${company} 进行。您准备好开始了吗？请说“准备好了”。`,
+      baseQuestions:['请您简短地介绍一下自己。','为什么您认为这个职位适合您？','请描述一个让您感到自豪的项目。','您如何应对紧迫的截止日期？','您对这个职位和团队有什么期待？'],
+      jobPrefix:'关于职位说明：'
+    },
+    ja: {
+      code:'ja', englishName:'Japanese', name:'Japanese', readyWords:['準備できました','はい','大丈夫です'],
+      welcomePrep:'少々お待ちください。面接の準備をしています。',
+      finalClose:'本日は面接にご参加いただき、また詳しいご回答とお時間をいただき、ありがとうございました。まだこのウィンドウを閉じず、このページに留まってください。面接内容を処理しています。よろしければ、その間に評価を残すことができます。評価欄は下に表示されます。',
+      welcome: company => `ようこそ。この面接は ${company} の依頼により実施されています。開始する準備はできていますか？「準備できました」とお答えください。`,
+      baseQuestions:['簡単に自己紹介をお願いします。','このポジションがご自身に合っていると思う理由を教えてください。','誇りに思っているプロジェクトについて説明してください。','厳しい締め切りにはどのように対応しますか？','この役割とチームに対してどのような期待がありますか？'],
+      jobPrefix:'求人内容について：'
+    },
+    ko: {
+      code:'ko', englishName:'Korean', name:'Korean', readyWords:['준비됐습니다','네','준비되었습니다'],
+      welcomePrep:'잠시만 기다려 주세요. 인터뷰를 준비하고 있습니다.',
+      finalClose:'인터뷰와 자세한 답변, 그리고 시간을 내주셔서 감사합니다. 아직 이 창을 닫지 말고 이 페이지에 머물러 주세요. 인터뷰가 처리되고 있습니다. 원하시면 그동안 평가를 남기실 수 있습니다. 평가 영역은 아래에 표시됩니다.',
+      welcome: company => `환영합니다! 이 인터뷰는 ${company}를 대신하여 진행됩니다. 시작할 준비가 되셨나요? “준비됐습니다”라고 말씀해 주세요.`,
+      baseQuestions:['간단히 자기소개를 해 주세요.','이 직무가 본인에게 적합하다고 생각하는 이유는 무엇인가요?','자랑스럽게 생각하는 프로젝트를 설명해 주세요.','촉박한 마감일에는 어떻게 대응하시나요?','이 역할과 팀에 대해 어떤 기대를 가지고 계신가요?'],
+      jobPrefix:'채용 공고와 관련하여: '
+    },
+    cs: {
+      code:'cs', englishName:'Czech', name:'Czech', readyWords:['připraven','připravena','ano','pripraven'],
+      welcomePrep:'Okamžik prosím, připravuji pohovor.',
+      finalClose:'Děkujeme za rozhovor, vaše podrobné odpovědi a váš čas. Prosím, zatím toto okno nezavírejte a zůstaňte na této stránce. Pohovor se zpracovává. Mezitím můžete, pokud chcete, zanechat hodnocení. Pole pro hodnocení se zobrazí níže.',
+      welcome: company => `Vítejte! Tento pohovor je veden jménem společnosti ${company}. Jste připraveni začít? Řekněte prosím „připraven“.`,
+      baseQuestions:['Prosím, stručně se představte.','Proč se podle vás tato pozice hodí právě pro vás?','Popište projekt, na který jste hrdý/hrdá.','Jak zvládáte krátké termíny?','Jaká máte očekávání od této role a týmu?'],
+      jobPrefix:'Ve vztahu k pracovní nabídce: '
+    },
+    sv: {
+      code:'sv', englishName:'Swedish', name:'Swedish', readyWords:['redo','ja','klar'],
+      welcomePrep:'Ett ögonblick, jag förbereder intervjun.',
+      finalClose:'Tack för samtalet, dina detaljerade svar och din tid. Stäng inte detta fönster ännu utan stanna kvar på sidan. Intervjun behandlas. Under tiden kan du lämna ett omdöme om du vill. Omdömesfältet visas längre ned.',
+      welcome: company => `Välkommen! Den här intervjun genomförs på uppdrag av ${company}. Är du redo att börja? Säg gärna ”redo”.`,
+      baseQuestions:['Presentera dig gärna kort.','Varför passar den här tjänsten dig?','Beskriv ett projekt som du är stolt över.','Hur hanterar du snäva deadlines?','Vilka förväntningar har du på rollen och teamet?'],
+      jobPrefix:'Med hänvisning till jobbannonsen: '
+    },
+    no: {
+      code:'no', englishName:'Norwegian', name:'Norwegian', readyWords:['klar','ja','ready'],
+      welcomePrep:'Et øyeblikk, jeg forbereder intervjuet.',
+      finalClose:'Takk for samtalen, de detaljerte svarene dine og tiden din. Vennligst ikke lukk dette vinduet ennå, men bli på denne siden. Intervjuet behandles. I mellomtiden kan du legge igjen en vurdering hvis du ønsker det. Vurderingsfeltet vises lenger ned.',
+      welcome: company => `Velkommen! Dette intervjuet gjennomføres på vegne av ${company}. Er du klar til å begynne? Vennligst si «klar».`,
+      baseQuestions:['Vennligst presenter deg kort.','Hvorfor passer denne stillingen for deg?','Beskriv et prosjekt du er stolt av.','Hvordan håndterer du stramme frister?','Hvilke forventninger har du til rollen og teamet?'],
+      jobPrefix:'Med henvisning til stillingsannonsen: '
+    },
+    da: {
+      code:'da', englishName:'Danish', name:'Danish', readyWords:['klar','ja'],
+      welcomePrep:'Et øjeblik, jeg forbereder interviewet.',
+      finalClose:'Tak for samtalen, dine detaljerede svar og din tid. Luk venligst ikke dette vindue endnu, men bliv på siden. Interviewet behandles. I mellemtiden kan du give en vurdering, hvis du ønsker det. Vurderingsfeltet vises længere nede.',
+      welcome: company => `Velkommen! Dette interview gennemføres på vegne af ${company}. Er du klar til at begynde? Sig venligst “klar”.`,
+      baseQuestions:['Præsenter venligst dig selv kort.','Hvorfor passer denne stilling til dig?','Beskriv et projekt, du er stolt af.','Hvordan håndterer du stramme deadlines?','Hvilke forventninger har du til rollen og teamet?'],
+      jobPrefix:'Med henvisning til jobopslaget: '
+    },
+    fi: {
+      code:'fi', englishName:'Finnish', name:'Finnish', readyWords:['valmis','kyllä'],
+      welcomePrep:'Hetkinen, valmistelen haastattelua.',
+      finalClose:'Kiitos keskustelusta, yksityiskohtaisista vastauksistasi ja ajastasi. Älä sulje tätä ikkunaa vielä, vaan pysy tällä sivulla. Haastattelua käsitellään. Voit halutessasi jättää sillä välin arvion. Arviointikenttä näkyy alempana.',
+      welcome: company => `Tervetuloa! Tämä haastattelu tehdään yrityksen ${company} toimeksiannosta. Oletko valmis aloittamaan? Sano “valmis”.`,
+      baseQuestions:['Esittele itsesi lyhyesti.','Miksi tämä tehtävä sopii sinulle?','Kuvaile projekti, josta olet ylpeä.','Miten käsittelet tiukkoja määräaikoja?','Mitä odotuksia sinulla on roolia ja tiimiä kohtaan?'],
+      jobPrefix:'Työilmoitukseen liittyen: '
+    },
+    el: {
+      code:'el', englishName:'Greek', name:'Greek', readyWords:['έτοιμος','έτοιμη','ναι'],
+      welcomePrep:'Μια στιγμή παρακαλώ, ετοιμάζω τη συνέντευξη.',
+      finalClose:'Σας ευχαριστούμε για τη συζήτηση, τις αναλυτικές απαντήσεις σας και τον χρόνο σας. Παρακαλούμε μην κλείσετε ακόμη αυτό το παράθυρο και παραμείνετε σε αυτήν τη σελίδα. Η συνέντευξη επεξεργάζεται. Στο μεταξύ μπορείτε, αν θέλετε, να αφήσετε μια αξιολόγηση. Το πεδίο αξιολόγησης θα εμφανιστεί παρακάτω.',
+      welcome: company => `Καλώς ήρθατε! Αυτή η συνέντευξη πραγματοποιείται εκ μέρους της ${company}. Είστε έτοιμοι να ξεκινήσουμε; Παρακαλώ πείτε «έτοιμος».`,
+      baseQuestions:['Παρακαλώ παρουσιάστε σύντομα τον εαυτό σας.','Γιατί πιστεύετε ότι αυτή η θέση σας ταιριάζει;','Περιγράψτε ένα έργο για το οποίο είστε περήφανος/η.','Πώς διαχειρίζεστε στενές προθεσμίες;','Ποιες είναι οι προσδοκίες σας από τον ρόλο και την ομάδα;'],
+      jobPrefix:'Σχετικά με την αγγελία εργασίας: '
+    },
+    ro: {
+      code:'ro', englishName:'Romanian', name:'Romanian', readyWords:['gata','pregătit','pregătită','da'],
+      welcomePrep:'Un moment, vă rog, pregătesc interviul.',
+      finalClose:'Vă mulțumim pentru conversație, pentru răspunsurile detaliate și pentru timpul acordat. Vă rugăm să nu închideți încă această fereastră și să rămâneți pe pagină. Interviul este în curs de procesare. Între timp, puteți lăsa o evaluare dacă doriți. Câmpul de evaluare va fi afișat mai jos.',
+      welcome: company => `Bine ați venit! Acest interviu este realizat în numele ${company}. Sunteți pregătit să începeți? Vă rugăm să spuneți „gata”.`,
+      baseQuestions:['Vă rugăm să vă prezentați pe scurt.','De ce considerați că această poziție vi se potrivește?','Descrieți un proiect de care sunteți mândru/mândră.','Cum gestionați termenele limită strânse?','Ce așteptări aveți de la rol și echipă?'],
+      jobPrefix:'Referitor la anunțul de angajare: '
+    },
+    hu: {
+      code:'hu', englishName:'Hungarian', name:'Hungarian', readyWords:['készen állok','kész','igen'],
+      welcomePrep:'Egy pillanat, kérem, előkészítem az interjút.',
+      finalClose:'Köszönjük a beszélgetést, a részletes válaszait és az idejét. Kérjük, még ne zárja be ezt az ablakot, maradjon ezen az oldalon. Az interjú feldolgozása folyamatban van. Közben, ha szeretné, értékelést is adhat. Az értékelési mező lentebb jelenik meg.',
+      welcome: company => `Üdvözöljük! Ezt az interjút a(z) ${company} megbízásából vezetjük. Készen áll a kezdésre? Kérjük, mondja: „kész”.`,
+      baseQuestions:['Kérem, röviden mutatkozzon be.','Miért illik Önhöz ez a pozíció?','Mutasson be egy projektet, amelyre büszke.','Hogyan kezeli a szoros határidőket?','Milyen elvárásai vannak a szereppel és a csapattal kapcsolatban?'],
+      jobPrefix:'Az álláshirdetéssel kapcsolatban: '
+    },
+    uk: {
+      code:'uk', englishName:'Ukrainian', name:'Ukrainian', readyWords:['готовий','готова','так'],
+      welcomePrep:'Одну мить, будь ласка, я готую співбесіду.',
+      finalClose:'Дякуємо за розмову, детальні відповіді та ваш час. Будь ласка, поки не закривайте це вікно й залишайтеся на цій сторінці. Співбесіда обробляється. За бажанням ви можете залишити оцінку. Поле для оцінки буде показано нижче.',
+      welcome: company => `Ласкаво просимо! Ця співбесіда проводиться від імені ${company}. Ви готові розпочати? Будь ласка, скажіть «готовий».`,
+      baseQuestions:['Будь ласка, коротко представтеся.','Чому ця посада вам підходить?','Опишіть проєкт, яким ви пишаєтеся.','Як ви справляєтеся зі стислими термінами?','Які у вас очікування від ролі та команди?'],
+      jobPrefix:'Щодо опису вакансії: '
+    },
+    he: {
+      code:'he', englishName:'Hebrew', name:'Hebrew', readyWords:['מוכן','מוכנה','כן'],
+      welcomePrep:'רגע אחד בבקשה, אני מכין את הריאיון.',
+      finalClose:'תודה על השיחה, על התשובות המפורטות ועל זמנך. נא לא לסגור עדיין את החלון ולהישאר בעמוד זה. הריאיון נמצא בעיבוד. בינתיים ניתן להשאיר דירוג אם תרצה או תרצי. שדה הדירוג יוצג בהמשך העמוד.',
+      welcome: company => `ברוכים הבאים! ריאיון זה מתקיים מטעם ${company}. האם אתה מוכן להתחיל? אנא אמור „מוכן“.`,
+      baseQuestions:['אנא הצג את עצמך בקצרה.','מדוע לדעתך התפקיד הזה מתאים לך?','תאר פרויקט שאתה גאה בו.','כיצד אתה מתמודד עם מועדי יעד קצרים?','מהן הציפיות שלך מהתפקיד ומהצוות?'],
+      jobPrefix:'בהתייחס למודעת המשרה: '
+    },
+    hi: {
+      code:'hi', englishName:'Hindi', name:'Hindi', readyWords:['तैयार','हाँ','हां'],
+      welcomePrep:'कृपया एक क्षण रुकें, मैं इंटरव्यू तैयार कर रहा हूँ।',
+      finalClose:'बातचीत, आपके विस्तृत उत्तरों और आपके समय के लिए धन्यवाद। कृपया अभी यह विंडो बंद न करें और इसी पेज पर रहें। इंटरव्यू प्रोसेस किया जा रहा है। यदि आप चाहें, तो इस दौरान रेटिंग दे सकते हैं। रेटिंग फ़ील्ड नीचे दिखाई देगा।',
+      welcome: company => `स्वागत है! यह इंटरव्यू ${company} की ओर से किया जा रहा है। क्या आप शुरू करने के लिए तैयार हैं? कृपया कहें “तैयार”.`,
+      baseQuestions:['कृपया संक्षेप में अपना परिचय दें।','आपको क्यों लगता है कि यह पद आपके लिए उपयुक्त है?','किसी ऐसे प्रोजेक्ट का वर्णन करें जिस पर आपको गर्व है।','आप कड़ी समय-सीमा को कैसे संभालते हैं?','इस भूमिका और टीम से आपकी क्या अपेक्षाएँ हैं?'],
+      jobPrefix:'नौकरी विवरण के संदर्भ में: '
+    },
+    id: {
+      code:'id', englishName:'Indonesian', name:'Indonesian', readyWords:['siap','ya'],
+      welcomePrep:'Mohon tunggu sebentar, saya sedang menyiapkan wawancara.',
+      finalClose:'Terima kasih atas percakapan ini, jawaban Anda yang terperinci, dan waktu Anda. Mohon jangan tutup jendela ini dulu dan tetap berada di halaman ini. Wawancara sedang diproses. Sementara itu, Anda dapat memberikan penilaian jika ingin. Kolom penilaian akan ditampilkan di bawah.',
+      welcome: company => `Selamat datang! Wawancara ini dilakukan atas nama ${company}. Apakah Anda siap untuk memulai? Silakan katakan “siap”.`,
+      baseQuestions:['Silakan perkenalkan diri Anda secara singkat.','Mengapa posisi ini cocok untuk Anda?','Ceritakan sebuah proyek yang Anda banggakan.','Bagaimana Anda menangani tenggat waktu yang ketat?','Apa harapan Anda terhadap peran dan tim ini?'],
+      jobPrefix:'Terkait lowongan pekerjaan: '
+    },
+    ms: {
+      code:'ms', englishName:'Malay', name:'Malay', readyWords:['sedia','ya'],
+      welcomePrep:'Sila tunggu sebentar, saya sedang menyediakan temu duga.',
+      finalClose:'Terima kasih atas perbualan ini, jawapan terperinci anda dan masa yang anda luangkan. Sila jangan tutup tetingkap ini lagi dan kekal di halaman ini. Temu duga sedang diproses. Sementara itu, anda boleh meninggalkan penilaian jika mahu. Medan penilaian akan dipaparkan di bawah.',
+      welcome: company => `Selamat datang! Temu duga ini dijalankan bagi pihak ${company}. Adakah anda sedia untuk bermula? Sila katakan “sedia”.`,
+      baseQuestions:['Sila perkenalkan diri anda secara ringkas.','Mengapa jawatan ini sesuai untuk anda?','Terangkan satu projek yang anda banggakan.','Bagaimana anda mengendalikan tarikh akhir yang ketat?','Apakah jangkaan anda terhadap peranan dan pasukan ini?'],
+      jobPrefix:'Berkenaan iklan jawatan: '
+    },
+    th: {
+      code:'th', englishName:'Thai', name:'Thai', readyWords:['พร้อม','ใช่'],
+      welcomePrep:'กรุณารอสักครู่ ฉันกำลังเตรียมการสัมภาษณ์',
+      finalClose:'ขอบคุณสำหรับการสนทนา คำตอบที่ละเอียด และเวลาของคุณ กรุณาอย่าเพิ่งปิดหน้าต่างนี้และอยู่ในหน้านี้ต่อไป การสัมภาษณ์กำลังถูกประมวลผล ในระหว่างนี้คุณสามารถให้คะแนนได้หากต้องการ ช่องให้คะแนนจะแสดงอยู่ด้านล่าง',
+      welcome: company => `ยินดีต้อนรับ! การสัมภาษณ์นี้ดำเนินการในนามของ ${company} คุณพร้อมที่จะเริ่มหรือยัง? กรุณาพูดว่า “พร้อม”.`,
+      baseQuestions:['กรุณาแนะนำตัวสั้น ๆ','ทำไมคุณจึงคิดว่าตำแหน่งนี้เหมาะกับคุณ?','โปรดอธิบายโครงการที่คุณภาคภูมิใจ','คุณรับมือกับกำหนดเวลาที่เร่งด่วนอย่างไร?','คุณคาดหวังอะไรจากบทบาทและทีมนี้?'],
+      jobPrefix:'เกี่ยวกับประกาศรับสมัครงาน: '
+    },
+    vi: {
+      code:'vi', englishName:'Vietnamese', name:'Vietnamese', readyWords:['sẵn sàng','san sang','có','co'],
+      welcomePrep:'Vui lòng chờ một chút, tôi đang chuẩn bị buổi phỏng vấn.',
+      finalClose:'Cảm ơn bạn vì cuộc trao đổi, những câu trả lời chi tiết và thời gian của bạn. Vui lòng chưa đóng cửa sổ này và hãy ở lại trang này. Buổi phỏng vấn đang được xử lý. Trong thời gian đó, bạn có thể để lại đánh giá nếu muốn. Phần đánh giá sẽ được hiển thị ở bên dưới.',
+      welcome: company => `Chào mừng! Buổi phỏng vấn này được thực hiện thay mặt cho ${company}. Bạn đã sẵn sàng bắt đầu chưa? Vui lòng nói “sẵn sàng”.`,
+      baseQuestions:['Vui lòng giới thiệu ngắn gọn về bản thân.','Vì sao bạn cho rằng vị trí này phù hợp với mình?','Hãy mô tả một dự án mà bạn tự hào.','Bạn xử lý các thời hạn gấp như thế nào?','Bạn kỳ vọng gì ở vai trò và đội ngũ này?'],
+      jobPrefix:'Liên quan đến tin tuyển dụng: '
+    }
+  };
+
+  const LANG_ALIASES = {
+    de:'de', deutsch:'de', german:'de', germanisch:'de',
+    en:'en', english:'en', englisch:'en',
+    es:'es', spanish:'es', spanisch:'es', espanol:'es', español:'es', castellano:'es',
+    fr:'fr', french:'fr', franzoesisch:'fr', franzosisch:'fr', französisch:'fr', francais:'fr', français:'fr',
+    it:'it', italian:'it', italienisch:'it', italiano:'it',
+    pt:'pt', portuguese:'pt', portugiesisch:'pt', portugues:'pt', português:'pt',
+    nl:'nl', dutch:'nl', niederlaendisch:'nl', niederländisch:'nl', nederlands:'nl',
+    pl:'pl', polish:'pl', polnisch:'pl', polski:'pl',
+    tr:'tr', turkish:'tr', tuerkisch:'tr', türkisch:'tr', turkce:'tr', türkçe:'tr',
+    ar:'ar', arabic:'ar', arabisch:'ar', العربية:'ar', عربي:'ar',
+    ru:'ru', russian:'ru', russisch:'ru', русский:'ru', russkiy:'ru',
+    zh:'zh', chinese:'zh', chinesisch:'zh', mandarin:'zh', 中文:'zh', 汉语:'zh', 漢語:'zh',
+    ja:'ja', japanese:'ja', japanisch:'ja', 日本語:'ja', nihongo:'ja',
+    ko:'ko', korean:'ko', koreanisch:'ko', 한국어:'ko', hangul:'ko',
+    cs:'cs', czech:'cs', tschechisch:'cs', čeština:'cs', cestina:'cs',
+    sv:'sv', swedish:'sv', schwedisch:'sv', svenska:'sv',
+    no:'no', nb:'no', nn:'no', norwegian:'no', norwegisch:'no', norsk:'no',
+    da:'da', danish:'da', daenisch:'da', dänisch:'da', dansk:'da',
+    fi:'fi', finnish:'fi', finnisch:'fi', suomi:'fi',
+    el:'el', greek:'el', griechisch:'el', ελληνικά:'el', ellinika:'el',
+    ro:'ro', romanian:'ro', rumaenisch:'ro', rumänisch:'ro', romana:'ro', română:'ro',
+    hu:'hu', hungarian:'hu', ungarisch:'hu', magyar:'hu',
+    uk:'uk', ukrainian:'uk', ukrainisch:'uk', українська:'uk', ukrainska:'uk',
+    he:'he', hebrew:'he', hebraeisch:'he', hebräisch:'he', עברית:'he',
+    hi:'hi', hindi:'hi', हिन्दी:'hi', हिंदी:'hi',
+    id:'id', indonesian:'id', indonesisch:'id', indonesia:'id',
+    ms:'ms', malay:'ms', malaiisch:'ms', melayu:'ms',
+    th:'th', thai:'th', thailaendisch:'th', thailändisch:'th', ไทย:'th',
+    vi:'vi', vietnamese:'vi', vietnamesisch:'vi', 'tiếng việt':'vi', tieng_viet:'vi', 'tieng-viet':'vi'
+  };
+
   function firstNonEmpty(...values){
     for (const value of values) {
       const s = String(value || '').trim();
@@ -357,56 +634,45 @@
     );
   }
 
+  function getReportLangRaw(ctx = {}){
+    return firstNonEmpty(
+      ctx.reportLang,
+      ctx.reportLanguage,
+      ctx.pdfLang,
+      ctx.pdfLanguage,
+      ctx.outputLang,
+      ctx.outputLanguage,
+      LANG
+    );
+  }
+
+  function normalizeLangToken(raw){
+    return String(raw || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[._]/g, '-')
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ');
+  }
+
   function langKey(raw){
-    const s = String(raw || LANG || 'en').trim().toLowerCase();
+    const original = String(raw || LANG || 'en').trim();
+    if (!original) return 'en';
 
-    if (!s) return 'en';
+    const lowerOriginal = original.toLowerCase();
+    if (LANG_PROFILES[lowerOriginal]) return lowerOriginal;
 
-    if (
-      s === 'de' ||
-      s.startsWith('de-') ||
-      s.startsWith('de_') ||
-      s.includes('deutsch') ||
-      s.includes('german')
-    ) return 'de';
+    const normalized = normalizeLangToken(original);
+    const firstPart = normalized.split(/[-\s/]+/).filter(Boolean)[0] || normalized;
 
-    if (
-      s === 'en' ||
-      s.startsWith('en-') ||
-      s.startsWith('en_') ||
-      s.includes('english') ||
-      s.includes('englisch')
-    ) return 'en';
+    if (LANG_PROFILES[firstPart]) return firstPart;
+    if (LANG_ALIASES[normalized]) return LANG_ALIASES[normalized];
+    if (LANG_ALIASES[firstPart]) return LANG_ALIASES[firstPart];
 
-    if (
-      s === 'es' ||
-      s.startsWith('es-') ||
-      s.startsWith('es_') ||
-      s.includes('spanish') ||
-      s.includes('spanisch') ||
-      s.includes('español') ||
-      s.includes('espanol')
-    ) return 'es';
-
-    if (
-      s === 'fr' ||
-      s.startsWith('fr-') ||
-      s.startsWith('fr_') ||
-      s.includes('french') ||
-      s.includes('französisch') ||
-      s.includes('franzoesisch') ||
-      s.includes('français') ||
-      s.includes('francais')
-    ) return 'fr';
-
-    if (
-      s === 'it' ||
-      s.startsWith('it-') ||
-      s.startsWith('it_') ||
-      s.includes('italian') ||
-      s.includes('italienisch') ||
-      s.includes('italiano')
-    ) return 'it';
+    for (const key of Object.keys(LANG_ALIASES)) {
+      if (normalized.includes(key)) return LANG_ALIASES[key];
+    }
 
     return 'en';
   }
@@ -415,13 +681,22 @@
     return langKey(getInterviewLangRaw(ctx || {}));
   }
 
+  function activeReportLang(ctx = CTX){
+    return langKey(getReportLangRaw(ctx || {}));
+  }
+
+  function langProfile(code){
+    return LANG_PROFILES[code] || LANG_PROFILES.en;
+  }
+
   function normalizeIncomingContext(data = {}){
     const incoming = data || {};
     const merged = { ...CTX, ...incoming };
 
     // Wichtig: Die Interview-Sprache kommt je nach Seite/DB unter verschiedenen Feldnamen.
     // Für die Live-KI wird sie zentral als CTX.lang normalisiert.
-    merged.lang = getInterviewLangRaw(merged);
+    merged.lang = activeInterviewLang(merged);
+    merged.reportLang = activeReportLang(merged);
 
     return merged;
   }
@@ -611,35 +886,61 @@
   }
 
   function finalClosingText(ctx = {}){
-    return UI_TEXTS[activeInterviewLang(ctx)]?.finalClose || UI_TEXTS.en.finalClose;
+    const profile = langProfile(activeInterviewLang(ctx));
+    return profile.finalClose || UI_TEXTS.en.finalClose;
+  }
+
+  function normalizeForMatch(value){
+    return String(value || '')
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^\w\u00C0-\u024F\u0370-\u03FF\u0400-\u04FF\u0590-\u05FF\u0600-\u06FF\u0900-\u097F\u0E00-\u0E7F\u1E00-\u1EFF\u3040-\u30FF\u3400-\u9FFF\uAC00-\uD7AF]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   function finalClosingDetected(text){
-    const low = String(text || '').toLowerCase();
-    const lk = activeInterviewLang(CTX);
+    const given = normalizeForMatch(text);
+    const expected = normalizeForMatch(finalClosingText(CTX));
 
-    if (lk === 'de') {
-      return low.includes('bitte schließen sie dieses fenster noch nicht') &&
-             low.includes('das interview wird verarbeitet');
+    if (given && expected) {
+      const expectedLead = expected.slice(0, Math.min(70, expected.length));
+      const expectedMid = expected.slice(0, Math.min(120, expected.length));
+
+      if (expectedLead && given.includes(expectedLead)) return true;
+      if (expectedMid && expected.includes(given.slice(0, Math.min(70, given.length)))) return true;
     }
 
-    if (lk === 'es') {
-      return low.includes('no cierre esta ventana') &&
-             low.includes('la entrevista se está procesando');
-    }
+    // Fallback-Marker für den Fall, dass das Realtime-Transkript leicht abweicht.
+    const universalMarkers = [
+      ['do not close', 'interview is being processed'],
+      ['please do not close', 'processed'],
+      ['bitte schließen', 'interview wird verarbeitet'],
+      ['bitte schliessen', 'interview wird verarbeitet'],
+      ['no cierre', 'entrevista se esta procesando'],
+      ['no cierre', 'entrevista se está procesando'],
+      ['ne pas fermer', 'entretien est en cours'],
+      ['non chiuda', 'colloquio e in fase'],
+      ['nao feche', 'entrevista esta sendo processada'],
+      ['niet sluit', 'interview wordt verwerkt']
+    ];
 
-    if (lk === 'fr') {
-      return low.includes('ne pas fermer cette fenêtre') &&
-             low.includes('entretien est en cours de traitement');
-    }
+    return universalMarkers.some(pair => pair.every(marker => given.includes(normalizeForMatch(marker))));
+  }
 
-    if (lk === 'it') {
-      return low.includes('non chiuda ancora questa finestra') &&
-             low.includes('colloquio è in fase di elaborazione');
-    }
+  function isReadyText(text){
+    const normalized = normalizeForMatch(text);
+    if (!normalized) return false;
 
-    return low.includes('please do not close this window') &&
-           low.includes('the interview is being processed');
+    const allReadyWords = Object.values(LANG_PROFILES)
+      .flatMap(profile => profile.readyWords || [])
+      .concat(['ready','yes','ja','oui','si','sí','ok','okay','start']);
+
+    return allReadyWords.some(word => {
+      const w = normalizeForMatch(word);
+      return w && normalized.includes(w);
+    });
   }
 
   function canEndNow(){
@@ -982,7 +1283,7 @@
         });
       }
 
-      if (/(^|\b)(bereit|ready|oui|yes|ja|sí|si|listo|prêt|pronto)(\b|$)/.test(txt)){
+      if (isReadyText(txtRaw)){
         READY_DETECTED = true;
         maybeAskFirstQuestion();
       }
@@ -1095,7 +1396,7 @@
         });
 
         const low = userText.toLowerCase();
-        if (/(^|\b)(bereit|ready|oui|yes|ja|sí|si|listo|prêt|pronto)(\b|$)/.test(low)) {
+        if (isReadyText(userText)) {
           READY_DETECTED = true;
           maybeAskFirstQuestion();
         }
@@ -1292,66 +1593,30 @@
   /* ===== Instructions / Knowledge ===== */
   function buildSystemInstructions(ctx){
     const lk = activeInterviewLang(ctx);
-    const finalClose = finalClosingText(ctx);
+    const profile = langProfile(lk);
+    const finalClose = finalClosingText({ ...ctx, lang: lk });
 
-    const LANG_RULES = {
-      de: {
-        langLine: 'Sprich ausschließlich DEUTSCH. Wechsle nie die Sprache.',
-        structure: 'Führe ein strukturiertes Job-Interview: nur EINE Frage zur Zeit, max. 1 Nachfrage, strikt am Jobprofil bleiben. Stelle keine zwei Fragen in einer Nachricht.',
-        waiting: 'Nach jeder Frage warten, bis die Kandidatin/der Kandidat fertig ist.',
-        kbRule: 'Nutze ausschließlich die FIRMENKENNTNISSE aus „KONTEXT“ für Antworten zu Firma, Stelle, Prozessen, Benefits usw. Wenn etwas nicht im KONTEXT steht, sage freundlich, dass dies mit der Firma direkt zu klären ist.',
-        readyGate: 'Starte die erste Frage erst, nachdem die Person „bereit“ gesagt hat (oder nach Fallback-Timeout).',
-        closing: `Wenn alle Fragen gestellt sind, sage zum Abschluss EXAKT diesen Satz, ohne technische Details hinzuzufügen: „${finalClose}“ Danach rufe end_interview auf.`,
-        endRule: `Rufe end_interview NUR auf, wenn das Interview wirklich abgeschlossen ist. Vorher NIEMALS. Mindestanforderung: mindestens ${MIN_USER_UTTERANCES} Kandidaten-Antworten und ein sinnvoller Abschluss/Verabschiedung.`
-      },
-      en: {
-        langLine: 'Speak strictly in ENGLISH. Do not switch languages.',
-        structure: 'Conduct a structured job interview: one question at a time, max one follow-up, stick to the job profile. Never ask two questions in one message.',
-        waiting: 'After each question, wait until the candidate is finished.',
-        kbRule: 'Use only the COMPANY KNOWLEDGE from “CONTEXT” to answer company/job/process/benefits questions. If it is not in CONTEXT, politely say the candidate should check with the company.',
-        readyGate: 'Ask the first question only after the user says “ready” (or after a fallback timeout).',
-        closing: `When all questions are completed, say exactly this closing message and do not add technical details: “${finalClose}” Then call end_interview.`,
-        endRule: `Call end_interview ONLY when the interview is truly complete. NEVER before. Minimum: at least ${MIN_USER_UTTERANCES} candidate answers and a proper closing/goodbye.`
-      },
-      es: {
-        langLine: 'Habla exclusivamente en ESPAÑOL. No cambies de idioma.',
-        structure: 'Realiza una entrevista laboral estructurada: solo UNA pregunta a la vez, como máximo una repregunta, y mantente estrictamente dentro del perfil del puesto. No hagas dos preguntas en un mismo mensaje.',
-        waiting: 'Después de cada pregunta, espera hasta que la candidata o el candidato haya terminado de responder.',
-        kbRule: 'Utiliza exclusivamente el CONOCIMIENTO DE LA EMPRESA incluido en “CONTEXTO” para responder preguntas sobre la empresa, el puesto, los procesos, beneficios, etc. Si algo no está en el CONTEXTO, indica amablemente que debe aclararse directamente con la empresa.',
-        readyGate: 'Haz la primera pregunta solo después de que la persona diga “listo”, “lista” o “sí” (o después del tiempo de espera de respaldo).',
-        closing: `Cuando se hayan completado todas las preguntas, di exactamente este mensaje de cierre y no añadas detalles técnicos: “${finalClose}” Después llama a end_interview.`,
-        endRule: `Llama a end_interview SOLO cuando la entrevista esté realmente terminada. NUNCA antes. Requisito mínimo: al menos ${MIN_USER_UTTERANCES} respuestas del candidato y un cierre/despedida adecuado.`
-      },
-      fr: {
-        langLine: 'Parle exclusivement en FRANÇAIS. Ne change jamais de langue.',
-        structure: 'Mène un entretien d’embauche structuré : une seule question à la fois, au maximum une relance, et reste strictement lié au profil du poste. Ne pose jamais deux questions dans le même message.',
-        waiting: 'Après chaque question, attends que la candidate ou le candidat ait terminé sa réponse.',
-        kbRule: 'Utilise exclusivement les CONNAISSANCES ENTREPRISE indiquées dans « CONTEXTE » pour répondre aux questions sur l’entreprise, le poste, les processus, les avantages, etc. Si une information n’est pas dans le CONTEXTE, indique poliment qu’elle doit être clarifiée directement avec l’entreprise.',
-        readyGate: 'Pose la première question uniquement après que la personne a dit « prêt », « prête » ou « oui » (ou après le délai de secours).',
-        closing: `Lorsque toutes les questions sont terminées, dis exactement ce message de clôture sans ajouter de détails techniques : « ${finalClose} » Ensuite, appelle end_interview.`,
-        endRule: `Appelle end_interview UNIQUEMENT lorsque l’entretien est réellement terminé. JAMAIS avant. Condition minimale : au moins ${MIN_USER_UTTERANCES} réponses du candidat et une clôture/despedida appropriée.`
-      },
-      it: {
-        langLine: 'Parla esclusivamente in ITALIANO. Non cambiare lingua.',
-        structure: 'Conduci un colloquio di lavoro strutturato: una sola domanda alla volta, al massimo una domanda di approfondimento, e resta strettamente aderente al profilo della posizione. Non fare mai due domande nello stesso messaggio.',
-        waiting: 'Dopo ogni domanda, attendi che la candidata o il candidato abbia terminato la risposta.',
-        kbRule: 'Utilizza esclusivamente le CONOSCENZE AZIENDALI indicate nel “CONTESTO” per rispondere a domande su azienda, posizione, processi, benefit, ecc. Se un’informazione non è nel CONTESTO, spiega gentilmente che deve essere chiarita direttamente con l’azienda.',
-        readyGate: 'Poni la prima domanda solo dopo che la persona dice “pronto”, “pronta” o “sì” (oppure dopo il timeout di fallback).',
-        closing: `Quando tutte le domande sono state completate, pronuncia esattamente questo messaggio di chiusura senza aggiungere dettagli tecnici: “${finalClose}” Poi chiama end_interview.`,
-        endRule: `Chiama end_interview SOLO quando il colloquio è davvero concluso. MAI prima. Requisito minimo: almeno ${MIN_USER_UTTERANCES} risposte del candidato e una chiusura/saluto appropriato.`
-      }
-    };
-
-    const rules = LANG_RULES[lk] || LANG_RULES.en;
+    if (lk === 'de') {
+      return [
+        'Sprich ausschließlich DEUTSCH. Wechsle nie die Sprache.',
+        'Führe ein strukturiertes Job-Interview: nur EINE Frage zur Zeit, max. 1 Nachfrage, strikt am Jobprofil bleiben. Stelle keine zwei Fragen in einer Nachricht.',
+        'Nach jeder Frage warten, bis die Kandidatin/der Kandidat fertig ist.',
+        'Nutze ausschließlich die FIRMENKENNTNISSE aus „KONTEXT“ für Antworten zu Firma, Stelle, Prozessen, Benefits usw. Wenn etwas nicht im KONTEXT steht, sage freundlich, dass dies mit der Firma direkt zu klären ist.',
+        'Starte die erste Frage erst, nachdem die Person „bereit“ gesagt hat (oder nach Fallback-Timeout).',
+        `Wenn alle Fragen gestellt sind, sage zum Abschluss EXAKT diesen Satz, ohne technische Details hinzuzufügen: „${finalClose}“ Danach rufe end_interview auf.`,
+        `Rufe end_interview NUR auf, wenn das Interview wirklich abgeschlossen ist. Vorher NIEMALS. Mindestanforderung: mindestens ${MIN_USER_UTTERANCES} Kandidaten-Antworten und ein sinnvoller Abschluss/Verabschiedung.`
+      ].join(' ');
+    }
 
     return [
-      rules.langLine,
-      rules.structure,
-      rules.waiting,
-      rules.kbRule,
-      rules.readyGate,
-      rules.closing,
-      rules.endRule
+      `Speak strictly in ${profile.englishName.toUpperCase()}. Do not switch languages.`,
+      `The full interview, welcome messages, questions, follow-ups, candidate-facing explanations, and closing message must be spoken in ${profile.englishName}.`,
+      'Conduct a structured job interview: one question at a time, max one follow-up, stick to the job profile. Never ask two questions in one message.',
+      'After each question, wait until the candidate is finished.',
+      'Use only the COMPANY KNOWLEDGE from “CONTEXT” to answer company/job/process/benefits questions. If it is not in CONTEXT, politely say the candidate should check with the company.',
+      `Ask the first question only after the user says one of these readiness words or after the fallback timeout: ${(profile.readyWords || ['ready']).join(', ')}.`,
+      `When all questions are completed, say exactly this closing message in ${profile.englishName} and do not add technical details: “${finalClose}” Then call end_interview.`,
+      `Call end_interview ONLY when the interview is truly complete. NEVER before. Minimum: at least ${MIN_USER_UTTERANCES} candidate answers and a proper closing/goodbye.`
     ].join(' ');
   }
 
@@ -1395,7 +1660,7 @@
     const sys = buildSystemInstructions({
       ...CTX,
       lang: spoken,
-      reportLang: CTX.reportLang || reportLang || 'de'
+      reportLang: langKey(CTX.reportLang || reportLang || 'de')
     });
 
     const tools = [{
@@ -1435,7 +1700,7 @@
     log('[PRIME] session.update (lang+tools+none VAD)', {
       spoken,
       interviewLang: CTX.lang || LANG || 'de',
-      reportLang: CTX.reportLang || reportLang || 'de'
+      reportLang: langKey(CTX.reportLang || reportLang || 'de')
     });
 
     dcSend({ type: 'conversation.clear' });
@@ -1457,35 +1722,25 @@
   }
 
   function instructionToSay(textToSpeak, lk){
-    const prompts = {
-      de: `Bitte sage jetzt hörbar und freundlich: ${textToSpeak}`,
-      en: `Please say this out loud in a friendly way: ${textToSpeak}`,
-      es: `Por favor, diga ahora esto en voz alta y de forma amable: ${textToSpeak}`,
-      fr: `Veuillez dire maintenant ceci clairement et de manière aimable : ${textToSpeak}`,
-      it: `Per favore, pronuncia ora questo testo ad alta voce e in modo cordiale: ${textToSpeak}`
-    };
+    const profile = langProfile(lk);
 
-    return prompts[lk] || prompts.en;
+    if (profile.sayInstruction) return profile.sayInstruction(textToSpeak);
+
+    return `Please say the following text out loud in ${profile.englishName}, in a friendly and natural interview tone. Say only the text itself, not this instruction: ${textToSpeak}`;
   }
 
   function welcomeText(ctx = CTX){
     const lk = activeInterviewLang(ctx);
+    const profile = langProfile(lk);
     const company = ctx.companyName || 'Clarity';
 
-    const texts = {
-      de: `Willkommen! Dieses Interview wird im Auftrag von ${company} geführt. Sind Sie bereit zu starten? Bitte sagen Sie „bereit“.`,
-      en: `Welcome! This interview is conducted on behalf of ${company}. Are you ready to begin? Please say “ready”.`,
-      es: `¡Bienvenido! Esta entrevista se realiza en nombre de ${company}. ¿Está listo para comenzar? Por favor, diga “listo”.`,
-      fr: `Bienvenue ! Cet entretien est mené pour le compte de ${company}. Êtes-vous prêt à commencer ? Veuillez dire « prêt ».`,
-      it: `Benvenuto! Questo colloquio viene condotto per conto di ${company}. È pronto per iniziare? Per favore, dica “pronto”.`
-    };
-
-    return texts[lk] || texts.en;
+    if (typeof profile.welcome === 'function') return profile.welcome(company);
+    return LANG_PROFILES.en.welcome(company);
   }
 
   function speakPrepThenWelcome() {
     const lk = activeInterviewLang(CTX);
-    const prep = UI_TEXTS[lk]?.welcomePrep || UI_TEXTS.en.welcomePrep;
+    const prep = langProfile(lk).welcomePrep || UI_TEXTS.en.welcomePrep;
     const welcome = welcomeText(CTX);
 
     dcSend({ type: 'response.cancel' });
@@ -1571,54 +1826,9 @@
 
   function buildInterviewPlan(ctx){
     const lk = activeInterviewLang(ctx);
-
-    const baseByLang = {
-      de: [
-        'Bitte stellen Sie sich kurz vor.',
-        'Warum passt diese Position zu Ihnen?',
-        'Beschreiben Sie ein Projekt, auf das Sie stolz sind.',
-        'Wie gehen Sie mit knappen Deadlines um?',
-        'Welche Erwartungen haben Sie an die Rolle und das Team?'
-      ],
-      en: [
-        'Please introduce yourself briefly.',
-        'Why is this position a good fit for you?',
-        'Describe a project you are proud of.',
-        'How do you handle tight deadlines?',
-        'What are your expectations for the role and the team?'
-      ],
-      es: [
-        'Por favor, preséntese brevemente.',
-        '¿Por qué considera que esta posición encaja con usted?',
-        'Describa un proyecto del que se sienta especialmente orgulloso.',
-        '¿Cómo gestiona plazos ajustados?',
-        '¿Qué expectativas tiene respecto al puesto y al equipo?'
-      ],
-      fr: [
-        'Veuillez vous présenter brièvement.',
-        'Pourquoi pensez-vous que ce poste vous correspond ?',
-        'Décrivez un projet dont vous êtes particulièrement fier.',
-        'Comment gérez-vous les délais serrés ?',
-        'Quelles sont vos attentes concernant le poste et l’équipe ?'
-      ],
-      it: [
-        'La prego di presentarsi brevemente.',
-        'Perché ritiene che questa posizione sia adatta a lei?',
-        'Descriva un progetto di cui è particolarmente orgoglioso.',
-        'Come gestisce scadenze ravvicinate?',
-        'Quali aspettative ha rispetto al ruolo e al team?'
-      ]
-    };
-
-    const prefixByLang = {
-      de: 'Bezug zur Ausschreibung: ',
-      en: 'Regarding the job ad: ',
-      es: 'En relación con la oferta de empleo: ',
-      fr: 'Concernant l’offre d’emploi : ',
-      it: 'In riferimento all’annuncio di lavoro: '
-    };
-
-    const seeds = (baseByLang[lk] || baseByLang.en).slice();
+    const profile = langProfile(lk);
+    const seeds = (profile.baseQuestions || LANG_PROFILES.en.baseQuestions).slice();
+    const prefix = profile.jobPrefix || LANG_PROFILES.en.jobPrefix;
 
     const text =
       (ctx.roleProfileText || '').trim() +
@@ -1633,7 +1843,7 @@
 
     if (lines.length){
       lines.forEach(line => {
-        seeds.push((prefixByLang[lk] || prefixByLang.en) + line);
+        seeds.push(prefix + line);
       });
     }
 
@@ -1643,27 +1853,16 @@
   }
 
   function firstQuestionInstruction(question, lk){
-    const prompts = {
-      de: `Bitte stelle jetzt hörbar genau diese erste Interviewfrage und warte danach auf die Antwort des Kandidaten: ${question}`,
-      en: `Please now ask exactly this first interview question out loud and then wait for the candidate's answer: ${question}`,
-      es: `Por favor, formule ahora en voz alta exactamente esta primera pregunta de la entrevista y espere después la respuesta del candidato: ${question}`,
-      fr: `Veuillez maintenant poser clairement à voix haute exactement cette première question d’entretien, puis attendre la réponse du candidat : ${question}`,
-      it: `Per favore, poni ora ad alta voce esattamente questa prima domanda del colloquio e poi attendi la risposta del candidato: ${question}`
-    };
+    const profile = langProfile(lk);
 
-    return prompts[lk] || prompts.en;
+    if (profile.firstQuestionInstruction) return profile.firstQuestionInstruction(question);
+
+    return `Please now ask exactly this first interview question out loud in ${profile.englishName} and then wait for the candidate's answer. Say only the question itself: ${question}`;
   }
 
   function fallbackFirstQuestion(lk){
-    const fallback = {
-      de: 'Bitte stellen Sie sich kurz vor.',
-      en: 'Please introduce yourself.',
-      es: 'Por favor, preséntese brevemente.',
-      fr: 'Veuillez vous présenter brièvement.',
-      it: 'La prego di presentarsi brevemente.'
-    };
-
-    return fallback[lk] || fallback.en;
+    const profile = langProfile(lk);
+    return (profile.baseQuestions && profile.baseQuestions[0]) || LANG_PROFILES.en.baseQuestions[0];
   }
 
   function askFirstQuestion(){
