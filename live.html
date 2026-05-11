@@ -218,7 +218,7 @@
   // bevor Audio, Mikrofon, Kamera und Recorder gestoppt werden.
   const FINAL_HANGUP_BUFFER_MS = Math.max(
     2500,
-    Math.min(12000, Number(Q.get('finalHangupBufferMs') || 8500) || 8500)
+    Math.min(20000, Number(Q.get('finalHangupBufferMs') || 8500) || 8500)
   );
 
   if (DEBUG_UI) document.body.classList.add('debug-ui');
@@ -1670,10 +1670,92 @@
       : `Question set ${qset}: Ask at most ${maxQ} suitable role-specific main questions. End the interview after at most ${maxQ} main questions.`;
   }
 
+  function isAssessmentContext(ctx){
+    return String(ctx?.productType || '').toLowerCase() === 'modul1' || ctx?.assessment === true || String(ctx?.interviewMode || '').toLowerCase() === 'assessment';
+  }
+
+  function assessmentArea(ctx){
+    const raw = String(ctx?.moduleArea || ctx?.assessmentArea || 'personality').toLowerCase();
+    if (raw === 'skill') return 'skills';
+    if (raw === 'lang') return 'language';
+    return ['aptitude','personality','skills','language'].includes(raw) ? raw : 'personality';
+  }
+
+  function assessmentAreaLabel(area, lk){
+    const de = { aptitude:'Aptitude-Analyse', personality:'Persönlichkeitsanalyse', skills:'Skills-Analyse', language:'Sprachanalyse' };
+    const en = { aptitude:'aptitude analysis', personality:'personality analysis', skills:'skills analysis', language:'language analysis' };
+    return (lk === 'de' ? de : en)[area] || area;
+  }
+
+  function assessmentFocusText(area, lk, hasPosition){
+    const de = {
+      aptitude: 'Fokus: logisches Denken, Problemlösung, Strukturierungsfähigkeit, Lernfähigkeit, Umgang mit Komplexität und Entscheidungsqualität.',
+      personality: 'Fokus: Arbeitsstil, Motivation, Kommunikation, Zusammenarbeit, Konfliktverhalten, Druckverhalten und persönliche Arbeitspräferenzen.',
+      skills: 'Fokus: praktische Fähigkeiten, Methodenkompetenz, Tool-Erfahrung, Projektbeispiele, Umsetzungskraft und Übertragbarkeit auf neue Aufgaben.',
+      language: 'Fokus: Sprachkompetenz, Verständlichkeit, Flüssigkeit, Wortschatz, Grammatik/Struktur, Fachterminologie, Spontanität und berufliche Kommunikationsklarheit. Bewerte NICHT die fachliche Eignung, sondern die sprachliche Leistung.'
+    };
+    const en = {
+      aptitude: 'Focus: logical reasoning, problem solving, structuring ability, learning agility, complexity handling and decision quality.',
+      personality: 'Focus: work style, motivation, communication, collaboration, conflict behaviour, pressure behaviour and work preferences.',
+      skills: 'Focus: practical expertise, methods, tools, project evidence, execution strength and transferability to new tasks.',
+      language: 'Focus: language competence, clarity, fluency, vocabulary, grammar/structure, professional terminology, spontaneity and professional communication clarity. Do NOT evaluate subject-matter suitability; evaluate communication performance.'
+    };
+    const base = (lk === 'de' ? de : en)[area] || '';
+    if (lk === 'de') {
+      return base + ' ' + (hasPosition ? 'Die angegebene Position darf als Kontext genutzt werden, aber die Analyse bleibt strikt im genannten Fokusbereich.' : 'Es ist keine Zielposition angegeben. Stelle allgemeine Fragen für diesen Analysebereich ohne Firmen- oder Rollenannahmen.');
+    }
+    return base + ' ' + (hasPosition ? 'The target position may be used as context, but the assessment must stay strictly within this area.' : 'No target position is specified. Ask general questions for this assessment area without company or role assumptions.');
+  }
+
+  function assessmentQuestionPolicyText(ctx, lk){
+    const maxQ = interviewMaxQuestions(ctx);
+    const qset = String(ctx?.questionSet || ctx?.interviewConfig?.questionSet || `Q${maxQ}`).toUpperCase();
+    const area = assessmentArea(ctx);
+    if (lk === 'de') {
+      return `Analysetiefe ${qset}: Stelle maximal ${maxQ} Hauptfragen für die ${assessmentAreaLabel(area, lk)}. Stelle immer nur EINE Frage zur Zeit. Keine kundeneigenen Interviewfragen verwenden. Beende die Analyse erst nach ausreichend Antworten und nach einer klaren Abschlussmeldung.`;
+    }
+    return `Analysis depth ${qset}: Ask at most ${maxQ} main questions for the ${assessmentAreaLabel(area, lk)}. Ask exactly ONE question at a time. Do not use customer interview questions. End the assessment only after sufficient answers and a clear closing message.`;
+  }
+
+  function buildAssessmentSystemInstructions(ctx, lk, profile, finalClose){
+    const area = assessmentArea(ctx);
+    const hasPosition = !!String(ctx?.position || '').trim();
+    if (lk === 'de') {
+      return [
+        'Sprich ausschließlich DEUTSCH. Wechsle nie die Sprache.',
+        'Dies ist ein CLARITY Assessment, KEIN klassisches Bewerbungsgespräch und KEIN Interview-Modul.',
+        `Analysebereich: ${assessmentAreaLabel(area, lk)}.`,
+        assessmentFocusText(area, lk, hasPosition),
+        assessmentQuestionPolicyText(ctx, lk),
+        'Stelle niemals zwei Fragen in einer Nachricht. Jede Nachricht darf maximal eine Frage enthalten.',
+        'Nach jeder Frage warten, bis die Person fertig geantwortet hat. Gib kurze Pausen und fahre erst danach fort.',
+        'Starte die erste Frage erst, nachdem die Person „bereit“ gesagt hat oder nach Fallback-Timeout.',
+        `Wenn alle Assessment-Fragen abgeschlossen sind, sage zum Abschluss EXAKT diesen Satz, ohne technische Details hinzuzufügen: „${finalClose}“ Danach rufe end_interview auf.`,
+        `Rufe end_interview NUR auf, wenn die Analyse wirklich abgeschlossen ist. Vorher NIEMALS. Mindestanforderung: mindestens ${MIN_USER_UTTERANCES} Antworten und ein vollständiger Abschluss.`
+      ].join(' ');
+    }
+    return [
+      `Speak strictly in ${profile.englishName.toUpperCase()}. Do not switch languages.`,
+      `This is a CLARITY Assessment, NOT a classic job interview and NOT the Interview module.`,
+      `Assessment area: ${assessmentAreaLabel(area, lk)}.`,
+      assessmentFocusText(area, lk, hasPosition),
+      assessmentQuestionPolicyText(ctx, lk),
+      'Never ask two questions in one message. Each assistant message may contain at most one question.',
+      'After each question, wait until the participant has finished answering. Leave natural pauses and continue only after the answer.',
+      `Ask the first question only after the user says one of these readiness words or after the fallback timeout: ${(profile.readyWords || ['ready']).join(', ')}.`,
+      `When all assessment questions are completed, say exactly this closing message in ${profile.englishName} and do not add technical details: “${finalClose}” Then call end_interview.`,
+      `Call end_interview ONLY when the assessment is truly complete. NEVER before. Minimum: at least ${MIN_USER_UTTERANCES} participant answers and a complete closing.`
+    ].join(' ');
+  }
+
   function buildSystemInstructions(ctx){
     const lk = activeInterviewLang(ctx);
     const profile = langProfile(lk);
     const finalClose = finalClosingText({ ...ctx, lang: lk });
+
+    if (isAssessmentContext(ctx)) {
+      return buildAssessmentSystemInstructions(ctx, lk, profile, finalClose);
+    }
 
     if (lk === 'de') {
       return [
@@ -1721,12 +1803,13 @@
 
     const header = '=== KONTEXT / CONTEXT START ===';
     const footer = '=== KONTEXT / CONTEXT ENDE ===';
-    const questions = parseQuestionLines(CTX.customQuestionsText || CTX.questionsText || '')
+    const questions = isAssessmentContext(CTX) ? '' : parseQuestionLines(CTX.customQuestionsText || CTX.questionsText || '')
       .map((q, i) => `${i + 1}. ${q}`)
       .join('\n');
 
+    const policy = isAssessmentContext(CTX) ? assessmentQuestionPolicyText(CTX, activeInterviewLang(CTX)) : questionPolicyText(CTX);
     const questionBlock = [
-      questionPolicyText(CTX),
+      policy,
       questions ? `CUSTOMER QUESTIONS / KUNDENEIGENE FRAGEN:\n${questions}` : ''
     ].filter(Boolean).join('\n\n');
 
