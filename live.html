@@ -218,7 +218,7 @@
   // bevor Audio, Mikrofon, Kamera und Recorder gestoppt werden.
   const FINAL_HANGUP_BUFFER_MS = Math.max(
     2500,
-    Math.min(23000, Number(Q.get('finalHangupBufferMs') || 8500) || 8500)
+    Math.min(26000, Number(Q.get('finalHangupBufferMs') || 8500) || 8500)
   );
 
   if (DEBUG_UI) document.body.classList.add('debug-ui');
@@ -1720,9 +1720,29 @@
     return `Analysis depth ${qset}: Ask at most ${maxQ} main questions for the ${assessmentAreaLabel(area, lk)}. Ask exactly ONE question at a time. Do not use customer interview questions. End the assessment only after sufficient answers and a clear closing message.${hybridNoteEn}`;
   }
 
+  function assessmentHybridClosingText(ctx, lk, profile){
+    const chatQ = Number(ctx?.chatQuestionCount || 0);
+    if (!(chatQ > 0)) return '';
+    const area = assessmentArea(ctx);
+    if (lk === 'de') {
+      return 'Der mündliche Teil ist jetzt abgeschlossen. Bitte schließen Sie dieses Fenster nicht und bleiben Sie auf der Seite. Es folgt nun ein kurzer schriftlicher Teil im Chat. Bitte warten Sie, bis der Chat angezeigt wird, und beantworten Sie dort die letzten Fragen.';
+    }
+    if (lk === 'it') {
+      return 'La parte orale è ora conclusa. Per favore non chiuda questa finestra e resti su questa pagina. Ora seguirà una breve parte scritta nella chat. Attenda che la chat venga visualizzata e risponda lì alle ultime domande.';
+    }
+    if (lk === 'es') {
+      return 'La parte oral ha finalizado. Por favor, no cierre esta ventana y permanezca en esta página. A continuación seguirá una breve parte escrita en el chat. Espere hasta que aparezca el chat y responda allí las últimas preguntas.';
+    }
+    if (lk === 'fr') {
+      return 'La partie orale est maintenant terminée. Veuillez ne pas fermer cette fenêtre et rester sur cette page. Une courte partie écrite va maintenant suivre dans le chat. Attendez que le chat s’affiche et répondez-y aux dernières questions.';
+    }
+    return 'The spoken part is now complete. Please do not close this window and stay on this page. A short written part will now follow in chat. Please wait until the chat appears and answer the final questions there.';
+  }
+
   function buildAssessmentSystemInstructions(ctx, lk, profile, finalClose){
     const area = assessmentArea(ctx);
     const hasPosition = !!String(ctx?.position || '').trim();
+    const assessmentClose = assessmentHybridClosingText(ctx, lk, profile) || finalClose;
     if (lk === 'de') {
       return [
         'Sprich ausschließlich DEUTSCH. Wechsle nie die Sprache.',
@@ -1733,7 +1753,7 @@
         'Stelle niemals zwei Fragen in einer Nachricht. Jede Nachricht darf maximal eine Frage enthalten.',
         'Nach jeder Frage warten, bis die Person fertig geantwortet hat. Gib kurze Pausen und fahre erst danach fort.',
         'Starte die erste Frage erst, nachdem die Person „bereit“ gesagt hat oder nach Fallback-Timeout.',
-        `Wenn alle Assessment-Fragen abgeschlossen sind, sage zum Abschluss EXAKT diesen Satz, ohne technische Details hinzuzufügen: „${finalClose}“ Danach rufe end_interview auf.`,
+        `Wenn alle mündlichen Assessment-Fragen abgeschlossen sind, sage zum Abschluss EXAKT diesen Satz, ohne technische Details hinzuzufügen: „${assessmentClose}“ Danach rufe end_interview auf.`,
         `Rufe end_interview NUR auf, wenn die Analyse wirklich abgeschlossen ist. Vorher NIEMALS. Mindestanforderung: mindestens ${MIN_USER_UTTERANCES} Antworten und ein vollständiger Abschluss.`
       ].join(' ');
     }
