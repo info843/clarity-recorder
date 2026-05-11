@@ -927,14 +927,27 @@
 
   function finalClosingDetected(text){
     const given = normalizeForMatch(text);
-    const expected = normalizeForMatch(finalClosingText(CTX));
+    if (!given) return false;
 
-    if (given && expected) {
+    const lk = activeInterviewLang(CTX);
+    const profile = langProfile(lk);
+
+    // Normaler Abschluss und Assessment-Hybrid-Handoff sind beide legitime Endsignale.
+    // In Hybrid-Modi lautet der letzte Satz bewusst anders, weil danach der Chat-Teil folgt.
+    const expectedCandidates = [
+      finalClosingText(CTX),
+      assessmentHybridClosingText(CTX, lk, profile)
+    ]
+      .map(normalizeForMatch)
+      .filter(Boolean);
+
+    for (const expected of expectedCandidates) {
       const expectedLead = expected.slice(0, Math.min(70, expected.length));
-      const expectedMid = expected.slice(0, Math.min(120, expected.length));
+      const expectedMid = expected.slice(0, Math.min(140, expected.length));
+      const givenLead = given.slice(0, Math.min(90, given.length));
 
       if (expectedLead && given.includes(expectedLead)) return true;
-      if (expectedMid && expected.includes(given.slice(0, Math.min(70, given.length)))) return true;
+      if (expectedMid && expected.includes(givenLead)) return true;
     }
 
     // Fallback-Marker für den Fall, dass das Realtime-Transkript leicht abweicht.
@@ -948,7 +961,17 @@
       ['ne pas fermer', 'entretien est en cours'],
       ['non chiuda', 'colloquio e in fase'],
       ['nao feche', 'entrevista esta sendo processada'],
-      ['niet sluit', 'interview wordt verwerkt']
+      ['niet sluit', 'interview wordt verwerkt'],
+
+      // Assessment-Hybrid-Handoff: mündlicher Teil ist fertig, Chat folgt.
+      ['mündliche teil', 'schriftlicher teil', 'chat'],
+      ['muendliche teil', 'schriftlicher teil', 'chat'],
+      ['spoken part', 'written part', 'chat'],
+      ['oral part', 'written part', 'chat'],
+      ['parte orale', 'parte scritta', 'chat'],
+      ['parte oral', 'parte escrita', 'chat'],
+      ['partie orale', 'partie ecrite', 'chat'],
+      ['partie orale', 'partie écrite', 'chat']
     ];
 
     return universalMarkers.some(pair => pair.every(marker => given.includes(normalizeForMatch(marker))));
@@ -1453,10 +1476,19 @@
         if (finalClosingDetected(txt)) {
           FINAL_MESSAGE_SPOKEN = true;
           FINAL_MESSAGE_ITEM_ID = data.item_id || data.itemId || '';
-          log('[END] final processing message detected', {
+          log('[END] final/handoff message detected', {
             itemId: FINAL_MESSAGE_ITEM_ID,
-            responseId: data.response_id || data.responseId || ''
+            responseId: data.response_id || data.responseId || '',
+            isHybrid: isAssessmentHybrid(CTX)
           });
+
+          // Robuster Auto-Hangup: Einige Realtime-Läufe sprechen den korrekten
+          // Abschluss-/Handoff-Satz, liefern aber den end_interview-Toolcall nicht
+          // zuverlässig nach. Nach dem vollständig transkribierten Satz starten wir
+          // deshalb den Puffer selbst. Der Button bleibt nur Fallback.
+          if (!FINAL_HANGUP_TIMER && !END_CALLED) {
+            beginFinalHangup(isAssessmentHybrid(CTX) ? 'hybrid_handoff_audio_done' : 'final_audio_transcript_done');
+          }
         }
       }
 
@@ -1766,7 +1798,7 @@
       'Never ask two questions in one message. Each assistant message may contain at most one question.',
       'After each question, wait until the participant has finished answering. Leave natural pauses and continue only after the answer.',
       `Ask the first question only after the user says one of these readiness words or after the fallback timeout: ${(profile.readyWords || ['ready']).join(', ')}.`,
-      `When all assessment questions are completed, say exactly this closing message in ${profile.englishName} and do not add technical details: “${finalClose}” Then call end_interview.`,
+      `When all assessment questions are completed, say exactly this closing message in ${profile.englishName} and do not add technical details: “${assessmentClose}” Then call end_interview.`,
       `Call end_interview ONLY when the assessment is truly complete. NEVER before. Minimum: at least ${MIN_USER_UTTERANCES} participant answers and a complete closing.`
     ].join(' ');
   }
