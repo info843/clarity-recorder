@@ -218,7 +218,7 @@
   // bevor Audio, Mikrofon, Kamera und Recorder gestoppt werden.
   const FINAL_HANGUP_BUFFER_MS = Math.max(
     2500,
-    Math.min(20000, Number(Q.get('finalHangupBufferMs') || 8500) || 8500)
+    Math.min(23000, Number(Q.get('finalHangupBufferMs') || 8500) || 8500)
   );
 
   if (DEBUG_UI) document.body.classList.add('debug-ui');
@@ -1711,10 +1711,13 @@
     const maxQ = interviewMaxQuestions(ctx);
     const qset = String(ctx?.questionSet || ctx?.interviewConfig?.questionSet || `Q${maxQ}`).toUpperCase();
     const area = assessmentArea(ctx);
+    const chatQ = Number(ctx?.chatQuestionCount || 0);
+    const hybridNoteDe = chatQ > 0 ? ` Dies ist nur der mündliche Teil eines Hybrid-Assessments. Stelle hier höchstens ${maxQ} mündliche Hauptfragen; der restliche schriftliche Teil folgt im Chat. Erwähne am Ende, dass anschließend ein kurzer schriftlicher Teil folgt.` : '';
+    const hybridNoteEn = chatQ > 0 ? ` This is only the spoken part of a hybrid assessment. Ask at most ${maxQ} spoken main questions here; the remaining written part follows in chat. At the end, mention that a short written part will follow.` : '';
     if (lk === 'de') {
-      return `Analysetiefe ${qset}: Stelle maximal ${maxQ} Hauptfragen für die ${assessmentAreaLabel(area, lk)}. Stelle immer nur EINE Frage zur Zeit. Keine kundeneigenen Interviewfragen verwenden. Beende die Analyse erst nach ausreichend Antworten und nach einer klaren Abschlussmeldung.`;
+      return `Analysetiefe ${qset}: Stelle maximal ${maxQ} Hauptfragen für die ${assessmentAreaLabel(area, lk)}. Stelle immer nur EINE Frage zur Zeit. Keine kundeneigenen Interviewfragen verwenden. Beende die Analyse erst nach ausreichend Antworten und nach einer klaren Abschlussmeldung.${hybridNoteDe}`;
     }
-    return `Analysis depth ${qset}: Ask at most ${maxQ} main questions for the ${assessmentAreaLabel(area, lk)}. Ask exactly ONE question at a time. Do not use customer interview questions. End the assessment only after sufficient answers and a clear closing message.`;
+    return `Analysis depth ${qset}: Ask at most ${maxQ} main questions for the ${assessmentAreaLabel(area, lk)}. Ask exactly ONE question at a time. Do not use customer interview questions. End the assessment only after sufficient answers and a clear closing message.${hybridNoteEn}`;
   }
 
   function buildAssessmentSystemInstructions(ctx, lk, profile, finalClose){
