@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v3.7.2 EARLY_HANDOFF_GUARD: stable v3.7.1 base + robust early-final prevention -->
+  <!-- v3.7.3 HYBRID_Q_LIMIT_GUARD: v3.7.2 + hard spoken question limit for Interview Video+Chat -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -833,6 +833,8 @@
   let interviewStartedAt = 0;
   let userUtterances = 0;
   let assistantQuestionTurns = 0;
+  let HYBRID_SPOKEN_LIMIT_REACHED = false;
+  let HYBRID_HANDOFF_FORCED = false;
   let EARLY_FINAL_RETRY_COUNT = 0;
   const MIN_SECONDS_BEFORE_END = 120;
   const MIN_USER_UTTERANCES = 7;
@@ -1013,7 +1015,19 @@
     if (!raw) return false;
     const norm = normalizeForMatch(raw);
     if (raw.includes('?') || raw.includes('？')) return true;
-    return /\b(wie|was|warum|weshalb|wodurch|welche|welcher|welches|koennen|konnen|kannst|beschreiben|nennen|erlaeutern|erlautern|erzahlen|erzaehlen|what|why|how|which|can you|could you|please describe|please explain|tell me)\b/i.test(norm);
+    return /\b(wie|was|warum|weshalb|wodurch|welche|welcher|welches|koennen|konnen|kannst|beschreiben|nennen|erlaeutern|erlautern|erzahlen|erzaehlen|what|why|how|which|can you|could you|please describe|please explain|tell me|puo|puoi|può|come|cosa|quale|quali|por que|porque|como|que|quelle|quelles|comment|pourquoi)\b/i.test(norm);
+  }
+
+  function isWelcomeOrReadyPrompt(text){
+    const norm = normalizeForMatch(text);
+    if (!norm) return false;
+    const hasReady = /\b(ready|bereit|pronto|pronta|listo|lista|pret|prete|start)\b/i.test(norm);
+    const hasWelcome = /\b(welcome|willkommen|benvenuto|benvenuta|bienvenido|bienvenida|bienvenue)\b/i.test(norm);
+    return hasReady && (hasWelcome || norm.includes('say ready') || norm.includes('sagen sie bereit') || norm.includes('dica pronto') || norm.includes('diga listo'));
+  }
+
+  function spokenQuestionLimitForHybrid(ctx = CTX){
+    return Math.max(1, Math.min(50, interviewMaxQuestions(ctx)));
   }
 
   function requiredAssistantQuestionsBeforeHybridHandoff(ctx = CTX){
@@ -1027,7 +1041,9 @@
     if (isInterviewHybrid(CTX)) {
       const elapsed = (Date.now() - interviewStartedAt) / 1000;
       const requiredQuestions = requiredAssistantQuestionsBeforeHybridHandoff(CTX);
+      const hardLimit = spokenQuestionLimitForHybrid(CTX);
 
+      if (assistantQuestionTurns >= hardLimit && userUtterances >= Math.max(1, Math.min(hardLimit, assistantQuestionTurns))) return true;
       if (elapsed < 45) return false;
       if (assistantQuestionTurns < requiredQuestions) return false;
 
@@ -1035,6 +1051,46 @@
     }
 
     return true;
+  }
+
+  function requestHybridHandoffAfterSpokenLimit(source = 'spoken_question_limit_reached') {
+    if (!isInterviewHybrid(CTX)) return;
+    if (END_CALLED || FINAL_HANGUP_TIMER || FINAL_MESSAGE_SPOKEN || HYBRID_HANDOFF_FORCED) return;
+    if (assistantQuestionTurns < spokenQuestionLimitForHybrid(CTX)) return;
+
+    HYBRID_HANDOFF_FORCED = true;
+    const lk = activeInterviewLang(CTX);
+    const profile = langProfile(lk);
+    const handoff = interviewHybridClosingText(CTX, lk, profile);
+    const instruction = lk === 'de'
+      ? `Das Limit für den mündlichen Teil ist erreicht. Stelle keine weitere Interviewfrage mehr. Sage jetzt freundlich und vollständig diesen Übergabesatz zum Chat und warte danach nicht auf eine weitere mündliche Antwort: ${handoff}`
+      : `The spoken question limit has been reached. Do not ask another interview question. Now say this chat handoff message in a friendly and complete way, then do not wait for another spoken answer: ${handoff}`;
+
+    try { dcSend({ type: 'response.cancel' }); } catch (_) {}
+
+    dcSend({
+      type: 'conversation.item.create',
+      item: {
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_text', text: instructionToSay(instruction, lk) }]
+      }
+    });
+
+    dcSend({
+      type: 'response.create',
+      response: {
+        conversation: 'default',
+        modalities: ['audio']
+      }
+    });
+
+    log('[LIMIT] interview hybrid spoken question limit reached; handoff requested', {
+      source,
+      assistantQuestionTurns,
+      spokenLimit: spokenQuestionLimitForHybrid(CTX),
+      userUtterances
+    });
   }
 
   function forceContinueAfterEarlyFinal(){
@@ -1424,6 +1480,8 @@
       if (isReadyText(txtRaw)){
         READY_DETECTED = true;
         maybeAskFirstQuestion();
+      } else if (isInterviewHybrid(CTX) && HYBRID_SPOKEN_LIMIT_REACHED && assistantQuestionTurns >= spokenQuestionLimitForHybrid(CTX)) {
+        setTimeout(() => requestHybridHandoffAfterSpokenLimit('after_candidate_answer'), 450);
       }
 
       return;
@@ -1537,6 +1595,8 @@
         if (isReadyText(userText)) {
           READY_DETECTED = true;
           maybeAskFirstQuestion();
+        } else if (isInterviewHybrid(CTX) && HYBRID_SPOKEN_LIMIT_REACHED && assistantQuestionTurns >= spokenQuestionLimitForHybrid(CTX)) {
+          setTimeout(() => requestHybridHandoffAfterSpokenLimit('after_candidate_answer_item_done'), 450);
         }
       }
 
@@ -1557,13 +1617,31 @@
 
         const detectedFinalOrHandoff = finalClosingDetected(txt);
 
-        if (!detectedFinalOrHandoff && assistantLooksLikeQuestion(txt)) {
+        if (!detectedFinalOrHandoff && assistantLooksLikeQuestion(txt) && !isWelcomeOrReadyPrompt(txt)) {
+          const spokenLimit = isInterviewHybrid(CTX) ? spokenQuestionLimitForHybrid(CTX) : 0;
+          if (isInterviewHybrid(CTX) && assistantQuestionTurns >= spokenLimit) {
+            log('[LIMIT] over-limit assistant question detected; handoff requested', {
+              assistantQuestionTurns,
+              spokenLimit,
+              textPreview: txt.slice(0, 160)
+            });
+            requestHybridHandoffAfterSpokenLimit('over_limit_question_detected');
+            return;
+          }
+
           assistantQuestionTurns += 1;
+          if (isInterviewHybrid(CTX) && assistantQuestionTurns >= spokenLimit) {
+            HYBRID_SPOKEN_LIMIT_REACHED = true;
+          }
           log('[QUESTION] assistant question counted', {
             assistantQuestionTurns,
             textPreview: txt.slice(0, 120),
-            requiredBeforeHybridHandoff: isInterviewHybrid(CTX) ? requiredAssistantQuestionsBeforeHybridHandoff(CTX) : 0
+            requiredBeforeHybridHandoff: isInterviewHybrid(CTX) ? requiredAssistantQuestionsBeforeHybridHandoff(CTX) : 0,
+            spokenLimit: isInterviewHybrid(CTX) ? spokenLimit : 0,
+            spokenLimitReached: HYBRID_SPOKEN_LIMIT_REACHED
           });
+        } else if (!detectedFinalOrHandoff && isWelcomeOrReadyPrompt(txt)) {
+          log('[QUESTION] welcome/ready prompt not counted', { textPreview: txt.slice(0, 120) });
         }
 
         if (detectedFinalOrHandoff) {
@@ -1795,8 +1873,8 @@
     const qset = String(ctx?.questionSet || ctx?.interviewConfig?.questionSet || `Q${maxQ}`).toUpperCase();
     const customQuestions = parseQuestionLines(ctx?.customQuestionsText || ctx?.questionsText || '');
     const missing = Math.max(0, maxQ - customQuestions.length);
-    const hybridNoteDe = isInterviewHybrid(ctx) ? ` Dies ist nur der mündliche Teil eines hybriden Interviews. Stelle hier grundsätzlich ${maxQ} mündliche Hauptfragen. Der restliche schriftliche Teil folgt im Chat. Der Übergabesatz zum Chat darf erst gesprochen werden, nachdem der mündliche Teil ausreichend abgeschlossen ist; niemals nach nur einer Frage.` : '';
-    const hybridNoteEn = isInterviewHybrid(ctx) ? ` This is only the spoken part of a hybrid interview. Ask ${maxQ} spoken main questions in this part whenever possible. The remaining written part follows in chat. The handoff message to chat may only be spoken after the spoken part is sufficiently complete; never after only one question.` : '';
+    const hybridNoteDe = isInterviewHybrid(ctx) ? ` Dies ist nur der mündliche Teil eines hybriden Interviews. Stelle hier höchstens ${maxQ} mündliche Hauptfragen; die Begrüßung/Ready-Frage zählt nicht mit. Sobald die ${maxQ}. mündliche Hauptfrage beantwortet wurde, stelle keine weitere Frage mehr, sondern sprich den Übergabesatz zum Chat. Der restliche schriftliche Teil folgt im Chat. Der Übergabesatz zum Chat darf niemals nach nur einer Frage gesprochen werden.` : '';
+    const hybridNoteEn = isInterviewHybrid(ctx) ? ` This is only the spoken part of a hybrid interview. Ask at most ${maxQ} spoken main questions in this part; the welcome/ready prompt does not count. Once the ${maxQ}th spoken main question has been answered, do not ask another question; speak the chat handoff message. The remaining written part follows in chat. The handoff message may never be spoken after only one question.` : '';
 
     if (activeInterviewLang(ctx) === 'de') {
       return customQuestions.length
@@ -2919,6 +2997,8 @@
     interviewStartedAt = Date.now();
     userUtterances = 0;
     assistantQuestionTurns = 0;
+    HYBRID_SPOKEN_LIMIT_REACHED = false;
+    HYBRID_HANDOFF_FORCED = false;
     EARLY_FINAL_RETRY_COUNT = 0;
     END_CALLED = false;
     END_REQUESTED_BY_MODEL = false;
