@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v3.7.1 SCRIPT_SAFE: stable v3.6.9 base + Interview Hybrid handoff -->
+  <!-- v3.7.2 EARLY_HANDOFF_GUARD: stable v3.7.1 base + robust early-final prevention -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -832,6 +832,8 @@
   let FINAL_HANGUP_TIMER = null;
   let interviewStartedAt = 0;
   let userUtterances = 0;
+  let assistantQuestionTurns = 0;
+  let EARLY_FINAL_RETRY_COUNT = 0;
   const MIN_SECONDS_BEFORE_END = 120;
   const MIN_USER_UTTERANCES = 7;
 
@@ -949,7 +951,9 @@
       const givenLead = given.slice(0, Math.min(90, given.length));
 
       if (expectedLead && given.includes(expectedLead)) return true;
-      if (expectedMid && expected.includes(givenLead)) return true;
+      // Do not accept very short transcript fragments such as "Vielen Dank für" as a final/handoff message.
+      // Realtime can emit short completed audio transcript fragments; accepting them caused premature hangups.
+      if (expectedMid && givenLead && givenLead.length >= 48 && expected.includes(givenLead)) return true;
     }
 
     // Fallback-Marker für den Fall, dass das Realtime-Transkript leicht abweicht.
@@ -1002,6 +1006,82 @@
     if (userUtterances < MIN_USER_UTTERANCES) return false;
 
     return true;
+  }
+
+  function assistantLooksLikeQuestion(text){
+    const raw = String(text || '').trim();
+    if (!raw) return false;
+    const norm = normalizeForMatch(raw);
+    if (raw.includes('?') || raw.includes('？')) return true;
+    return /\b(wie|was|warum|weshalb|wodurch|welche|welcher|welches|koennen|konnen|kannst|beschreiben|nennen|erlaeutern|erlautern|erzahlen|erzaehlen|what|why|how|which|can you|could you|please describe|please explain|tell me)\b/i.test(norm);
+  }
+
+  function requiredAssistantQuestionsBeforeHybridHandoff(ctx = CTX){
+    const maxQ = interviewMaxQuestions(ctx);
+    return Math.max(3, Math.min(maxQ, Math.ceil(maxQ * 0.65)));
+  }
+
+  function canAcceptFinalOrHandoffNow(){
+    if (!interviewStartedAt) return false;
+
+    if (isInterviewHybrid(CTX)) {
+      const elapsed = (Date.now() - interviewStartedAt) / 1000;
+      const requiredQuestions = requiredAssistantQuestionsBeforeHybridHandoff(CTX);
+
+      if (elapsed < 45) return false;
+      if (assistantQuestionTurns < requiredQuestions) return false;
+
+      return true;
+    }
+
+    return true;
+  }
+
+  function forceContinueAfterEarlyFinal(){
+    if (EARLY_FINAL_RETRY_COUNT >= 3) {
+      log('[END] early final guard retry limit reached', {
+        assistantQuestionTurns,
+        requiredQuestions: requiredAssistantQuestionsBeforeHybridHandoff(CTX)
+      });
+      return;
+    }
+
+    EARLY_FINAL_RETRY_COUNT += 1;
+
+    const lk = activeInterviewLang(CTX);
+    const plan = buildInterviewPlan(CTX);
+    const idx = Math.max(0, Math.min(plan.length - 1, assistantQuestionTurns));
+    const nextQuestion = plan[idx] || fallbackFirstQuestion(lk);
+
+    const instruction = lk === 'de'
+      ? `Das Interview ist noch nicht abgeschlossen. Der Übergabesatz zum Chat darf erst später kommen. Stelle jetzt genau diese nächste Interviewfrage und warte danach auf die Antwort. Sage keine Abschluss- oder Übergabemeldung: ${nextQuestion}`
+      : `The interview is not complete yet. The handoff message to chat must come later. Ask exactly this next interview question now and then wait for the answer. Do not say a closing or handoff message: ${nextQuestion}`;
+
+    try { dcSend({ type: 'response.cancel' }); } catch (_) {}
+
+    dcSend({
+      type: 'conversation.item.create',
+      item: {
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_text', text: instructionToSay(instruction, lk) }]
+      }
+    });
+
+    dcSend({
+      type: 'response.create',
+      response: {
+        conversation: 'default',
+        modalities: ['audio']
+      }
+    });
+
+    log('[END] early final/handoff blocked; continuation requested', {
+      retry: EARLY_FINAL_RETRY_COUNT,
+      assistantQuestionTurns,
+      requiredQuestions: requiredAssistantQuestionsBeforeHybridHandoff(CTX),
+      nextQuestionPreview: String(nextQuestion || '').slice(0, 160)
+    });
   }
 
   function beginFinalHangup(source){
@@ -1475,13 +1555,36 @@
           final: true
         });
 
-        if (finalClosingDetected(txt)) {
+        const detectedFinalOrHandoff = finalClosingDetected(txt);
+
+        if (!detectedFinalOrHandoff && assistantLooksLikeQuestion(txt)) {
+          assistantQuestionTurns += 1;
+          log('[QUESTION] assistant question counted', {
+            assistantQuestionTurns,
+            textPreview: txt.slice(0, 120),
+            requiredBeforeHybridHandoff: isInterviewHybrid(CTX) ? requiredAssistantQuestionsBeforeHybridHandoff(CTX) : 0
+          });
+        }
+
+        if (detectedFinalOrHandoff) {
+          if (isInterviewHybrid(CTX) && !canAcceptFinalOrHandoffNow()) {
+            log('[END] final/handoff IGNORED (too early for interview hybrid)', {
+              assistantQuestionTurns,
+              requiredQuestions: requiredAssistantQuestionsBeforeHybridHandoff(CTX),
+              elapsedSec: interviewStartedAt ? ((Date.now() - interviewStartedAt) / 1000).toFixed(1) : '0',
+              textPreview: txt.slice(0, 160)
+            });
+            forceContinueAfterEarlyFinal();
+            return;
+          }
+
           FINAL_MESSAGE_SPOKEN = true;
           FINAL_MESSAGE_ITEM_ID = data.item_id || data.itemId || '';
           log('[END] final/handoff message detected', {
             itemId: FINAL_MESSAGE_ITEM_ID,
             responseId: data.response_id || data.responseId || '',
-            isHybrid: isAssessmentHybrid(CTX) || isInterviewHybrid(CTX)
+            isHybrid: isAssessmentHybrid(CTX) || isInterviewHybrid(CTX),
+            assistantQuestionTurns
           });
 
           // Robuster Auto-Hangup: Einige Realtime-Läufe sprechen den korrekten
@@ -1692,8 +1795,8 @@
     const qset = String(ctx?.questionSet || ctx?.interviewConfig?.questionSet || `Q${maxQ}`).toUpperCase();
     const customQuestions = parseQuestionLines(ctx?.customQuestionsText || ctx?.questionsText || '');
     const missing = Math.max(0, maxQ - customQuestions.length);
-    const hybridNoteDe = isInterviewHybrid(ctx) ? ` Dies ist nur der mündliche Teil eines hybriden Interviews. Stelle hier höchstens ${maxQ} mündliche Hauptfragen; der restliche schriftliche Teil folgt im Chat. Beende den mündlichen Teil mit dem vorgegebenen Übergabesatz.` : '';
-    const hybridNoteEn = isInterviewHybrid(ctx) ? ` This is only the spoken part of a hybrid interview. Ask at most ${maxQ} spoken main questions here; the remaining written part follows in chat. End the spoken part with the provided handoff message.` : '';
+    const hybridNoteDe = isInterviewHybrid(ctx) ? ` Dies ist nur der mündliche Teil eines hybriden Interviews. Stelle hier grundsätzlich ${maxQ} mündliche Hauptfragen. Der restliche schriftliche Teil folgt im Chat. Der Übergabesatz zum Chat darf erst gesprochen werden, nachdem der mündliche Teil ausreichend abgeschlossen ist; niemals nach nur einer Frage.` : '';
+    const hybridNoteEn = isInterviewHybrid(ctx) ? ` This is only the spoken part of a hybrid interview. Ask ${maxQ} spoken main questions in this part whenever possible. The remaining written part follows in chat. The handoff message to chat may only be spoken after the spoken part is sufficiently complete; never after only one question.` : '';
 
     if (activeInterviewLang(ctx) === 'de') {
       return customQuestions.length
@@ -2815,6 +2918,8 @@
 
     interviewStartedAt = Date.now();
     userUtterances = 0;
+    assistantQuestionTurns = 0;
+    EARLY_FINAL_RETRY_COUNT = 0;
     END_CALLED = false;
     END_REQUESTED_BY_MODEL = false;
     FINAL_MESSAGE_SPOKEN = false;
