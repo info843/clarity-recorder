@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v3.7.3 HYBRID_Q_LIMIT_GUARD: v3.7.2 + hard spoken question limit for Interview Video+Chat -->
+  <!-- v3.7.4 STRICT_FINAL_QUESTION_SNAPSHOT: v3.7.3 + no question mixing across links -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -1868,18 +1868,41 @@
     return out;
   }
 
+  function hasFinalQuestionSnapshot(ctx = CTX){
+    if (ctx?.questionSnapshotLocked === true || ctx?.snapshotIsolation === true) return true;
+    return !!String(ctx?.finalQuestionsSnapshot || ctx?.finalQuestionsText || '').trim();
+  }
+
+  function snapshotQuestionLines(ctx = CTX){
+    return parseQuestionLines(
+      ctx?.finalQuestionsSnapshot ||
+      ctx?.finalQuestionsText ||
+      ctx?.customQuestionsText ||
+      ctx?.questionsText ||
+      ''
+    );
+  }
+
   function questionPolicyText(ctx = CTX){
     const maxQ = interviewMaxQuestions(ctx);
     const qset = String(ctx?.questionSet || ctx?.interviewConfig?.questionSet || `Q${maxQ}`).toUpperCase();
-    const customQuestions = parseQuestionLines(ctx?.customQuestionsText || ctx?.questionsText || '');
+    const customQuestions = snapshotQuestionLines(ctx).slice(0, maxQ);
     const missing = Math.max(0, maxQ - customQuestions.length);
-    const hybridNoteDe = isInterviewHybrid(ctx) ? ` Dies ist nur der mündliche Teil eines hybriden Interviews. Stelle hier höchstens ${maxQ} mündliche Hauptfragen; die Begrüßung/Ready-Frage zählt nicht mit. Sobald die ${maxQ}. mündliche Hauptfrage beantwortet wurde, stelle keine weitere Frage mehr, sondern sprich den Übergabesatz zum Chat. Der restliche schriftliche Teil folgt im Chat. Der Übergabesatz zum Chat darf niemals nach nur einer Frage gesprochen werden.` : '';
-    const hybridNoteEn = isInterviewHybrid(ctx) ? ` This is only the spoken part of a hybrid interview. Ask at most ${maxQ} spoken main questions in this part; the welcome/ready prompt does not count. Once the ${maxQ}th spoken main question has been answered, do not ask another question; speak the chat handoff message. The remaining written part follows in chat. The handoff message may never be spoken after only one question.` : '';
+    const locked = hasFinalQuestionSnapshot(ctx) && customQuestions.length > 0;
+    const hybridNoteDe = isInterviewHybrid(ctx) ? ` Dies ist nur der mündliche Teil eines hybriden Interviews. Stelle hier höchstens ${maxQ} mündliche Hauptfragen; die Begrüßung/Ready-Frage zählt nicht mit. Sobald der mündliche Teil abgeschlossen ist, stelle keine weitere Frage mehr, sondern sprich den Übergabesatz zum Chat. Der restliche schriftliche Teil folgt im Chat. Der Übergabesatz zum Chat darf niemals nach nur einer Frage gesprochen werden.` : '';
+    const hybridNoteEn = isInterviewHybrid(ctx) ? ` This is only the spoken part of a hybrid interview. Ask at most ${maxQ} spoken main questions in this part; the welcome/ready prompt does not count. Once the spoken part is complete, do not ask another question; speak the chat handoff message. The remaining written part follows in chat. The handoff message may never be spoken after only one question.` : '';
 
     if (activeInterviewLang(ctx) === 'de') {
+      if (locked) {
+        return `Fragenset ${qset}: Es liegt ein finaler, linkgebundener Fragen-Snapshot mit ${customQuestions.length} Frage(n) vor. Verwende ausschließlich diese Fragen in genau dieser Reihenfolge. Erfinde keine weiteren Fragen und nutze keine Fragen aus früheren Interviews, Templates oder anderen Positionen. Beende den mündlichen Teil nach der vorgesehenen Anzahl an Snapshot-Fragen.${hybridNoteDe}`;
+      }
       return customQuestions.length
         ? `Fragenset ${qset}: Stelle maximal ${maxQ} Hauptfragen. Nutze zuerst die kundeneigenen Fragen aus dem Kontext. Wenn weniger als ${maxQ} kundeneigene Fragen vorhanden sind, ergänze ${missing} passende rollenbezogene Fragen. Beende das Interview nach maximal ${maxQ} Hauptfragen.${hybridNoteDe}`
         : `Fragenset ${qset}: Stelle maximal ${maxQ} passende rollenbezogene Hauptfragen. Beende das Interview nach maximal ${maxQ} Hauptfragen.${hybridNoteDe}`;
+    }
+
+    if (locked) {
+      return `Question set ${qset}: A final link-bound question snapshot with ${customQuestions.length} question(s) is available. Use only these questions, in exactly this order. Do not invent additional questions and do not use questions from previous interviews, templates or other positions. End the spoken part after the planned number of snapshot questions.${hybridNoteEn}`;
     }
 
     return customQuestions.length
@@ -2062,23 +2085,24 @@
 
   function pushCompanyKnowledge() {
     const kb  = (CTX.kbText || '').trim();
-    const job = (CTX.jobAd  || '').trim();
-
-    if (!kb && !job) return;
+    const role = [CTX.position, CTX.roleProfileText, CTX.roleProfile].filter(Boolean).join('\n').trim();
+    const job = [CTX.jobAd, role].filter(Boolean).join('\n\n').trim();
 
     const header = '=== KONTEXT / CONTEXT START ===';
     const footer = '=== KONTEXT / CONTEXT ENDE ===';
-    const questions = isAssessmentContext(CTX) ? '' : parseQuestionLines(CTX.customQuestionsText || CTX.questionsText || '')
+    const questions = isAssessmentContext(CTX) ? '' : snapshotQuestionLines(CTX)
       .map((q, i) => `${i + 1}. ${q}`)
       .join('\n');
 
     const policy = isAssessmentContext(CTX) ? assessmentQuestionPolicyText(CTX, activeInterviewLang(CTX)) : questionPolicyText(CTX);
     const questionBlock = [
       policy,
-      questions ? `CUSTOMER QUESTIONS / KUNDENEIGENE FRAGEN:\n${questions}` : ''
+      hasFinalQuestionSnapshot(CTX) ? 'SNAPSHOT LOCK: These questions belong only to this link. Ignore all previous positions, templates and conversations.' : '',
+      questions ? `FINAL QUESTION SNAPSHOT / FINALER FRAGEN-SNAPSHOT:\n${questions}` : ''
     ].filter(Boolean).join('\n\n');
 
     const body = [kb, job, questionBlock].filter(Boolean).join('\n\n');
+    if (!body) return;
     const pieces = chunkText(`${header}\n${body}\n${footer}`, 1800);
 
     for (const p of pieces) {
@@ -2269,14 +2293,24 @@
     const prefix = profile.jobPrefix || LANG_PROFILES.en.jobPrefix;
     const maxQ = interviewMaxQuestions(ctx);
 
-    const customQuestions = parseQuestionLines(ctx.customQuestionsText || ctx.questionsText || '').slice(0, maxQ);
-    customQuestions.forEach(q => seeds.push(q));
+    const snapshotQuestions = snapshotQuestionLines(ctx).slice(0, maxQ);
+    if (hasFinalQuestionSnapshot(ctx) && snapshotQuestions.length) {
+      log('[QUESTION] using strict final question snapshot', {
+        count: snapshotQuestions.length,
+        maxQ,
+        source: ctx.questionSnapshotSource || 'snapshot',
+        firstPreview: String(snapshotQuestions[0] || '').slice(0, 120)
+      });
+      return snapshotQuestions.slice(0, Math.max(1, maxQ));
+    }
+
+    snapshotQuestions.forEach(q => seeds.push(q));
 
     const base = (profile.baseQuestions || LANG_PROFILES.en.baseQuestions).slice();
     base.forEach(q => seeds.push(q));
 
     const text =
-      (ctx.roleProfileText || '').trim() +
+      (ctx.roleProfileText || ctx.roleProfile || ctx.position || '').trim() +
       '\n' +
       (ctx.docsText || '').trim();
 
