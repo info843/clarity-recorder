@@ -1812,7 +1812,7 @@
         assessmentFocusText(area, lk, hasPosition),
         assessmentQuestionPolicyText(ctx, lk),
         'Stelle niemals zwei Fragen in einer Nachricht. Jede Nachricht darf maximal eine Frage enthalten.',
-        'Nach jeder Frage warten, bis die Person fertig geantwortet hat. Gib kurze Pausen und fahre erst danach fort.',
+        'Nach jeder Frage warten, bis die Person wirklich fertig geantwortet hat. Kurze Atemgeräusche, Füllwörter oder sehr kurze Geräusche zählen NICHT als Antwort. Warte nach einer Antwort einen natürlichen Moment, damit die Person ergänzen kann, und stelle erst dann die nächste Frage.',
         'Starte die erste Frage erst, nachdem die Person „bereit“ gesagt hat oder nach Fallback-Timeout.',
         `Wenn alle mündlichen Assessment-Fragen abgeschlossen sind, sage zum Abschluss EXAKT diesen Satz, ohne technische Details hinzuzufügen: „${assessmentClose}“ Danach rufe end_interview auf.`,
         `Rufe end_interview NUR auf, wenn die Analyse wirklich abgeschlossen ist. Vorher NIEMALS. Mindestanforderung: mindestens ${MIN_USER_UTTERANCES} Antworten und ein vollständiger Abschluss.`
@@ -1825,7 +1825,7 @@
       assessmentFocusText(area, lk, hasPosition),
       assessmentQuestionPolicyText(ctx, lk),
       'Never ask two questions in one message. Each assistant message may contain at most one question.',
-      'After each question, wait until the participant has finished answering. Leave natural pauses and continue only after the answer.',
+      'After each question, wait until the participant has truly finished answering. Breathing, filler words, or very short noises do NOT count as an answer. Leave a natural pause after each answer so the participant can add more, and only then continue.',
       `Ask the first question only after the user says one of these readiness words or after the fallback timeout: ${(profile.readyWords || ['ready']).join(', ')}.`,
       `When all assessment questions are completed, say exactly this closing message in ${profile.englishName} and do not add technical details: “${assessmentClose}” Then call end_interview.`,
       `Call end_interview ONLY when the assessment is truly complete. NEVER before. Minimum: at least ${MIN_USER_UTTERANCES} participant answers and a complete closing.`
@@ -1846,7 +1846,7 @@
         'Sprich ausschließlich DEUTSCH. Wechsle nie die Sprache.',
         'Führe ein strukturiertes Job-Interview: nur EINE Frage zur Zeit, max. 1 Nachfrage, strikt am Jobprofil bleiben. Stelle keine zwei Fragen in einer Nachricht.',
         questionPolicyText(ctx),
-        'Nach jeder Frage warten, bis die Kandidatin/der Kandidat fertig ist.',
+        'Nach jeder Frage warten, bis die Kandidatin/der Kandidat wirklich fertig ist. Kurze Atemgeräusche, Füllwörter oder sehr kurze Geräusche zählen NICHT als Antwort. Gib nach einer Antwort einen natürlichen Moment für Ergänzungen, bevor du fortfährst.',
         'Nutze ausschließlich die FIRMENKENNTNISSE aus „KONTEXT“ für Antworten zu Firma, Stelle, Prozessen, Benefits usw. Wenn etwas nicht im KONTEXT steht, sage freundlich, dass dies mit der Firma direkt zu klären ist.',
         'Starte die erste Frage erst, nachdem die Person „bereit“ gesagt hat (oder nach Fallback-Timeout).',
         `Wenn alle Fragen gestellt sind, sage zum Abschluss EXAKT diesen Satz, ohne technische Details hinzuzufügen: „${finalClose}“ Danach rufe end_interview auf.`,
@@ -1859,7 +1859,7 @@
       `The full interview, welcome messages, questions, follow-ups, candidate-facing explanations, and closing message must be spoken in ${profile.englishName}.`,
       'Conduct a structured job interview: one question at a time, max one follow-up, stick to the job profile. Never ask two questions in one message.',
       questionPolicyText(ctx),
-      'After each question, wait until the candidate is finished.',
+      'After each question, wait until the candidate has truly finished. Breathing, filler words, or very short noises do NOT count as an answer. Leave a natural pause after each answer so the candidate can add more, then continue.',
       'Use only the COMPANY KNOWLEDGE from “CONTEXT” to answer company/job/process/benefits questions. If it is not in CONTEXT, politely say the candidate should check with the company.',
       `Ask the first question only after the user says one of these readiness words or after the fallback timeout: ${(profile.readyWords || ['ready']).join(', ')}.`,
       `When all questions are completed, say exactly this closing message in ${profile.englishName} and do not add technical details: “${finalClose}” Then call end_interview.`,
@@ -2057,9 +2057,9 @@
           session: {
             turn_detection: {
               type: 'server_vad',
-              threshold: 0.9,
-              prefix_padding_ms: 200,
-              silence_duration_ms: 700
+              threshold: 0.82,
+              prefix_padding_ms: 450,
+              silence_duration_ms: 1450
             }
           }
         });
