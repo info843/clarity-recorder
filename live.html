@@ -242,6 +242,14 @@
   const $log    = document.getElementById('log');
   const $localV = document.getElementById('localVideo');
   const $remoteA= document.getElementById('remoteAudio');
+  let __audioDiagLast = Object.create(null);
+
+  function postAudioDiagThrottled(code, data = {}, minMs = 10000){
+    const now = Date.now();
+    if (__audioDiagLast[code] && now - __audioDiagLast[code] < minMs) return;
+    __audioDiagLast[code] = now;
+    postAudioDiag(code, data);
+  }
   const $btnStop= document.getElementById('btnStop');
 
   const $recState = document.getElementById('recState');
@@ -760,7 +768,10 @@
 
   function isImportantLogText(s){
     const t = String(s || '');
-    return /\b(error|failed|failure|timeout|denied|blocked|disconnect|disconnected|failed|ice failed|rtc failed|muxError|mux error|autoplay blocked|audio_diag|audio-stall|audio stalled|audio_wait|token|client_secret_missing)\b/i.test(t) || /\[(ERR|ERROR|WARN|AUDIO-DIAG|RTC-DIAG)\]/i.test(t);
+    // Production-critical only. Do NOT treat benign words such as "token", "muxError" keys,
+    // or normal audio_diag markers as important, because they create high-frequency Wix log traffic.
+    return /\b(error|failed|failure|timeout|denied|blocked|disconnect|disconnected|ice failed|rtc failed|mux error|autoplay blocked|audio-stall|audio stalled|audio_wait|client_secret_missing)\b/i.test(t)
+      || /\[(ERR|ERROR|WARN|RTC-DIAG)\]/i.test(t);
   }
 
   function canPostParentLog(s, important){
@@ -782,7 +793,15 @@
     return true;
   }
 
+  function isImportantAudioDiagCode(code){
+    return /unstable|wait|failed|failure|stall|blocked|interrupted|ended_unexpected|playback_error/i.test(String(code || ''));
+  }
+
   function postAudioDiag(code, data = {}){
+    // In production only send audio diagnostics that actually indicate a problem.
+    // Normal events like response_audio_done or remote_audio_started stay local unless ?debug=1.
+    if (!DEBUG_LOGS && !isImportantAudioDiagCode(code)) return;
+
     try {
       parent?.postMessage?.({
         type: 'clarity.live.audio_diag',
@@ -798,6 +817,33 @@
       }, '*');
     } catch(_) {}
   }
+
+  function wireRemoteAudioDiagnostics(){
+    try {
+      if (!$remoteA || $remoteA.__clarityDiagWired) return;
+      $remoteA.__clarityDiagWired = true;
+
+      $remoteA.addEventListener('waiting', () => postAudioDiagThrottled('audio_element_waiting', {
+        readyState: $remoteA.readyState,
+        networkState: $remoteA.networkState,
+        currentTime: $remoteA.currentTime
+      }));
+
+      $remoteA.addEventListener('stalled', () => postAudioDiagThrottled('audio_element_stalled', {
+        readyState: $remoteA.readyState,
+        networkState: $remoteA.networkState,
+        currentTime: $remoteA.currentTime
+      }));
+
+      $remoteA.addEventListener('error', () => postAudioDiagThrottled('audio_element_playback_error', {
+        readyState: $remoteA.readyState,
+        networkState: $remoteA.networkState,
+        message: String($remoteA.error?.message || $remoteA.error?.code || '')
+      }, 1000));
+    } catch(_) {}
+  }
+
+  wireRemoteAudioDiagnostics();
 
   function log(...a){
     const s = a.map(x => {
