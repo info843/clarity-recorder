@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v3.9.0 GPT_REALTIME_MARIN_TEST: gpt-realtime + forced marin voice test -->
+  <!-- v3.9.1 REALTIME_FINAL_VOICE_GREETING: gpt-realtime + Assessment Marin / Interview Cedar + branded greeting/closing -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -196,8 +196,30 @@
   const UID = (Q.get('uid') || '').trim();
   const COMPANY_ID = (Q.get('companyId') || '').trim();
   const LANG = (Q.get('lang') || 'de').toLowerCase();
-  const VOICE = 'marin'; // v3.9.0 test: force marin; ignore parent/page voice=verse for clean Realtime voice comparison
-  const REALTIME_MODEL = 'gpt-realtime'; // v3.9.0 test: GA realtime model instead of gpt-4o-realtime-preview
+  // v3.9.1 final voice policy:
+  // - Assessment / Modul1: Marin
+  // - Interview: Cedar
+  // Old page defaults such as voice=verse are ignored unless the URL explicitly asks for marin/cedar.
+  const REQUESTED_VOICE = (Q.get('voice') || '').trim().toLowerCase();
+  const REALTIME_MODEL = 'gpt-realtime';
+
+  function isTruthy(v){
+    const s = String(v ?? '').trim().toLowerCase();
+    return v === true || s === 'true' || s === '1' || s === 'yes' || s === 'ja';
+  }
+
+  function looksAssessmentContext(ctx = {}){
+    const uid = String(ctx.uid || ctx.linkId || UID || '').toUpperCase();
+    const pt = String(ctx.productType || ctx.product_type || '').toLowerCase();
+    const im = String(ctx.interviewMode || ctx.assessmentMode || ctx.mode || '').toLowerCase();
+    return uid.startsWith('M1-') || pt === 'modul1' || ctx.assessment === true || im === 'assessment';
+  }
+
+  function effectiveRealtimeVoice(ctx = {}){
+    // Explicit test override only for the two production voices we validated.
+    if (REQUESTED_VOICE === 'marin' || REQUESTED_VOICE === 'cedar') return REQUESTED_VOICE;
+    return looksAssessmentContext(ctx) ? 'marin' : 'cedar';
+  }
   const AUTOSTART = Q.get('autostart') !== '0';
   const API_BASE = (Q.get('api') || window.location.origin).replace(/\/+$/, '');
   const DEBUG_UI = Q.get('debugUi') === '1' || Q.get('debugui') === '1' || Q.get('showLogs') === '1';
@@ -939,7 +961,7 @@
     reportLanguage: Q.get('reportLang') || Q.get('reportlang') || LANG,
     pdfLang: Q.get('reportLang') || Q.get('reportlang') || LANG,
     outputLang: Q.get('reportLang') || Q.get('reportlang') || LANG,
-    voice: VOICE,
+    voice: effectiveRealtimeVoice(CTX),
     realtimeModel: REALTIME_MODEL,
     mode: AUDIO_ONLY ? 'audio' : (MODE_RAW || 'video'),
     audioOnly: AUDIO_ONLY,
@@ -1044,6 +1066,9 @@
   }
 
   function finalClosingText(ctx = {}){
+    if (looksAssessmentContext(ctx) || (typeof isAssessmentContext === 'function' && isAssessmentContext(ctx))) {
+      return assessmentFinalClosingText(ctx);
+    }
     const profile = langProfile(activeInterviewLang(ctx));
     return profile.finalClose || UI_TEXTS.en.finalClose;
   }
@@ -1895,9 +1920,90 @@
   }
 
   function assessmentAreaLabel(area, lk){
-    const de = { aptitude:'Aptitude-Analyse', personality:'Persönlichkeitsanalyse', skills:'Skills-Analyse', language:'Sprachanalyse' };
-    const en = { aptitude:'aptitude analysis', personality:'personality analysis', skills:'skills analysis', language:'language analysis' };
-    return (lk === 'de' ? de : en)[area] || area;
+    const maps = {
+      de: { aptitude:'Aptitude-Analyse', personality:'Persönlichkeitsanalyse', skills:'Skills-Analyse', language:'Sprachanalyse' },
+      en: { aptitude:'aptitude analysis', personality:'personality analysis', skills:'skills analysis', language:'language analysis' },
+      es: { aptitude:'análisis de aptitud', personality:'análisis de personalidad', skills:'análisis de habilidades', language:'análisis lingüístico' },
+      fr: { aptitude:'analyse d’aptitude', personality:'analyse de personnalité', skills:'analyse des compétences', language:'analyse linguistique' },
+      it: { aptitude:'analisi attitudinale', personality:'analisi della personalità', skills:'analisi delle competenze', language:'analisi linguistica' },
+      pt: { aptitude:'análise de aptidão', personality:'análise de personalidade', skills:'análise de competências', language:'análise linguística' },
+      nl: { aptitude:'aptitude-analyse', personality:'persoonlijkheidsanalyse', skills:'vaardighedenanalyse', language:'taalanalyse' }
+    };
+    return (maps[lk] || maps.en)[area] || area;
+  }
+
+  function isRecruitingMode(ctx = {}){
+    return isTruthy(ctx.recruitmentMode) ||
+      isTruthy(ctx.recruitingMode) ||
+      isTruthy(ctx.recruitment) ||
+      String(ctx.brandMode || ctx.modeBrand || '').toLowerCase().includes('recruit');
+  }
+
+  function brandDisplayName(ctx = {}){
+    const name = String(ctx.companyName || ctx.company || '').trim();
+    return name || 'CLARITY';
+  }
+
+  function assessmentWelcomeText(ctx = {}){
+    const lk = activeInterviewLang(ctx);
+    const area = assessmentArea(ctx);
+    const label = assessmentAreaLabel(area, lk);
+    const company = brandDisplayName(ctx);
+    const recruiting = isRecruitingMode(ctx);
+
+    if (lk === 'de') {
+      return recruiting
+        ? `Willkommen. Dieses Assessment wird im Auftrag von ${company} durchgeführt. Dies ist ein ${label}. Ich werde Ihnen nun einige strukturierte Fragen stellen. Bitte antworten Sie so konkret und natürlich wie möglich. Sind Sie bereit zu starten?`
+        : `Herzlich willkommen bei CLARITY. Dies ist Ihr ${label}. Ich werde Ihnen nun einige strukturierte Fragen stellen. Bitte antworten Sie so konkret und natürlich wie möglich. Sind Sie bereit zu starten?`;
+    }
+    if (lk === 'it') {
+      return recruiting
+        ? `Benvenuto. Questo assessment viene svolto per conto di ${company}. Si tratta di una ${label}. Le porrò ora alcune domande strutturate. Risponda nel modo più concreto e naturale possibile. È pronto per iniziare?`
+        : `Benvenuto in CLARITY. Questa è la sua ${label}. Le porrò ora alcune domande strutturate. Risponda nel modo più concreto e naturale possibile. È pronto per iniziare?`;
+    }
+    if (lk === 'es') {
+      return recruiting
+        ? `Bienvenido. Este assessment se realiza por encargo de ${company}. Se trata de un ${label}. Ahora le haré algunas preguntas estructuradas. Responda de la forma más concreta y natural posible. ¿Está listo para comenzar?`
+        : `Bienvenido a CLARITY. Este es su ${label}. Ahora le haré algunas preguntas estructuradas. Responda de la forma más concreta y natural posible. ¿Está listo para comenzar?`;
+    }
+    if (lk === 'fr') {
+      return recruiting
+        ? `Bienvenue. Cet assessment est réalisé pour le compte de ${company}. Il s’agit d’une ${label}. Je vais maintenant vous poser quelques questions structurées. Répondez de manière aussi concrète et naturelle que possible. Êtes-vous prêt à commencer ?`
+        : `Bienvenue chez CLARITY. Il s’agit de votre ${label}. Je vais maintenant vous poser quelques questions structurées. Répondez de manière aussi concrète et naturelle que possible. Êtes-vous prêt à commencer ?`;
+    }
+    return recruiting
+      ? `Welcome. This assessment is conducted on behalf of ${company}. This is a ${label}. I will now ask you a series of structured questions. Please answer as concretely and naturally as possible. Are you ready to begin?`
+      : `Welcome to CLARITY. This is your ${label}. I will now ask you a series of structured questions. Please answer as concretely and naturally as possible. Are you ready to begin?`;
+  }
+
+  function assessmentFinalClosingText(ctx = {}){
+    const lk = activeInterviewLang(ctx);
+    const company = brandDisplayName(ctx);
+    const recruiting = isRecruitingMode(ctx);
+
+    if (lk === 'de') {
+      return recruiting
+        ? `Vielen Dank für Ihre Antworten und Ihre Zeit. Das Assessment im Auftrag von ${company} ist nun abgeschlossen. Bitte schließen Sie dieses Fenster noch nicht. Ihre Angaben werden verarbeitet und der Bericht wird erstellt. Sie können in der Zwischenzeit eine Bewertung abgeben, wenn Sie möchten.`
+        : `Vielen Dank für Ihre Antworten und Ihre Zeit. Das CLARITY Assessment ist nun abgeschlossen. Bitte schließen Sie dieses Fenster noch nicht. Ihre Angaben werden verarbeitet und der Bericht wird erstellt. Sie können in der Zwischenzeit eine Bewertung abgeben, wenn Sie möchten.`;
+    }
+    if (lk === 'it') {
+      return recruiting
+        ? `Grazie per le sue risposte e per il tempo dedicato. L'assessment per conto di ${company} è ora concluso. Per favore non chiuda ancora questa finestra. I suoi dati vengono elaborati e il report viene generato. Nel frattempo può lasciare una valutazione, se lo desidera.`
+        : `Grazie per le sue risposte e per il tempo dedicato. Il CLARITY Assessment è ora concluso. Per favore non chiuda ancora questa finestra. I suoi dati vengono elaborati e il report viene generato. Nel frattempo può lasciare una valutazione, se lo desidera.`;
+    }
+    if (lk === 'es') {
+      return recruiting
+        ? `Gracias por sus respuestas y por su tiempo. El assessment realizado por encargo de ${company} ha finalizado. Por favor, no cierre esta ventana todavía. Sus datos se están procesando y el informe se está generando. Mientras tanto, puede dejar una valoración si lo desea.`
+        : `Gracias por sus respuestas y por su tiempo. El CLARITY Assessment ha finalizado. Por favor, no cierre esta ventana todavía. Sus datos se están procesando y el informe se está generando. Mientras tanto, puede dejar una valoración si lo desea.`;
+    }
+    if (lk === 'fr') {
+      return recruiting
+        ? `Merci pour vos réponses et pour votre temps. L’assessment réalisé pour le compte de ${company} est maintenant terminé. Veuillez ne pas fermer cette fenêtre pour le moment. Vos données sont en cours de traitement et le rapport est en cours de création. Vous pouvez laisser une évaluation entre-temps si vous le souhaitez.`
+        : `Merci pour vos réponses et pour votre temps. Le CLARITY Assessment est maintenant terminé. Veuillez ne pas fermer cette fenêtre pour le moment. Vos données sont en cours de traitement et le rapport est en cours de création. Vous pouvez laisser une évaluation entre-temps si vous le souhaitez.`;
+    }
+    return recruiting
+      ? `Thank you for your answers and your time. The assessment on behalf of ${company} is now complete. Please do not close this window yet. Your information is being processed and the report is being created. You may leave a rating in the meantime if you wish.`
+      : `Thank you for your answers and your time. The CLARITY Assessment is now complete. Please do not close this window yet. Your information is being processed and the report is being created. You may leave a rating in the meantime if you wish.`;
   }
 
   function assessmentFocusText(area, lk, hasPosition){
@@ -2088,7 +2194,7 @@
     dcSend({
       type: 'session.update',
       session: {
-        voice: VOICE,
+        voice: effectiveRealtimeVoice(CTX),
         instructions: sys,
         spoken_language: spoken,
         input_audio_format: 'pcm16',
@@ -2139,9 +2245,13 @@
   }
 
   function welcomeText(ctx = CTX){
+    if (looksAssessmentContext(ctx) || (typeof isAssessmentContext === 'function' && isAssessmentContext(ctx))) {
+      return assessmentWelcomeText(ctx);
+    }
+
     const lk = activeInterviewLang(ctx);
     const profile = langProfile(lk);
-    const company = ctx.companyName || 'Clarity';
+    const company = ctx.companyName || 'CLARITY';
 
     if (typeof profile.welcome === 'function') return profile.welcome(company);
     return LANG_PROFILES.en.welcome(company);
@@ -3022,7 +3132,7 @@
         mode: AUDIO_ONLY ? 'audio' : (CTX.mode || 'video'),
         audioOnly: AUDIO_ONLY,
         noVideo: AUDIO_ONLY,
-        voice: VOICE,
+        voice: effectiveRealtimeVoice(CTX),
         debug: true,
         allowNoInvite: true
       });
