@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v3.7.1 SCRIPT_SAFE: stable v3.6.9 base + Interview Hybrid handoff -->
+  <!-- v3.9.0 GPT_REALTIME_MARIN_TEST: gpt-realtime + forced marin voice test -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -196,7 +196,8 @@
   const UID = (Q.get('uid') || '').trim();
   const COMPANY_ID = (Q.get('companyId') || '').trim();
   const LANG = (Q.get('lang') || 'de').toLowerCase();
-  const VOICE = (Q.get('voice') || 'verse').toLowerCase();
+  const VOICE = 'marin'; // v3.9.0 test: force marin; ignore parent/page voice=verse for clean Realtime voice comparison
+  const REALTIME_MODEL = 'gpt-realtime'; // v3.9.0 test: GA realtime model instead of gpt-4o-realtime-preview
   const AUTOSTART = Q.get('autostart') !== '0';
   const API_BASE = (Q.get('api') || window.location.origin).replace(/\/+$/, '');
   const DEBUG_UI = Q.get('debugUi') === '1' || Q.get('debugui') === '1' || Q.get('showLogs') === '1';
@@ -939,6 +940,7 @@
     pdfLang: Q.get('reportLang') || Q.get('reportlang') || LANG,
     outputLang: Q.get('reportLang') || Q.get('reportlang') || LANG,
     voice: VOICE,
+    realtimeModel: REALTIME_MODEL,
     mode: AUDIO_ONLY ? 'audio' : (MODE_RAW || 'video'),
     audioOnly: AUDIO_ONLY,
     noVideo: AUDIO_ONLY
@@ -1389,7 +1391,7 @@
 
     await pc.setLocalDescription(offer);
 
-    const r = await fetch('https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview', {
+    const r = await fetch(`https://api.openai.com/v1/realtime?model=${encodeURIComponent(REALTIME_MODEL)}`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${clientSecret}`,
@@ -3020,7 +3022,7 @@
         mode: AUDIO_ONLY ? 'audio' : (CTX.mode || 'video'),
         audioOnly: AUDIO_ONLY,
         noVideo: AUDIO_ONLY,
-        voice: CTX.voice || VOICE,
+        voice: VOICE,
         debug: true,
         allowNoInvite: true
       });
