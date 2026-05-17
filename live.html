@@ -814,6 +814,27 @@
   const WELCOME_RECORD_DELAY_MS = 600;
 
   let CTX = {};
+
+  // Baseline context from URL. The Wix parent page sends the authoritative Access snapshot
+  // via postMessage before starting; this baseline only prevents empty fallback state.
+  CTX = normalizeIncomingContext({
+    uid: UID,
+    linkId: UID,
+    companyId: COMPANY_ID,
+    lang: LANG,
+    userCommLang: LANG,
+    interviewLang: LANG,
+    interviewLanguage: LANG,
+    reportLang: Q.get('reportLang') || Q.get('reportlang') || LANG,
+    reportLanguage: Q.get('reportLang') || Q.get('reportlang') || LANG,
+    pdfLang: Q.get('reportLang') || Q.get('reportlang') || LANG,
+    outputLang: Q.get('reportLang') || Q.get('reportlang') || LANG,
+    voice: VOICE,
+    mode: AUDIO_ONLY ? 'audio' : (MODE_RAW || 'video'),
+    audioOnly: AUDIO_ONLY,
+    noVideo: AUDIO_ONLY
+  });
+
   let FIRST_Q_SENT = false;
   let READY_DETECTED = false;
 
@@ -2073,10 +2094,18 @@
 
         postToParent('clarity.live.prepared', {});
 
+        const firstQuestionFallbackMs = isAssessmentContext(CTX) ? 4500 : 8000;
         setTimeout(() => {
           firstQuestionFallbackElapsed = true;
+          log('[QUESTION] first-question fallback elapsed', {
+            assessment: isAssessmentContext(CTX),
+            ms: firstQuestionFallbackMs,
+            welcomed: WELCOMED,
+            readyDetected: READY_DETECTED,
+            firstQuestionSent: FIRST_Q_SENT
+          });
           maybeAskFirstQuestion();
-        }, 8000);
+        }, firstQuestionFallbackMs);
       }, 600);
     }, 1400);
   }
@@ -2164,6 +2193,10 @@
 
     log('[QUESTION] first item created', {
       lang: lk,
+      assessment: isAssessmentContext(CTX),
+      productType: CTX.productType || '',
+      moduleArea: CTX.moduleArea || '',
+      questionCount: interviewMaxQuestions(CTX),
       question: first
     });
 
@@ -2845,15 +2878,20 @@
       });
 
       const { secret, ctx } = await getRealtimeToken({
-        uid: UID,
-        companyId: COMPANY_ID,
+        ...CTX,
+        uid: UID || CTX.uid || CTX.linkId || '',
+        linkId: UID || CTX.uid || CTX.linkId || '',
+        companyId: COMPANY_ID || CTX.companyId || '',
         lang: initialInterviewLang,
         interviewLang: initialInterviewLang,
+        interviewLanguage: initialInterviewLang,
         userCommLang: getInterviewLangRaw(CTX),
-        mode: AUDIO_ONLY ? 'audio' : 'video',
+        reportLang: getReportLangRaw(CTX),
+        reportLanguage: getReportLangRaw(CTX),
+        mode: AUDIO_ONLY ? 'audio' : (CTX.mode || 'video'),
         audioOnly: AUDIO_ONLY,
         noVideo: AUDIO_ONLY,
-        voice: VOICE,
+        voice: CTX.voice || VOICE,
         debug: true,
         allowNoInvite: true
       });
@@ -2862,7 +2900,8 @@
       prepareRecording();
       prepareCandidateAudioRecording();
 
-      CTX = normalizeIncomingContext(ctx);
+      // Merge token response without letting a smaller token context overwrite the parent Access snapshot.
+      CTX = normalizeIncomingContext({ ...(ctx || {}), ...CTX });
       applyStaticTexts();
 
       await remoteTrackReady;
@@ -2936,7 +2975,7 @@
     const type = msg.type;
 
     if (type === 'clarity.live.context'){
-      CTX = normalizeIncomingContext(msg.data || {});
+      CTX = normalizeIncomingContext({ ...CTX, ...(msg.data || {}) });
       applyStaticTexts();
       log('[CTX]', {
         ...CTX,
@@ -2951,7 +2990,8 @@
     }
 
     else if (type === 'clarity.live.prime'){
-      CTX = normalizeIncomingContext(msg.data || {});
+      // Prime may contain only language/mode. Merge it without clearing assessment/product snapshot fields.
+      CTX = normalizeIncomingContext({ ...CTX, ...(msg.data || {}) });
       applyStaticTexts();
 
       const rep = CTX.reportLang || LANG;
@@ -2967,6 +3007,16 @@
     }
 
     else if (type === 'clarity.live.start'){
+      CTX = normalizeIncomingContext({ ...CTX, ...(msg.data || {}) });
+      log('[START] received from parent', {
+        productType: CTX.productType || '',
+        assessment: CTX.assessment === true,
+        interviewMode: CTX.interviewMode || '',
+        moduleArea: CTX.moduleArea || '',
+        questionCount: CTX.questionCount || CTX.totalQuestionCount || '',
+        normalizedInterviewLang: activeInterviewLang(CTX),
+        reportLang: activeReportLang(CTX)
+      });
       startInterview();
     }
 
