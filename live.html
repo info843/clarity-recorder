@@ -843,15 +843,6 @@
   let WELCOMED = false;
   let firstQuestionFallbackElapsed = false;
 
-  // v3.8.5 audio stability: prevent overlapping assistant audio and keep Assessment turn-taking clean.
-  let ASSISTANT_AUDIO_ACTIVE = false;
-  let ASSISTANT_RESPONSE_ACTIVE = false;
-  let LAST_ASSISTANT_AUDIO_AT = 0;
-  let ASSESSMENT_DIRECT_FLOW = false;
-  let ASSESSMENT_INTERACTION_READY = false;
-  let VAD_ENABLED = false;
-  let ASSESSMENT_SAFETY_TIMER = null;
-
   let remoteTrackReadyResolve;
   const remoteTrackReady = new Promise(r => remoteTrackReadyResolve = r);
 
@@ -1496,13 +1487,6 @@
     /* ASSISTANT TRANSCRIPT — spoken final */
     if (eventType === 'response.audio_transcript.done') {
       const txt = String(data?.transcript || '').trim();
-      ASSISTANT_AUDIO_ACTIVE = false;
-      ASSISTANT_RESPONSE_ACTIVE = false;
-      LAST_ASSISTANT_AUDIO_AT = Date.now();
-
-      if (isAssessmentContext(CTX) && ASSESSMENT_DIRECT_FLOW && FIRST_Q_SENT && !ASSESSMENT_INTERACTION_READY && txt) {
-        enableAssessmentTurnTakingAfterFirstQuestion('first_question_audio_transcript_done');
-      }
 
       if (txt) {
         emitTranscript('assistant', txt, {
@@ -1539,8 +1523,6 @@
       const piece = String(data?.delta || '').trim();
 
       if (piece) {
-        ASSISTANT_AUDIO_ACTIVE = true;
-        LAST_ASSISTANT_AUDIO_AT = Date.now();
         log('[ASSISTANT-TRANSCRIPT-DELTA]', {
           itemId: data.item_id || data.itemId || '',
           responseId: data.response_id || data.responseId || '',
@@ -1553,7 +1535,6 @@
 
     /* ASSISTANT TRANSCRIPT — text fallback, but ignore tool JSON/noise */
     if (eventType === 'response.text.done') {
-      ASSISTANT_RESPONSE_ACTIVE = false;
       const txt = String(data?.text || '').trim();
 
       if (looksLikeToolNoise(txt)) {
@@ -1575,7 +1556,6 @@
 
     /* ASSISTANT output_item.done */
     if (eventType === 'response.output_item.done' && data.item) {
-      ASSISTANT_RESPONSE_ACTIVE = false;
       const it = data.item;
 
       if (FINAL_MESSAGE_SPOKEN) {
@@ -1632,7 +1612,6 @@
     }
 
     if (eventType === 'response.output_item.added' && data.item){
-      ASSISTANT_RESPONSE_ACTIVE = true;
       const it = data.item;
 
       if (it.type === 'function_call' && it.name === 'end_interview'){
@@ -1855,7 +1834,7 @@
         assessmentQuestionPolicyText(ctx, lk),
         'Stelle niemals zwei Fragen in einer Nachricht. Jede Nachricht darf maximal eine Frage enthalten.',
         'Nach jeder Frage warten, bis die Person wirklich fertig geantwortet hat. Kurze Atemgeräusche, Füllwörter oder sehr kurze Geräusche zählen NICHT als Antwort. Warte nach einer Antwort einen natürlichen Moment, damit die Person ergänzen kann, und stelle erst dann die nächste Frage.',
-        'Starte direkt mit einer kurzen, klaren ersten Frage. Warte danach auf die Antwort der Person. Keine zweite Frage in derselben Nachricht.',
+        'Starte die erste Frage erst, nachdem die Person „bereit“ gesagt hat oder nach Fallback-Timeout.',
         `Wenn alle mündlichen Assessment-Fragen abgeschlossen sind, sage zum Abschluss EXAKT diesen Satz, ohne technische Details hinzuzufügen: „${assessmentClose}“ Danach rufe end_interview auf.`,
         `Rufe end_interview NUR auf, wenn die Analyse wirklich abgeschlossen ist. Vorher NIEMALS. Mindestanforderung: mindestens ${MIN_USER_UTTERANCES} Antworten und ein vollständiger Abschluss.`
       ].join(' ');
@@ -1868,7 +1847,7 @@
       assessmentQuestionPolicyText(ctx, lk),
       'Never ask two questions in one message. Each assistant message may contain at most one question.',
       'After each question, wait until the participant has truly finished answering. Breathing, filler words, or very short noises do NOT count as an answer. Leave a natural pause after each answer so the participant can add more, and only then continue.',
-      'Start directly with one short, clear first question. Then wait for the participant answer. Do not ask a second question in the same message.',
+      `Ask the first question only after the user says one of these readiness words or after the fallback timeout: ${(profile.readyWords || ['ready']).join(', ')}.`,
       `When all assessment questions are completed, say exactly this closing message in ${profile.englishName} and do not add technical details: “${assessmentClose}” Then call end_interview.`,
       `Call end_interview ONLY when the assessment is truly complete. NEVER before. Minimum: at least ${MIN_USER_UTTERANCES} participant answers and a complete closing.`
     ].join(' ');
@@ -1903,7 +1882,7 @@
       questionPolicyText(ctx),
       'After each question, wait until the candidate has truly finished. Breathing, filler words, or very short noises do NOT count as an answer. Leave a natural pause after each answer so the candidate can add more, then continue.',
       'Use only the COMPANY KNOWLEDGE from “CONTEXT” to answer company/job/process/benefits questions. If it is not in CONTEXT, politely say the candidate should check with the company.',
-      'Start directly with one short, clear first question. Then wait for the participant answer. Do not ask a second question in the same message.',
+      `Ask the first question only after the user says one of these readiness words or after the fallback timeout: ${(profile.readyWords || ['ready']).join(', ')}.`,
       `When all questions are completed, say exactly this closing message in ${profile.englishName} and do not add technical details: “${finalClose}” Then call end_interview.`,
       `Call end_interview ONLY when the interview is truly complete. NEVER before. Minimum: at least ${MIN_USER_UTTERANCES} candidate answers and a proper closing/goodbye.`
     ].join(' ');
@@ -2020,102 +1999,6 @@
     log('[CONV] company knowledge injected (kbText/jobAd, if provided)');
   }
 
-  function enableVadAndMic(reason = ''){
-    if (VAD_ENABLED) {
-      log('[TURN] VAD already enabled', { reason });
-      return;
-    }
-
-    dcSend({
-      type: 'session.update',
-      session: {
-        turn_detection: {
-          type: 'server_vad',
-          threshold: 0.82,
-          prefix_padding_ms: 450,
-          silence_duration_ms: 1450
-        }
-      }
-    });
-
-    VAD_ENABLED = true;
-    log('[TURN] VAD enabled', { reason });
-
-    enableMicUplink();
-  }
-
-  function markInteractionPrepared(reason = ''){
-    if (ASSESSMENT_INTERACTION_READY && isAssessmentContext(CTX)) {
-      log('[TURN] interaction already prepared', { reason });
-      return;
-    }
-
-    if (isAssessmentContext(CTX)) {
-      ASSESSMENT_INTERACTION_READY = true;
-    }
-
-    WELCOMED = true;
-    maybeStartRecorder();
-    postToParent('clarity.live.prepared', { reason: reason || 'prepared' });
-    log('[TURN] interaction prepared', {
-      reason,
-      assessment: isAssessmentContext(CTX),
-      vadEnabled: VAD_ENABLED,
-      recordEnabled: RECORD_ENABLED
-    });
-  }
-
-  function enableAssessmentTurnTakingAfterFirstQuestion(reason = ''){
-    if (!isAssessmentContext(CTX)) return;
-    if (ASSESSMENT_INTERACTION_READY) return;
-
-    const waitMs = 900;
-    log('[ASSESSMENT] scheduling turn-taking after first question', { reason, waitMs });
-
-    setTimeout(() => {
-      if (destroyed || END_CALLED || ASSESSMENT_INTERACTION_READY) return;
-      enableVadAndMic(reason || 'assessment_first_question_done');
-      markInteractionPrepared(reason || 'assessment_first_question_done');
-    }, waitMs);
-  }
-
-  function speakAssessmentDirectFirstQuestion(){
-    const lk = activeInterviewLang(CTX);
-    ASSESSMENT_DIRECT_FLOW = true;
-    WELCOMED = true;
-    READY_DETECTED = true;
-    firstQuestionFallbackElapsed = true;
-
-    log('[ASSESSMENT] direct first-question flow', {
-      lang: lk,
-      moduleArea: CTX.moduleArea || '',
-      questionCount: interviewMaxQuestions(CTX),
-      mode: CTX.mode || CTX.assessmentMode || ''
-    });
-
-    setTimeout(() => {
-      if (destroyed || END_CALLED) return;
-      maybeAskFirstQuestion();
-    }, 350);
-
-    if (ASSESSMENT_SAFETY_TIMER) {
-      try { clearTimeout(ASSESSMENT_SAFETY_TIMER); } catch(_) {}
-    }
-
-    ASSESSMENT_SAFETY_TIMER = setTimeout(() => {
-      if (destroyed || END_CALLED || ASSESSMENT_INTERACTION_READY) return;
-      if (!FIRST_Q_SENT) return;
-
-      log('[ASSESSMENT] safety turn-taking enable', {
-        assistantAudioActive: ASSISTANT_AUDIO_ACTIVE,
-        assistantResponseActive: ASSISTANT_RESPONSE_ACTIVE,
-        lastAssistantAudioAgoMs: LAST_ASSISTANT_AUDIO_AT ? Date.now() - LAST_ASSISTANT_AUDIO_AT : null
-      });
-
-      enableAssessmentTurnTakingAfterFirstQuestion('assessment_safety_after_first_question');
-    }, 18000);
-  }
-
   function instructionToSay(textToSpeak, lk){
     const profile = langProfile(lk);
 
@@ -2134,13 +2017,6 @@
   }
 
   function speakPrepThenWelcome() {
-    if (isAssessmentContext(CTX)) {
-      // Assessment should behave like a clean guided conversation: no overlapping prep+welcome+fallback audio.
-      // We ask the first assessment question directly, then enable VAD/microphone after the question is spoken.
-      speakAssessmentDirectFirstQuestion();
-      return;
-    }
-
     const lk = activeInterviewLang(CTX);
     const prep = langProfile(lk).welcomePrep || UI_TEXTS.en.welcomePrep;
     const welcome = welcomeText(CTX);
@@ -2197,8 +2073,26 @@
       });
 
       setTimeout(() => {
-        enableVadAndMic('welcome_complete');
-        markInteractionPrepared('welcome_complete');
+        dcSend({
+          type: 'session.update',
+          session: {
+            turn_detection: {
+              type: 'server_vad',
+              threshold: 0.82,
+              prefix_padding_ms: 450,
+              silence_duration_ms: 1450
+            }
+          }
+        });
+
+        log('[PRIME] VAD enabled');
+
+        enableMicUplink();
+
+        WELCOMED = true;
+        maybeStartRecorder();
+
+        postToParent('clarity.live.prepared', {});
 
         const firstQuestionFallbackMs = isAssessmentContext(CTX) ? 4500 : 8000;
         setTimeout(() => {
@@ -2279,21 +2173,7 @@
     if (FIRST_Q_SENT || !WELCOMED) return;
     if (!READY_DETECTED && !firstQuestionFallbackElapsed) return;
 
-    if (isAssessmentContext(CTX)) {
-      const audioAgo = LAST_ASSISTANT_AUDIO_AT ? Date.now() - LAST_ASSISTANT_AUDIO_AT : 999999;
-      if (ASSISTANT_AUDIO_ACTIVE || ASSISTANT_RESPONSE_ACTIVE || audioAgo < 900) {
-        log('[QUESTION] delayed to avoid overlap', {
-          assistantAudioActive: ASSISTANT_AUDIO_ACTIVE,
-          assistantResponseActive: ASSISTANT_RESPONSE_ACTIVE,
-          audioAgo
-        });
-        setTimeout(() => maybeAskFirstQuestion(), 1200);
-        return;
-      }
-    }
-
     FIRST_Q_SENT = true;
-    ASSISTANT_RESPONSE_ACTIVE = true;
 
     const lk = activeInterviewLang(CTX);
     const plan = buildInterviewPlan(CTX);
@@ -2979,16 +2859,6 @@
     uploadStarted = false;
     uploadFinished = false;
     lastPutStatus = null;
-    ASSISTANT_AUDIO_ACTIVE = false;
-    ASSISTANT_RESPONSE_ACTIVE = false;
-    LAST_ASSISTANT_AUDIO_AT = 0;
-    ASSESSMENT_DIRECT_FLOW = false;
-    ASSESSMENT_INTERACTION_READY = false;
-    VAD_ENABLED = false;
-    if (ASSESSMENT_SAFETY_TIMER) {
-      try { clearTimeout(ASSESSMENT_SAFETY_TIMER); } catch(_) {}
-    }
-    ASSESSMENT_SAFETY_TIMER = null;
 
     try {
       destroyed = false;
