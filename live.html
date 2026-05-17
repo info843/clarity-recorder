@@ -200,6 +200,16 @@
   const AUTOSTART = Q.get('autostart') !== '0';
   const API_BASE = (Q.get('api') || window.location.origin).replace(/\/+$/, '');
   const DEBUG_UI = Q.get('debugUi') === '1' || Q.get('debugui') === '1' || Q.get('showLogs') === '1';
+  // v3.8.7: keep Realtime audio lean in production. Normal logs stay local/hidden unless ?debug=1.
+  // Critical diagnostics are still posted to the Wix page so real audio/RTC failures remain visible.
+  const DEBUG_LOGS = Q.get('debug') === '1' || Q.get('debugLive') === '1' || Q.get('debuglive') === '1' || DEBUG_UI;
+  const LOG_PARENT_MIN_MS = 1000;
+  const LOG_PARENT_MAX_PER_WINDOW = 8;
+  const LOG_PARENT_WINDOW_MS = 10000;
+  let __logParentWindowStart = Date.now();
+  let __logParentWindowCount = 0;
+  let __lastParentLogAt = 0;
+  let __lastParentLogText = '';
 
   // Audio-only/no-camera mode. Used by the Wix User Interview page for audio interviews:
   // the same live AI conversation runs, but only the microphone is requested and the recording is audio-only.
@@ -748,18 +758,71 @@
     return (e && (e.message || e.toString())) || String(e || '');
   }
 
-  function log(...a){
-    console.log(...a);
-    const s = a.map(x => typeof x === 'object' ? JSON.stringify(x) : String(x)).join(' ');
+  function isImportantLogText(s){
+    const t = String(s || '');
+    return /\b(error|failed|failure|timeout|denied|blocked|disconnect|disconnected|failed|ice failed|rtc failed|muxError|mux error|autoplay blocked|audio_diag|audio-stall|audio stalled|audio_wait|token|client_secret_missing)\b/i.test(t) || /\[(ERR|ERROR|WARN|AUDIO-DIAG|RTC-DIAG)\]/i.test(t);
+  }
 
-    if ($log) {
+  function canPostParentLog(s, important){
+    if (important) return true;
+    if (!DEBUG_LOGS) return false;
+
+    const now = Date.now();
+    if (now - __logParentWindowStart > LOG_PARENT_WINDOW_MS) {
+      __logParentWindowStart = now;
+      __logParentWindowCount = 0;
+    }
+    if (__logParentWindowCount >= LOG_PARENT_MAX_PER_WINDOW) return false;
+    if (s === __lastParentLogText && now - __lastParentLogAt < 5000) return false;
+    if (now - __lastParentLogAt < LOG_PARENT_MIN_MS) return false;
+
+    __logParentWindowCount += 1;
+    __lastParentLogAt = now;
+    __lastParentLogText = s;
+    return true;
+  }
+
+  function postAudioDiag(code, data = {}){
+    try {
+      parent?.postMessage?.({
+        type: 'clarity.live.audio_diag',
+        data: {
+          code,
+          ts: new Date().toISOString(),
+          uid: UID || CTX?.uid || CTX?.linkId || '',
+          mode: AUDIO_ONLY ? 'audio' : (CTX?.mode || 'video'),
+          rtcState: pc?.connectionState || '',
+          iceState: pc?.iceConnectionState || '',
+          ...data
+        }
+      }, '*');
+    } catch(_) {}
+  }
+
+  function log(...a){
+    const s = a.map(x => {
+      try { return typeof x === 'object' ? JSON.stringify(x) : String(x); }
+      catch(_) { return String(x); }
+    }).join(' ');
+
+    const important = isImportantLogText(s);
+
+    if (DEBUG_LOGS || important) {
+      try {
+        (important ? console.warn : console.log)(...a);
+      } catch(_) {}
+    }
+
+    if (DEBUG_UI && $log) {
       $log.textContent += s + "\n";
       $log.scrollTop = $log.scrollHeight;
     }
 
-    try {
-      parent?.postMessage?.({ type:'clarity.live.log', data:s }, '*');
-    } catch(_) {}
+    if (canPostParentLog(s, important)) {
+      try {
+        parent?.postMessage?.({ type:'clarity.live.log', data:s }, '*');
+      } catch(_) {}
+    }
   }
 
   function setStatus(kind, text){
@@ -1168,10 +1231,24 @@
     });
 
     pc.onconnectionstatechange = () => {
-      log('[RTC]', pc.connectionState);
+      const state = pc.connectionState || '';
+      const ice = pc.iceConnectionState || '';
+      log('[RTC]', state, { ice });
+      postAudioDiag('rtc_state_change', { state, ice });
 
-      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected'){
+      if (state === 'failed' || state === 'disconnected'){
         setStatus('warn', t('disconnected'));
+        postAudioDiag('rtc_unstable', { state, ice });
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      const ice = pc.iceConnectionState || '';
+      if (ice === 'failed' || ice === 'disconnected') {
+        log('[RTC-DIAG] ice connection state', ice);
+        postAudioDiag('ice_unstable', { ice });
+      } else if (DEBUG_LOGS) {
+        log('[RTC-DIAG] ice connection state', ice);
       }
     };
 
@@ -1219,12 +1296,14 @@
         audioUnlocked = true;
         $audioBadge.textContent = t('audioReady');
         postToParent('clarity.live.audio_ready', {});
-        log('[AUDIO] remote audio playing (unlocked).');
+        postAudioDiag('remote_audio_started');
+        log('[AUDIO-DIAG] remote audio playing (unlocked).');
       } catch(e) {
         audioUnlocked = false;
         $audioBadge.textContent = t('audioPreparing');
         postToParent('clarity.live.audio_wait', {});
-        log('[AUDIO] autoplay blocked, waiting for user gesture.');
+        postAudioDiag('remote_audio_wait', { reason: 'autoplay_blocked' });
+        log('[AUDIO-DIAG] autoplay blocked, waiting for user gesture.');
       }
 
       remoteTrackReadyResolve?.();
@@ -1486,6 +1565,10 @@
 
     /* ASSISTANT TRANSCRIPT — spoken final */
     if (eventType === 'response.audio_transcript.done') {
+      postAudioDiag('response_audio_done', {
+        itemId: data.item_id || data.itemId || '',
+        responseId: data.response_id || data.responseId || ''
+      });
       const txt = String(data?.transcript || '').trim();
 
       if (txt) {
@@ -1522,7 +1605,7 @@
     if (eventType === 'response.audio_transcript.delta') {
       const piece = String(data?.delta || '').trim();
 
-      if (piece) {
+      if (piece && DEBUG_LOGS) {
         log('[ASSISTANT-TRANSCRIPT-DELTA]', {
           itemId: data.item_id || data.itemId || '',
           responseId: data.response_id || data.responseId || '',
