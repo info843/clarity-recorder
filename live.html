@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v3.9.5 INTERVIEW_Q_LOCK_FOLLOWUP: exact main-question lock + interview follow-up turns + Q30 media cap -->
+  <!-- v3.9.6 INTERVIEW_NATURAL_FOLLOWUP_QLOCK_FINAL: exact main-question lock + interview follow-up turns + Q30 media cap -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -1039,30 +1039,77 @@
     const n = normalizeForMatch(text);
     if (!n) return false;
 
-    // Interview follow-ups are intentionally short meta-questions.
+    // Interview follow-ups are intentionally short continuation/deepening questions.
     // They must never count as Q10/Q20/Q30 main questions.
     const markers = [
       'would you like to add', 'would you like to add anything', 'do you want to add', 'anything to add', 'anything else', 'is that complete',
-      'shall we continue', 'should we continue', 'ready for the next question', 'move on to the next question', 'continue to the next question',
-      'mochten sie noch etwas erganzen', 'moechten sie noch etwas ergaenzen', 'möchten sie noch etwas ergänzen', 'noch etwas erganzen', 'noch etwas ergänzen',
-      'ist das so vollstandig', 'ist das so vollständig', 'sollen wir fortfahren', 'zur nachsten frage', 'zur nächsten frage', 'bereit fur die nachste frage', 'bereit für die nächste frage',
+      'shall we continue', 'should we continue', 'ready for the next question', 'move on to the next question', 'continue to the next question', 'continue with the next question',
+      'before we continue', 'before moving on', 'shall i move on', 'can i move on', 'may i continue', 'may we finish', 'can we finish',
+
+      'mochten sie noch etwas erganzen', 'moechten sie noch etwas ergaenzen', 'möchten sie noch etwas ergänzen',
+      'mochten sie dazu noch etwas erganzen', 'moechten sie dazu noch etwas ergaenzen', 'möchten sie dazu noch etwas ergänzen',
+      'noch etwas erganzen', 'noch etwas ergänzen', 'etwas hinzufugen', 'etwas hinzufügen', 'noch etwas hinzufugen', 'noch etwas hinzufügen',
+      'gibt es noch etwas', 'gibt es dazu noch etwas', 'haben sie noch etwas', 'mochten sie noch etwas hinzufugen', 'möchten sie noch etwas hinzufügen',
+      'ist das so vollstandig', 'ist das so vollständig', 'sollen wir fortfahren', 'soll ich fortfahren',
+      'zur nachsten frage', 'zur nächsten frage', 'zur letzten frage', 'bereit fur die nachste frage', 'bereit für die nächste frage',
+      'durfen wir abschliessen', 'dürfen wir abschließen', 'konnen wir abschliessen', 'können wir abschließen', 'interview hier abschliessen', 'interview hier abschließen',
+
       'voulez vous ajouter', 'souhaitez vous ajouter', 'autre chose a ajouter', 'passer a la question suivante', 'passer à la question suivante',
+      'passer a la derniere question', 'passer à la dernière question', 'pouvons nous terminer',
+
       'quiere anadir', 'quiere añadir', 'algo mas que anadir', 'algo más que añadir', 'pasar a la siguiente pregunta',
-      'vuole aggiungere', 'desidera aggiungere', 'qualcosa da aggiungere', 'passare alla prossima domanda'
+      'paso a la siguiente pregunta', 'paso a la ultima pregunta', 'paso a la última pregunta', 'podemos finalizar',
+
+      'vuole aggiungere', 'desidera aggiungere', 'qualcosa da aggiungere', 'passare alla prossima domanda', 'passare all ultima domanda', 'possiamo concludere'
     ];
 
     if (markers.some(m => n.includes(normalizeForMatch(m)))) return true;
 
-    // Conservative fallback: while we are explicitly waiting for an interview follow-up,
+    // German/Spanish/French/etc. phrases can vary strongly after translation/transcription.
+    // If the sentence combines an "add something" signal with a continuation/finish signal, it is a follow-up.
+    const addSignals = [
+      'add', 'anything else',
+      'erganz', 'ergänz', 'hinzufug', 'hinzufüg',
+      'ajouter', 'anadir', 'añadir', 'aggiungere'
+    ];
+    const continueSignals = [
+      'next question', 'last question', 'continue', 'move on', 'finish',
+      'nachste frage', 'nächste frage', 'letzte frage', 'fortfahren', 'weitergehen', 'abschliess', 'abschließ',
+      'siguiente pregunta', 'ultima pregunta', 'última pregunta', 'finalizar',
+      'question suivante', 'derniere question', 'dernière question', 'terminer',
+      'prossima domanda', 'ultima domanda', 'concludere'
+    ];
+    if (addSignals.some(w => n.includes(normalizeForMatch(w))) && continueSignals.some(w => n.includes(normalizeForMatch(w)))) {
+      return true;
+    }
+
+    // Conservative fallback: while the model is expected to ask the one follow-up after a main question,
     // a short assistant question that only offers continuation is treated as follow-up.
-    if (structuredAwaitingFollowUpQuestion && textHasQuestion(text) && n.length < 140) {
-      const continuationWords = ['add', 'erganzen', 'ergänzen', 'continue', 'fortfahren', 'next', 'nachste', 'nächste', 'autre', 'ajouter', 'anadir', 'añadir', 'aggiungere', 'prossima'];
+    if (structuredAwaitingFollowUpQuestion && textHasQuestion(text) && n.length < 220) {
+      const continuationWords = ['add', 'erganzen', 'ergänzen', 'hinzufugen', 'hinzufügen', 'continue', 'fortfahren', 'next', 'nachste', 'nächste', 'letzte', 'abschliessen', 'abschließen', 'autre', 'ajouter', 'anadir', 'añadir', 'aggiungere', 'prossima'];
       return continuationWords.some(w => n.includes(normalizeForMatch(w)));
     }
 
     return false;
   }
 
+  function shouldForceInterviewFollowUpBySequence(text){
+    if (!isInterviewLiveContext(CTX)) return false;
+    if (!textHasQuestion(text)) return false;
+    const q = structuredCurrentQuestionIndex || 0;
+    if (q <= 0) return false;
+    if (structuredLastAssistantTurnType !== 'main_question') return false;
+    if (structuredFollowUpAskedForQuestion[q]) return false;
+
+    const n = normalizeForMatch(text);
+    if (!n) return false;
+    if (finalClosingDetected(text)) return false;
+    if (looksLikeReadyWelcome(text)) return false;
+
+    // After every interview main question, the next assistant question is the single follow-up slot.
+    // This preserves natural, topic-specific follow-ups without forcing the exact same wording.
+    return true;
+  }
   function isInterviewLiveContext(ctx = CTX){
     return !looksAssessmentContext(ctx) && !(typeof isAssessmentContext === 'function' && isAssessmentContext(ctx));
   }
@@ -1092,8 +1139,8 @@
     const nextNo = Math.min(target, structuredCurrentQuestionIndex + 1);
 
     const instruction = lk === 'de'
-      ? `Das Interview ist noch nicht vollständig. Du hast bisher ${structuredCurrentQuestionIndex} von ${target} Hauptfragen gestellt. Bitte beende das Interview noch nicht. Stelle jetzt Hauptfrage ${nextNo} als neue rollenbezogene Interviewfrage. Danach stelle wieder genau eine kurze Ergänzungsfrage.`
-      : `The interview is not complete yet. You have asked ${structuredCurrentQuestionIndex} of ${target} main questions so far. Do not close the interview yet. Now ask main question ${nextNo} as a new role-specific interview question. After the candidate answers, ask exactly one short follow-up opportunity.`;
+      ? `INTERNE STEUERANWEISUNG, NICHT VORLESEN: Das Interview ist noch nicht vollständig. Erwähne nicht, wie viele Fragen fehlen. Entschuldige dich nicht. Stelle jetzt natürlich und direkt die nächste rollenbezogene Hauptfrage. Danach stelle wieder genau eine kurze, natürlich formulierte Ergänzungs- oder Vertiefungsfrage.`
+      : `INTERNAL CONTROL INSTRUCTION, DO NOT READ ALOUD: The interview is not complete yet. Do not mention how many questions are missing. Do not apologize. Now naturally and directly ask the next role-specific main question. After the candidate answers, ask exactly one short, naturally phrased follow-up or deepening question.`;
 
     log('[QLOCK] blocked early closing and requested missing question', {
       source: source || '',
@@ -1107,7 +1154,7 @@
       type: 'conversation.item.create',
       item: {
         type: 'message',
-        role: 'user',
+        role: 'system',
         content: [{ type: 'input_text', text: instruction }]
       }
     });
@@ -1149,8 +1196,27 @@
       };
     }
 
-    if (looksLikeFollowUpQuestion(clean)) {
+    const forcedSequenceFollowUp = shouldForceInterviewFollowUpBySequence(clean);
+    if (looksLikeFollowUpQuestion(clean) || forcedSequenceFollowUp) {
       const q = structuredCurrentQuestionIndex || 0;
+
+      // Only one report-relevant follow-up per main question. Repeated prompts caused by silence,
+      // "please continue" loops, or early-close recovery stay out of the PDF transcript.
+      if (q > 0 && structuredFollowUpAskedForQuestion[q]) {
+        structuredLastAssistantTurnType = 'system';
+        structuredAwaitingFollowUpQuestion = false;
+        return {
+          role: 'assistant',
+          turnType: 'system',
+          questionIndex: q,
+          subTurnIndex: structuredCurrentSubTurnIndex || 1,
+          isMainQuestion: false,
+          isFollowUp: false,
+          isIncludedInReport: false,
+          isTechnical: true
+        };
+      }
+
       structuredCurrentSubTurnIndex = Math.max(1, (structuredCurrentSubTurnIndex || 0) + 1);
       structuredLastAssistantTurnType = 'follow_up_question';
       structuredAwaitingFollowUpQuestion = false;
@@ -2421,13 +2487,13 @@
     if (lk === 'de') {
       return [
         'Sprich ausschließlich DEUTSCH. Wechsle nie die Sprache.',
-        'Führe ein strukturiertes Job-Interview: nur EINE Hauptfrage zur Zeit, danach genau eine kurze Ergänzungsmöglichkeit. Bleibe strikt am Jobprofil und stelle nie zwei Hauptfragen in einer Nachricht.',
+        'Führe ein strukturiertes Job-Interview: nur EINE Hauptfrage zur Zeit, danach genau eine kurze natürliche Anschlussfrage oder Ergänzungsmöglichkeit. Bleibe strikt am Jobprofil und stelle nie zwei Hauptfragen in einer Nachricht.',
         questionPolicyText(ctx),
-        'Ablauf pro Hauptfrage: 1) stelle die Hauptfrage, 2) warte die Antwort vollständig ab, 3) frage kurz, ob die Person noch etwas ergänzen möchte oder ob du zur nächsten Frage fortfahren sollst, 4) warte diese Ergänzungsantwort ab, 5) erst dann nächste Hauptfrage. Diese Ergänzungsfrage zählt NICHT als Hauptfrage.',
+        'Ablauf pro Hauptfrage: 1) stelle die Hauptfrage, 2) warte die Antwort vollständig ab, 3) stelle genau eine kurze Anschlussreaktion. Diese darf natürlich variieren: kurze Ergänzungsmöglichkeit, kurze Verständnis-/Vertiefungsfrage oder Angebot zur nächsten Frage. Verwende nicht immer dieselbe Formulierung. 4) warte diese Ergänzungsantwort ab, 5) erst dann nächste Hauptfrage. Diese Anschlussfrage zählt NICHT als Hauptfrage.',
         'Nach jeder Frage warten, bis die Kandidatin/der Kandidat wirklich fertig ist. Kurze Atemgeräusche, Füllwörter oder sehr kurze Geräusche zählen NICHT als Antwort. Gib nach einer Antwort einen natürlichen Moment für Ergänzungen, bevor du fortfährst.',
         'Nutze ausschließlich die FIRMENKENNTNISSE aus „KONTEXT“ für Antworten zu Firma, Stelle, Prozessen, Benefits usw. Wenn etwas nicht im KONTEXT steht, sage freundlich, dass dies mit der Firma direkt zu klären ist.',
         'Starte die erste Frage erst, nachdem die Person „bereit“ gesagt hat (oder nach Fallback-Timeout).',
-        `Wenn alle Fragen gestellt sind, sage zum Abschluss EXAKT diesen Satz, ohne technische Details hinzuzufügen: „${finalClose}“ Danach rufe end_interview auf.`,
+        `Erst wenn genau ${interviewMainQuestionTarget(ctx)} Hauptfragen gestellt und die letzte Antwort/Ergänzung abgeschlossen ist, sage zum Abschluss EXAKT diesen Satz, ohne technische Details hinzuzufügen: „${finalClose}“ Danach rufe end_interview auf.`,
         `Rufe end_interview NUR auf, wenn das Interview wirklich abgeschlossen ist. Vorher NIEMALS. Mindestanforderung: mindestens ${MIN_USER_UTTERANCES} Kandidaten-Antworten und ein sinnvoller Abschluss/Verabschiedung.`
       ].join(' ');
     }
@@ -2441,7 +2507,7 @@
       'After each question, wait until the candidate has truly finished. Breathing, filler words, or very short noises do NOT count as an answer. Leave a natural pause after each answer so the candidate can add more, then continue.',
       'Use only the COMPANY KNOWLEDGE from “CONTEXT” to answer company/job/process/benefits questions. If it is not in CONTEXT, politely say the candidate should check with the company.',
       `Ask the first question only after the user says one of these readiness words or after the fallback timeout: ${(profile.readyWords || ['ready']).join(', ')}.`,
-      `When all questions are completed, say exactly this closing message in ${profile.englishName} and do not add technical details: “${finalClose}” Then call end_interview.`,
+      `Only after exactly ${interviewMainQuestionTarget(ctx)} main questions have been asked and the final answer/addition is complete, say exactly this closing message in ${profile.englishName} and do not add technical details: “${finalClose}” Then call end_interview.`,
       `Call end_interview ONLY when the interview is truly complete. NEVER before. Minimum: at least ${MIN_USER_UTTERANCES} candidate answers and a proper closing/goodbye.`
     ].join(' ');
   }
