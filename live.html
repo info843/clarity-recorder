@@ -196,7 +196,7 @@
   const UID = (Q.get('uid') || '').trim();
   const COMPANY_ID = (Q.get('companyId') || '').trim();
   const LANG = (Q.get('lang') || 'de').toLowerCase();
-  // v3.9.1 final voice policy:
+  // v3.9.4 final voice policy + structured turn events:
   // - Assessment / Modul1: Marin
   // - Interview: Cedar
   // Old page defaults such as voice=verse are ignored unless the URL explicitly asks for marin/cedar.
@@ -2384,7 +2384,7 @@
         input_audio_format: 'pcm16',
         output_audio_format: 'pcm16',
         input_audio_transcription: {
-          model: 'whisper-1',
+          model: 'gpt-4o-mini-transcribe',
           language: spoken
         },
         turn_detection: {
