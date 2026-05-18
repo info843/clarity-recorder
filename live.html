@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v3.9.6 INTERVIEW_NATURAL_FOLLOWUP_QLOCK_FINAL: exact main-question lock + interview follow-up turns + Q30 media cap -->
+  <!-- v3.9.7 INTERVIEW_END_GUARD_FAST_FINAL: natural follow-ups + Q-lock + robust closing hangup -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -1139,8 +1139,8 @@
     const nextNo = Math.min(target, structuredCurrentQuestionIndex + 1);
 
     const instruction = lk === 'de'
-      ? `INTERNE STEUERANWEISUNG, NICHT VORLESEN: Das Interview ist noch nicht vollständig. Erwähne nicht, wie viele Fragen fehlen. Entschuldige dich nicht. Stelle jetzt natürlich und direkt die nächste rollenbezogene Hauptfrage. Danach stelle wieder genau eine kurze, natürlich formulierte Ergänzungs- oder Vertiefungsfrage.`
-      : `INTERNAL CONTROL INSTRUCTION, DO NOT READ ALOUD: The interview is not complete yet. Do not mention how many questions are missing. Do not apologize. Now naturally and directly ask the next role-specific main question. After the candidate answers, ask exactly one short, naturally phrased follow-up or deepening question.`;
+      ? `Bitte stelle jetzt direkt die nächste rollenbezogene Hauptfrage. Sage nur die Frage selbst. Erwähne nicht, dass Fragen fehlen, entschuldige dich nicht und wiederhole nicht den Abschlusssatz. Nach der Antwort darfst du genau eine kurze, natürlich formulierte Ergänzungs- oder Vertiefungsfrage stellen.`
+      : `Please now ask the next role-specific main question directly. Say only the question itself. Do not mention that questions are missing, do not apologize, and do not repeat the closing message. After the answer, you may ask exactly one short, naturally phrased follow-up or deepening question.`;
 
     log('[QLOCK] blocked early closing and requested missing question', {
       source: source || '',
@@ -1150,11 +1150,13 @@
       attempts: structuredEarlyClosingContinueRequests
     });
 
+    // Use a user-style instruction here. In practice Realtime follows this more reliably
+    // as an immediate next spoken action than a late system item after an early closing sentence.
     dcSend({
       type: 'conversation.item.create',
       item: {
         type: 'message',
-        role: 'system',
+        role: 'user',
         content: [{ type: 'input_text', text: instruction }]
       }
     });
@@ -1163,6 +1165,16 @@
       type: 'response.create',
       response: { conversation: 'default', modalities: ['audio'] }
     });
+
+    try { if (structuredEarlyClosingRecoveryTimer) clearTimeout(structuredEarlyClosingRecoveryTimer); } catch(_) {}
+    structuredEarlyClosingRecoveryTimer = setTimeout(() => {
+      if (END_CALLED || FINAL_HANGUP_TIMER) return;
+      // Safety valve: never leave the candidate in silence after the closing sentence.
+      // If the recovery question did not start quickly, process the interview with the captured turns.
+      log('[QLOCK] early closing recovery watchdog -> final hangup safety');
+      FINAL_MESSAGE_SPOKEN = true;
+      beginFinalHangup('early_closing_recovery_watchdog');
+    }, 16000);
   }
 
   function inferAssistantStructuredMeta(text){
@@ -1254,6 +1266,8 @@
       structuredCurrentQuestionIndex += 1;
       structuredCurrentSubTurnIndex = 0;
       structuredAwaitingFollowUpQuestion = false;
+      try { if (structuredEarlyClosingRecoveryTimer) clearTimeout(structuredEarlyClosingRecoveryTimer); } catch(_) {}
+      structuredEarlyClosingRecoveryTimer = null;
       structuredLastAssistantTurnType = 'main_question';
       return {
         role: 'assistant',
@@ -2021,8 +2035,17 @@
 
         if (finalClosingDetected(txt)) {
           if (shouldBlockEarlyInterviewClosing()) {
-            requestMissingInterviewQuestion('early_final_audio_transcript_done');
-            return;
+            const target = interviewMainQuestionTarget(CTX);
+            const closeEnoughForSafeFinish = structuredCurrentQuestionIndex >= Math.max(1, target - 1) && userUtterances >= Math.max(MIN_USER_UTTERANCES, target);
+            if (!closeEnoughForSafeFinish) {
+              requestMissingInterviewQuestion('early_final_audio_transcript_done');
+              return;
+            }
+            log('[QLOCK] accepted near-complete final closing to avoid stuck interview', {
+              mainQuestions: structuredCurrentQuestionIndex,
+              targetQuestions: target,
+              userUtterances
+            });
           }
 
           FINAL_MESSAGE_SPOKEN = true;
@@ -3481,6 +3504,8 @@
     END_REQUESTED_BY_MODEL = false;
     FINAL_MESSAGE_SPOKEN = false;
     FINAL_MESSAGE_ITEM_ID = '';
+    try { if (structuredEarlyClosingRecoveryTimer) clearTimeout(structuredEarlyClosingRecoveryTimer); } catch(_) {}
+    structuredEarlyClosingRecoveryTimer = null;
     if (FINAL_HANGUP_TIMER) {
       try { clearTimeout(FINAL_HANGUP_TIMER); } catch(_) {}
     }
@@ -3550,6 +3575,8 @@
       try { clearTimeout(FINAL_HANGUP_TIMER); } catch(_) {}
       FINAL_HANGUP_TIMER = null;
     }
+    try { if (structuredEarlyClosingRecoveryTimer) clearTimeout(structuredEarlyClosingRecoveryTimer); } catch(_) {}
+    structuredEarlyClosingRecoveryTimer = null;
 
     if (destroyed && reason !== 'user_fallback_end') return;
 
