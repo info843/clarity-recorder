@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v3.9.1 REALTIME_FINAL_VOICE_GREETING: gpt-realtime + Assessment Marin / Interview Cedar + branded greeting/closing -->
+  <!-- v3.9.3 REALTIME_TURN_EVENTS: gpt-realtime + stable candidate audio + structured turn events -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -953,6 +953,8 @@
     uid: UID,
     linkId: UID,
     companyId: COMPANY_ID,
+    sessionId: Q.get('sessionId') || Q.get('sessionid') || '',
+    liveSessionId: Q.get('sessionId') || Q.get('sessionid') || '',
     lang: LANG,
     userCommLang: LANG,
     interviewLang: LANG,
@@ -1003,6 +1005,187 @@
   /* ===== Transcript State ===== */
   let transcriptSeq = 0;
   const transcriptSeen = new Set();
+
+  /* v3.9.3 Structured Turn Events
+     Main path: live Realtime transcripts are emitted as structured turns.
+     The Wix parent page persists them through backend/transcriptTurns.jsw.
+     Candidate-only audio and Mux remain fallback, not primary evidence. */
+  let structuredTurnIndex = 0;
+  let structuredCurrentQuestionIndex = 0;
+  let structuredCurrentSubTurnIndex = 0;
+  let structuredLastAssistantTurnType = '';
+
+  function textHasQuestion(text){
+    const t = String(text || '').trim();
+    return /[?？¿]/.test(t);
+  }
+
+  function looksLikeReadyWelcome(text){
+    const n = normalizeForMatch(text);
+    if (!n) return false;
+    const readyMarkers = [
+      'willkommen', 'welcome', 'bienvenido', 'bienvenue', 'benvenuto',
+      'are you ready', 'sind sie bereit', 'bist du bereit', 'êtes vous prêt', 'etes vous pret',
+      'esta listo', 'está listo', 'e pronto', 'è pronto', 'ready to begin', 'ready to start'
+    ];
+    return readyMarkers.some(m => n.includes(normalizeForMatch(m))) && (n.includes('ready') || n.includes('bereit') || n.includes('listo') || n.includes('prêt') || n.includes('pret') || n.includes('pronto') || n.includes('start'));
+  }
+
+  function looksLikeFollowUpQuestion(text){
+    const n = normalizeForMatch(text);
+    if (!n || !textHasQuestion(text)) return false;
+    const markers = [
+      'would you like to add', 'do you want to add', 'anything to add', 'anything else', 'is that complete',
+      'mochten sie noch etwas erganzen', 'moechten sie noch etwas ergaenzen', 'möchten sie noch etwas ergänzen', 'noch etwas erganzen', 'noch etwas ergänzen', 'ist das so vollstandig', 'ist das so vollständig',
+      'voulez vous ajouter', 'souhaitez vous ajouter', 'autre chose a ajouter',
+      'quiere anadir', 'quiere añadir', 'algo mas que anadir', 'algo más que añadir',
+      'vuole aggiungere', 'desidera aggiungere', 'qualcosa da aggiungere'
+    ];
+    return markers.some(m => n.includes(normalizeForMatch(m)));
+  }
+
+  function inferAssistantStructuredMeta(text){
+    const clean = String(text || '').trim();
+
+    if (finalClosingDetected(clean)) {
+      structuredLastAssistantTurnType = 'closing';
+      return {
+        role: 'assistant',
+        turnType: 'closing',
+        questionIndex: structuredCurrentQuestionIndex || 0,
+        subTurnIndex: structuredCurrentSubTurnIndex || 0,
+        isMainQuestion: false,
+        isFollowUp: false,
+        isIncludedInReport: false
+      };
+    }
+
+    if (looksLikeReadyWelcome(clean)) {
+      structuredLastAssistantTurnType = 'welcome';
+      return {
+        role: 'assistant',
+        turnType: 'welcome',
+        questionIndex: 0,
+        subTurnIndex: 0,
+        isMainQuestion: false,
+        isFollowUp: false,
+        isIncludedInReport: false
+      };
+    }
+
+    if (looksLikeFollowUpQuestion(clean)) {
+      structuredCurrentSubTurnIndex += 1;
+      structuredLastAssistantTurnType = 'follow_up_question';
+      return {
+        role: 'assistant',
+        turnType: 'follow_up_question',
+        questionIndex: structuredCurrentQuestionIndex || 0,
+        subTurnIndex: structuredCurrentSubTurnIndex,
+        isMainQuestion: false,
+        isFollowUp: true,
+        isIncludedInReport: true
+      };
+    }
+
+    if (textHasQuestion(clean)) {
+      structuredCurrentQuestionIndex += 1;
+      structuredCurrentSubTurnIndex = 0;
+      structuredLastAssistantTurnType = 'main_question';
+      return {
+        role: 'assistant',
+        turnType: 'main_question',
+        questionIndex: structuredCurrentQuestionIndex,
+        subTurnIndex: 0,
+        isMainQuestion: true,
+        isFollowUp: false,
+        isIncludedInReport: true
+      };
+    }
+
+    structuredLastAssistantTurnType = 'system';
+    return {
+      role: 'assistant',
+      turnType: 'system',
+      questionIndex: structuredCurrentQuestionIndex || 0,
+      subTurnIndex: structuredCurrentSubTurnIndex || 0,
+      isMainQuestion: false,
+      isFollowUp: false,
+      isIncludedInReport: false
+    };
+  }
+
+  function inferCandidateStructuredMeta(){
+    const q = structuredCurrentQuestionIndex || 0;
+    const isFollowUp = structuredLastAssistantTurnType === 'follow_up_question';
+    return {
+      role: 'candidate',
+      turnType: q > 0 ? (isFollowUp ? 'answer_addition' : 'answer') : 'system',
+      questionIndex: q,
+      subTurnIndex: isFollowUp ? (structuredCurrentSubTurnIndex || 1) : 0,
+      isMainQuestion: false,
+      isFollowUp,
+      isCandidateAnswer: q > 0,
+      isIncludedInReport: q > 0
+    };
+  }
+
+  function emitStructuredTurnFromTranscript(payload){
+    try {
+      const speaker = String(payload?.speaker || '').toLowerCase();
+      const text = String(payload?.text || '').trim();
+      if (!text) return;
+
+      const meta = speaker === 'assistant'
+        ? inferAssistantStructuredMeta(text)
+        : inferCandidateStructuredMeta();
+
+      structuredTurnIndex += 1;
+
+      postToParent('clarity.live.turn', {
+        uid: UID || CTX?.uid || CTX?.linkId || '',
+        linkId: UID || CTX?.uid || CTX?.linkId || '',
+        sessionId: CTX?.sessionId || CTX?.liveSessionId || '',
+        companyId: COMPANY_ID || CTX?.companyId || '',
+        productType: looksAssessmentContext(CTX) ? 'modul1' : 'interview',
+        moduleArea: CTX?.moduleArea || '',
+        mode: AUDIO_ONLY ? 'audio' : (CTX?.mode || 'video'),
+        position: CTX?.position || '',
+        candidateName: CTX?.candidateName || CTX?.name || '',
+        candidateEmail: CTX?.candidateEmail || CTX?.employeeEmail || '',
+        turnIndex: structuredTurnIndex,
+        questionIndex: meta.questionIndex || 0,
+        subTurnIndex: meta.subTurnIndex || 0,
+        role: meta.role,
+        speaker: meta.role,
+        turnType: meta.turnType,
+        source: meta.role === 'assistant' ? 'assistant_audio' : 'realtime_input',
+        originalText: text,
+        cleanText: text,
+        originalLang: activeInterviewLang(CTX),
+        reportLang: activeReportLang(CTX),
+        isFinal: payload.final !== false,
+        isMainQuestion: !!meta.isMainQuestion,
+        isFollowUp: !!meta.isFollowUp,
+        isCandidateAnswer: meta.role === 'candidate' && !!meta.isCandidateAnswer,
+        isIncludedInReport: meta.isIncludedInReport !== false,
+        isTechnical: meta.turnType === 'system',
+        itemId: payload.itemId || '',
+        responseId: payload.responseId || '',
+        sourceEvent: payload.sourceEvent || '',
+        createdAt: payload.ts || new Date().toISOString(),
+        metaJson: {
+          transcriptSeq: payload.seq || 0,
+          realtimeModel: REALTIME_MODEL,
+          voice: effectiveRealtimeVoice(CTX),
+          assessment: looksAssessmentContext(CTX),
+          questionSet: CTX?.questionSet || '',
+          totalQuestionCount: CTX?.totalQuestionCount || CTX?.questionCount || ''
+        }
+      });
+    } catch (e) {
+      log('[TURN] emit failed', errMsg(e));
+    }
+  }
 
   applyStaticTexts();
   setStatus('info', t('init'));
@@ -1059,6 +1242,7 @@
 
     log('[TRANSCRIPT]', payload);
     postToParent('rt.transcript.partial', payload);
+    emitStructuredTurnFromTranscript(payload);
   }
 
   function isInterviewDe(ctx = {}) {
