@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v3.9.8 AUDIO_START_TIMER_DECLARED: v3.9.7 + declared early-closing recovery timer so audio start no longer breaks -->
+  <!-- v3.10.0 RECORDER_UI_PROCESS_LOCK: recorder status is recording-only until parent confirms final processing; stop button is hidden after hangup/upload -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -290,9 +290,10 @@
       mediaBlocked: 'Mikrofon oder Kamera konnten nicht gestartet werden. Bitte prüfen Sie die Berechtigungen.',
       startError: 'Das Interview konnte nicht gestartet werden. Bitte bleiben Sie auf der Seite und versuchen Sie es erneut.',
       processing: 'Das Interview wurde beendet. Bitte bleiben Sie noch einen Moment auf dieser Seite, während die Verarbeitung abgeschlossen wird.',
-      uploadPreparing: 'Ihr Interview wird verarbeitet. Sie können in der Zwischenzeit optional eine Bewertung abgeben.',
-      uploadReady: 'Alle Daten wurden erfolgreich verarbeitet. Sie können dieses Fenster jetzt schließen. CLARITY wünscht Ihnen weiterhin viel Erfolg und einen schönen Tag.',
-      uploadStillProcessing: 'Ihr Interview wurde gespeichert. Die Verarbeitung wird abgeschlossen. Bitte bleiben Sie noch einen Moment auf der Seite.',
+      uploadPreparing: 'Die Aufnahme wird gespeichert. Bitte bleiben Sie auf der Seite.',
+      recordingSaved: 'Die Aufnahme wurde erfolgreich gespeichert. Bitte bleiben Sie noch kurz auf der Seite, bis die Statusanzeige vollständig abgeschlossen ist. Vielen Dank für Ihre Geduld.',
+      uploadReady: 'Alle Daten wurden erfolgreich verarbeitet. Vielen Dank für Ihre Geduld. Sie können dieses Fenster jetzt schließen. CLARITY wünscht Ihnen weiterhin viel Erfolg und einen schönen Tag.',
+      uploadStillProcessing: 'Die Aufnahme wurde beendet. Bitte bleiben Sie noch kurz auf der Seite, bis die Statusanzeige vollständig abgeschlossen ist.',
       fallbackEnd: 'Bitte beenden Sie das Interview über den Button „Interview beenden“ und bleiben Sie noch einen Moment auf der Seite. Die Verarbeitung startet anschließend automatisch.',
       stopButton: 'Interview beenden',
       cameraLabel: 'Kamera-Vorschau',
@@ -314,9 +315,10 @@
       mediaBlocked: 'Microphone or camera could not be started. Please check your permissions.',
       startError: 'The interview could not be started. Please stay on this page and try again.',
       processing: 'The interview has ended. Please stay on this page for a moment while processing is completed.',
-      uploadPreparing: 'Your interview is being processed. You may optionally leave a rating in the meantime.',
-      uploadReady: 'All data has been processed successfully. You may now close this window. CLARITY wishes you continued success and a pleasant day.',
-      uploadStillProcessing: 'Your interview has been saved. Processing is being completed. Please stay on this page for a moment.',
+      uploadPreparing: 'The recording is being saved. Please stay on this page.',
+      recordingSaved: 'The recording has been saved successfully. Please stay on this page until the status display is fully completed. Thank you for your patience.',
+      uploadReady: 'All data has been processed successfully. Thank you for your patience. You may now close this window. CLARITY wishes you continued success and a pleasant day.',
+      uploadStillProcessing: 'The recording has ended. Please stay on this page until the status display is fully completed.',
       fallbackEnd: 'Please end the interview using the “End interview” button and stay on this page for a moment. Processing will then start automatically.',
       stopButton: 'End interview',
       cameraLabel: 'Camera preview',
@@ -338,9 +340,10 @@
       mediaBlocked: 'No se pudo iniciar el micrófono o la cámara. Revise los permisos.',
       startError: 'No se pudo iniciar la entrevista. Permanezca en esta página e inténtelo de nuevo.',
       processing: 'La entrevista ha finalizado. Permanezca un momento en esta página mientras se completa el procesamiento.',
-      uploadPreparing: 'Su entrevista se está procesando. Mientras tanto, puede dejar una valoración si lo desea.',
-      uploadReady: 'Todos los datos se han procesado correctamente. Ya puede cerrar esta ventana. CLARITY le desea mucho éxito y un buen día.',
-      uploadStillProcessing: 'Su entrevista se ha guardado. El procesamiento se está completando. Permanezca un momento en esta página.',
+      uploadPreparing: 'La grabación se está guardando. Permanezca en esta página.',
+      recordingSaved: 'La grabación se ha guardado correctamente. Permanezca en esta página hasta que el estado haya finalizado por completo. Gracias por su paciencia.',
+      uploadReady: 'Todos los datos se han procesado correctamente. Gracias por su paciencia. Ya puede cerrar esta ventana. CLARITY le desea mucho éxito y un buen día.',
+      uploadStillProcessing: 'La grabación ha finalizado. Permanezca en esta página hasta que el estado haya finalizado por completo.',
       fallbackEnd: 'Finalice la entrevista con el botón “Finalizar entrevista” y permanezca un momento en esta página. El procesamiento comenzará automáticamente después.',
       stopButton: 'Finalizar entrevista',
       cameraLabel: 'Vista previa de cámara',
@@ -362,9 +365,10 @@
       mediaBlocked: 'Le microphone ou la caméra n’a pas pu être démarré. Veuillez vérifier les autorisations.',
       startError: 'L’entretien n’a pas pu démarrer. Veuillez rester sur cette page et réessayer.',
       processing: 'L’entretien est terminé. Veuillez rester quelques instants sur cette page pendant la finalisation du traitement.',
-      uploadPreparing: 'Votre entretien est en cours de traitement. Vous pouvez laisser une évaluation entre-temps si vous le souhaitez.',
-      uploadReady: 'Toutes les données ont été traitées avec succès. Vous pouvez maintenant fermer cette fenêtre. CLARITY vous souhaite beaucoup de succès et une bonne journée.',
-      uploadStillProcessing: 'Votre entretien a été enregistré. Le traitement est en cours de finalisation. Veuillez rester encore un moment sur cette page.',
+      uploadPreparing: 'L’enregistrement est en cours de sauvegarde. Veuillez rester sur cette page.',
+      recordingSaved: 'L’enregistrement a été sauvegardé avec succès. Veuillez rester sur cette page jusqu’à ce que l’indicateur d’état soit entièrement terminé. Merci pour votre patience.',
+      uploadReady: 'Toutes les données ont été traitées avec succès. Merci pour votre patience. Vous pouvez maintenant fermer cette fenêtre. CLARITY vous souhaite beaucoup de succès et une bonne journée.',
+      uploadStillProcessing: 'L’enregistrement est terminé. Veuillez rester sur cette page jusqu’à ce que l’indicateur d’état soit entièrement terminé.',
       fallbackEnd: 'Veuillez terminer l’entretien avec le bouton « Terminer l’entretien » et rester quelques instants sur cette page. Le traitement démarrera ensuite automatiquement.',
       stopButton: 'Terminer l’entretien',
       cameraLabel: 'Aperçu caméra',
@@ -386,9 +390,10 @@
       mediaBlocked: 'Non è stato possibile avviare microfono o videocamera. Controlli le autorizzazioni.',
       startError: 'Non è stato possibile avviare il colloquio. Rimanga su questa pagina e riprovi.',
       processing: 'Il colloquio è terminato. Rimanga ancora un momento su questa pagina mentre l’elaborazione viene completata.',
-      uploadPreparing: 'Il colloquio è in fase di elaborazione. Nel frattempo può lasciare una valutazione, se lo desidera.',
-      uploadReady: 'Tutti i dati sono stati elaborati correttamente. Ora può chiudere questa finestra. CLARITY le augura ancora molto successo e una buona giornata.',
-      uploadStillProcessing: 'Il colloquio è stato salvato. L’elaborazione è in fase di completamento. Rimanga ancora un momento su questa pagina.',
+      uploadPreparing: 'La registrazione viene salvata. Rimanga su questa pagina.',
+      recordingSaved: 'La registrazione è stata salvata correttamente. Rimanga su questa pagina finché l’indicatore di stato non sarà completamente terminato. Grazie per la pazienza.',
+      uploadReady: 'Tutti i dati sono stati elaborati correttamente. Grazie per la pazienza. Ora può chiudere questa finestra. CLARITY le augura ancora molto successo e una buona giornata.',
+      uploadStillProcessing: 'La registrazione è terminata. Rimanga su questa pagina finché l’indicatore di stato non sarà completamente terminato.',
       fallbackEnd: 'Termini il colloquio con il pulsante “Termina colloquio” e rimanga ancora un momento su questa pagina. L’elaborazione partirà automaticamente subito dopo.',
       stopButton: 'Termina colloquio',
       cameraLabel: 'Anteprima videocamera',
@@ -782,6 +787,7 @@
       document.getElementById('systemLabel').textContent = t('systemLabel');
       document.getElementById('autoplayHint').textContent = t('autoplayHint');
       $audioBadge.textContent = AUDIO_ONLY ? t('audioReady') : t('audioPreparing');
+      setStopButtonAvailable(true);
     } catch(_) {}
   }
 
@@ -914,6 +920,15 @@
       kind === 'warn' ? '#92400e' :
       '#334155';
   }
+
+  function setStopButtonAvailable(available){
+    try {
+      if (!$btnStop) return;
+      $btnStop.disabled = !available;
+      $btnStop.style.display = available ? '' : 'none';
+    } catch(_) {}
+  }
+
 
   function setProg(pct){
     try {
@@ -3092,6 +3107,7 @@
     uploadFinished = false;
 
     try {
+      setStopButtonAvailable(false);
       $muxState.textContent = 'creating';
       setProg(15);
       setStatus('warn', t('uploadPreparing'));
@@ -3146,7 +3162,7 @@
       uploadFinished = true;
 
       if (finalAsset?.assetStatus === 'ready') {
-        setStatus('ok', t('uploadReady'));
+        setStatus('ok', t('recordingSaved') || t('uploadStillProcessing'));
       } else {
         setStatus('warn', t('uploadStillProcessing'));
       }
@@ -3520,6 +3536,7 @@
     try {
       destroyed = false;
       applyStaticTexts();
+      setStopButtonAvailable(true);
       setStatus('info', t('init'));
 
       await setupLocalMedia();
@@ -3569,7 +3586,17 @@
     } catch(e) {
       setStatus('err', t('startError'));
       log('[Start error]', errMsg(e));
-      postToParent('clarity.live.error', { message: errMsg(e) });
+      postToParent('clarity.live.error', {
+        code: String(errMsg(e)).split(':')[0] || 'start_error',
+        message: errMsg(e),
+        phase: 'start',
+        rtcState: pc?.connectionState || '',
+        iceState: pc?.iceConnectionState || '',
+        recordingStarted: !!recordingStartedAt,
+        uploadStarted: !!uploadStarted,
+        audioOnly: AUDIO_ONLY,
+        mode: AUDIO_ONLY ? 'audio' : (CTX?.mode || 'video')
+      });
     }
   }
 
@@ -3584,6 +3611,7 @@
     if (destroyed && reason !== 'user_fallback_end') return;
 
     destroyed = true;
+    setStopButtonAvailable(false);
     setStatus('warn', t('processing'));
     postToParent('clarity.live.processing_started', {
       uid: UID,
@@ -3679,7 +3707,13 @@
       startInterview();
     }
 
+    else if (type === 'clarity.live.processing_complete'){
+      setStopButtonAvailable(false);
+      setStatus('ok', t('uploadReady'));
+    }
+
     else if (type === 'clarity.live.stop' || type === 'clarity.live.hangup'){
+      setStopButtonAvailable(false);
       setStatus('warn', t('fallbackEnd'));
       hangup('parent_stop');
     }
@@ -3706,6 +3740,8 @@
   });
 
   $btnStop.addEventListener('click', () => {
+    if ($btnStop.disabled) return;
+    setStopButtonAvailable(false);
     setStatus('warn', t('fallbackEnd'));
     hangup('user_fallback_end');
   });
