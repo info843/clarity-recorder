@@ -773,6 +773,69 @@
     return merged;
   }
 
+
+  // v3.10.1 VIDEO_START_RESTORE
+  // Parent/Page-Kontext kann historisch Werte wie "live-video", "video_chat",
+  // "mixMode" usw. liefern. Der Realtime-Token-Endpoint braucht aber einen
+  // stabilen technischen Medienmodus. Ohne diese Normalisierung können Video-Links
+  // vor dem RTC-Aufbau mit token_error abbrechen, obwohl Audio funktioniert.
+  function canonicalRealtimeMediaMode(ctx = CTX){
+    const raw = String(
+      ctx?.mediaMode ||
+      ctx?.recordingMode ||
+      ctx?.interviewMode ||
+      ctx?.assessmentMode ||
+      ctx?.mode ||
+      MODE_RAW ||
+      ''
+    ).trim().toLowerCase().replace(/_/g, '-');
+
+    if (AUDIO_ONLY || raw === 'audio' || raw === 'audio-only' || raw === 'audioonly' || raw === 'audio-chat') {
+      return 'audio';
+    }
+
+    if (
+      !raw ||
+      raw === 'video' ||
+      raw === 'live-video' ||
+      raw === 'video-only' ||
+      raw === 'videoonly' ||
+      raw === 'video-chat' ||
+      raw === 'mix' ||
+      raw === 'mixmode' ||
+      raw === 'hybrid'
+    ) {
+      return 'video';
+    }
+
+    if (raw.includes('audio') && !raw.includes('video')) return 'audio';
+    if (raw.includes('video') || raw.includes('mix') || raw.includes('hybrid')) return 'video';
+
+    return AUDIO_ONLY ? 'audio' : 'video';
+  }
+
+  function classifyStartError(message){
+    const m = String(message || '').toLowerCase();
+    if (m.includes('token_http') || m.includes('token_error') || m.includes('client_secret')) return 'token_error';
+    if (m.includes('remote_track_timeout')) return 'rtc_start_timeout';
+    if (m.includes('realtime_handshake')) return 'realtime_handshake_error';
+    if (m.includes('permission') || m.includes('notallowed') || m.includes('notreadable') || m.includes('device')) return 'media_permission_error';
+    if (m.includes('rtc') || m.includes('ice')) return 'rtc_error';
+    return 'start_error';
+  }
+
+  function withStartTimeout(promise, ms, label){
+    let timer = null;
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(label || 'start_timeout')), Math.max(1000, Number(ms) || 20000));
+      })
+    ]).finally(() => {
+      try { if (timer) clearTimeout(timer); } catch(_) {}
+    });
+  }
+
   function t(key){
     const lk = activeInterviewLang(CTX);
     return UI_TEXTS[lk]?.[key] || UI_TEXTS.en[key] || key;
@@ -3543,9 +3606,13 @@
 
       const initialInterviewLang = activeInterviewLang(CTX);
 
+      const tokenMediaMode = canonicalRealtimeMediaMode(CTX);
+
       log('[LIVE] startInterview', {
         audioOnly: AUDIO_ONLY,
         mode: AUDIO_ONLY ? 'audio' : 'video',
+        tokenMediaMode,
+        originalMode: CTX?.mode || MODE_RAW || '',
         uid: UID,
         companyId: COMPANY_ID,
         lang: initialInterviewLang
@@ -3562,9 +3629,15 @@
         userCommLang: getInterviewLangRaw(CTX),
         reportLang: getReportLangRaw(CTX),
         reportLanguage: getReportLangRaw(CTX),
-        mode: AUDIO_ONLY ? 'audio' : (CTX.mode || 'video'),
-        audioOnly: AUDIO_ONLY,
-        noVideo: AUDIO_ONLY,
+        // v3.10.1: Token stabilisieren. Alte Page-Werte wie live-video/video_chat/mixmode
+        // dürfen nicht als technischer Token-Modus durchgereicht werden.
+        mode: tokenMediaMode,
+        mediaMode: tokenMediaMode,
+        recordingMode: tokenMediaMode,
+        originalMode: CTX.mode || MODE_RAW || '',
+        requestedMode: CTX.mode || MODE_RAW || tokenMediaMode,
+        audioOnly: tokenMediaMode === 'audio',
+        noVideo: tokenMediaMode === 'audio',
         voice: effectiveRealtimeVoice(CTX),
         debug: true,
         allowNoInvite: true
@@ -3578,24 +3651,33 @@
       CTX = normalizeIncomingContext({ ...(ctx || {}), ...CTX });
       applyStaticTexts();
 
-      await remoteTrackReady;
+      // If no remote track arrives, do not leave the candidate in an endless "started" state.
+      // This becomes a recoverable start error in the parent page before recording/upload begins.
+      await withStartTimeout(remoteTrackReady, 26000, 'remote_track_timeout');
       await ensureAudioUnlocked();
 
       postToParent('clarity.live.ready', {});
       setStatus('ok', t('connected'));
     } catch(e) {
+      const message = errMsg(e);
+      const code = classifyStartError(message);
+      const tokenMediaMode = canonicalRealtimeMediaMode(CTX);
       setStatus('err', t('startError'));
-      log('[Start error]', errMsg(e));
+      log('[Start error]', { code, message, mode: tokenMediaMode, originalMode: CTX?.mode || MODE_RAW || '' });
       postToParent('clarity.live.error', {
-        code: String(errMsg(e)).split(':')[0] || 'start_error',
-        message: errMsg(e),
-        phase: 'start',
+        code,
+        message,
+        phase: 'startInterview',
+        uid: UID || CTX.uid || CTX.linkId || '',
+        companyId: COMPANY_ID || CTX.companyId || '',
+        mode: tokenMediaMode,
+        originalMode: CTX?.mode || MODE_RAW || '',
+        audioOnly: tokenMediaMode === 'audio',
         rtcState: pc?.connectionState || '',
         iceState: pc?.iceConnectionState || '',
         recordingStarted: !!recordingStartedAt,
         uploadStarted: !!uploadStarted,
-        audioOnly: AUDIO_ONLY,
-        mode: AUDIO_ONLY ? 'audio' : (CTX?.mode || 'video')
+        uploadFinished: !!uploadFinished
       });
     }
   }
