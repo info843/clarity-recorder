@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v3.9.7 INTERVIEW_END_GUARD_FAST_FINAL: natural follow-ups + Q-lock + robust closing hangup -->
+  <!-- v3.9.8 AUDIO_START_TIMER_DECLARED: v3.9.7 + declared early-closing recovery timer so audio start no longer breaks -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -1018,6 +1018,9 @@
   let structuredAwaitingFollowUpQuestion = false;
   const structuredFollowUpAskedForQuestion = Object.create(null);
   let structuredEarlyClosingContinueRequests = 0;
+  // v3.9.8: must be declared before startInterview() resets it.
+  // Without this declaration, strict-mode assignment throws before media/token startup.
+  let structuredEarlyClosingRecoveryTimer = null;
 
   function textHasQuestion(text){
     const t = String(text || '').trim();
