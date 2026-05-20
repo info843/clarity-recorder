@@ -1066,6 +1066,16 @@
   let FINAL_HANGUP_TIMER = null;
   let interviewStartedAt = 0;
   let userUtterances = 0;
+  // v3.10.6: GA Realtime may not always emit completed user transcription events.
+  // We therefore count raw input-audio conversation items as candidate responses for
+  // control flow only. These counters are never used as transcript text in the PDF.
+  const seenUserAudioItemIds = new Set();
+  let userAudioItems = 0;
+  let targetMainQuestionReachedAt = 0;
+  let targetAutoFinishTimer = null;
+  let targetExtraQuestionAutoFinishTimer = null;
+  const TARGET_QUESTION_ANSWER_GRACE_MS = Math.max(30000, Math.min(120000, Number(Q.get('targetAnswerGraceMs') || 65000) || 65000));
+  const EXTRA_AFTER_TARGET_FINISH_MS = Math.max(1500, Math.min(12000, Number(Q.get('extraAfterTargetFinishMs') || 4500) || 4500));
   const MIN_SECONDS_BEFORE_END = 120;
   const MIN_USER_UTTERANCES = 7;
 
@@ -1404,6 +1414,14 @@
       // For live interview products, never let an extra main question exceed the chosen Q-set.
       // Extra questions after the cap are treated as non-report system context unless they are follow-ups.
       if (isInterviewLiveContext(CTX) && structuredCurrentQuestionIndex >= target) {
+        // Q-set is complete: do not allow an endless interview.
+        // Extra assistant questions are kept out of the report and trigger a forced close.
+        try {
+          if (targetExtraQuestionAutoFinishTimer) clearTimeout(targetExtraQuestionAutoFinishTimer);
+          targetExtraQuestionAutoFinishTimer = setTimeout(() => {
+            sendFinalCloseInstruction('extra_question_after_target', true);
+          }, EXTRA_AFTER_TARGET_FINISH_MS);
+        } catch(_) {}
         structuredLastAssistantTurnType = 'system';
         return {
           role: 'assistant',
@@ -1418,6 +1436,10 @@
       }
 
       structuredCurrentQuestionIndex += 1;
+      if (isInterviewLiveContext(CTX) && structuredCurrentQuestionIndex >= target && !targetMainQuestionReachedAt) {
+        targetMainQuestionReachedAt = Date.now();
+        scheduleTargetReachedAutoFinish('target_main_question_asked', TARGET_QUESTION_ANSWER_GRACE_MS);
+      }
       structuredCurrentSubTurnIndex = 0;
       structuredAwaitingFollowUpQuestion = false;
       try { if (structuredEarlyClosingRecoveryTimer) clearTimeout(structuredEarlyClosingRecoveryTimer); } catch(_) {}
@@ -1690,7 +1712,11 @@
     });
   }
 
-  function shouldAutoFinishInterview(){
+  function effectiveCandidateResponseCount(){
+    return Math.max(Number(userUtterances || 0), Number(userAudioItems || 0));
+  }
+
+  function shouldAutoFinishInterview({ forceAfterTarget = false } = {}){
     if (!STARTED || END_CALLED || FINAL_HANGUP_TIMER) return false;
     if (!isInterviewLiveContext(CTX)) return false;
     if (isInterviewHybrid(CTX)) return false;
@@ -1698,35 +1724,41 @@
 
     const target = interviewMainQuestionTarget(CTX);
     const elapsedMs = Date.now() - interviewStartedAt;
-    const targetReached = structuredCurrentQuestionIndex >= target && userUtterances >= Math.max(MIN_USER_UTTERANCES, target - 1);
-    const nearTargetAndAnswered = structuredCurrentQuestionIndex >= Math.max(1, target - 1) && userUtterances >= Math.max(MIN_USER_UTTERANCES, target);
+    const answerCount = effectiveCandidateResponseCount();
+    const targetReached = structuredCurrentQuestionIndex >= target;
+    const hasEnoughResponses = answerCount >= Math.max(3, target - 1);
     const longEnough = elapsedMs >= Math.max(180000, target * 24000);
 
-    return targetReached || (nearTargetAndAnswered && longEnough);
+    if (forceAfterTarget && targetReached) return true;
+    return (targetReached && hasEnoughResponses) || (targetReached && longEnough);
   }
 
-  function requestAutoFinishInterview(source){
-    if (!shouldAutoFinishInterview()) return;
+  function sendFinalCloseInstruction(source, forced = false){
+    if (END_CALLED || FINAL_HANGUP_TIMER) return;
+    if (!forced && !shouldAutoFinishInterview()) return;
 
     if (FINAL_MESSAGE_SPOKEN) {
       beginFinalHangup(source || 'autofinish_final_spoken');
       return;
     }
 
-    if (structuredAutoFinishRequested) return;
+    if (structuredAutoFinishRequested && !forced) return;
     structuredAutoFinishRequested = true;
 
     const lk = activeInterviewLang(CTX);
     const finalClose = finalClosingText({ ...CTX, lang: lk });
     const instruction = lk === 'de'
-      ? `Bitte beende das Interview jetzt. Sage exakt diesen Abschluss ohne zusätzliche Erklärungen: „${finalClose}“ Danach rufe end_interview auf.`
-      : `Please end the interview now. Say exactly this closing message without additional explanation: “${finalClose}” Then call end_interview.`;
+      ? `Das Interview ist jetzt abgeschlossen. Stelle keine weitere Frage. Sage jetzt exakt diesen Abschluss ohne zusätzliche Erklärungen: „${finalClose}“ Danach rufe end_interview auf.`
+      : `The interview is now complete. Do not ask another question. Now say exactly this closing message without additional explanation: “${finalClose}” Then call end_interview.`;
 
     log('[END] autofinish requested', {
       source: source || '',
+      forced,
       mainQuestions: structuredCurrentQuestionIndex,
       targetQuestions: interviewMainQuestionTarget(CTX),
-      userUtterances
+      userUtterances,
+      userAudioItems,
+      effectiveCandidateResponses: effectiveCandidateResponseCount()
     });
 
     try {
@@ -1741,11 +1773,14 @@
 
     setTimeout(() => {
       if (END_CALLED || FINAL_HANGUP_TIMER) return;
-      if (!shouldAutoFinishInterview()) return;
       log('[END] autofinish force hangup after missing model tool/final audio');
       FINAL_MESSAGE_SPOKEN = true;
       beginFinalHangup('autofinish_force_timeout');
     }, STRUCTURED_AUTOFINISH_FORCE_MS);
+  }
+
+  function requestAutoFinishInterview(source){
+    sendFinalCloseInstruction(source || 'autofinish', false);
   }
 
   function scheduleInterviewAutoFinishCheck(source){
@@ -1754,6 +1789,49 @@
     structuredAutoFinishTimer = setTimeout(() => {
       requestAutoFinishInterview(source || 'idle_after_candidate_answer');
     }, STRUCTURED_AUTOFINISH_IDLE_MS);
+  }
+
+  function scheduleTargetReachedAutoFinish(source, delayMs){
+    if (!isInterviewLiveContext(CTX) || isInterviewHybrid(CTX)) return;
+    if (END_CALLED || FINAL_HANGUP_TIMER) return;
+    if (structuredCurrentQuestionIndex < interviewMainQuestionTarget(CTX)) return;
+
+    const delay = Number.isFinite(Number(delayMs)) ? Number(delayMs) : TARGET_QUESTION_ANSWER_GRACE_MS;
+    try { if (targetAutoFinishTimer) clearTimeout(targetAutoFinishTimer); } catch(_) {}
+    targetAutoFinishTimer = setTimeout(() => {
+      if (END_CALLED || FINAL_HANGUP_TIMER) return;
+      if (structuredCurrentQuestionIndex < interviewMainQuestionTarget(CTX)) return;
+      sendFinalCloseInstruction(source || 'target_reached_timer', true);
+    }, Math.max(1500, delay));
+
+    log('[END] target reached autofinish scheduled', {
+      source: source || '',
+      delayMs: Math.max(1500, delay),
+      mainQuestions: structuredCurrentQuestionIndex,
+      targetQuestions: interviewMainQuestionTarget(CTX),
+      userUtterances,
+      userAudioItems
+    });
+  }
+
+  function markCandidateAudioItem(itemId, source){
+    const key = String(itemId || `${source || 'audio'}-${Date.now()}-${Math.random()}`).trim();
+    if (seenUserAudioItemIds.has(key)) return;
+    seenUserAudioItemIds.add(key);
+    userAudioItems += 1;
+    log('[USER-AUDIO] counted candidate audio item', {
+      source: source || '',
+      itemId: key,
+      userAudioItems,
+      userUtterances,
+      mainQuestions: structuredCurrentQuestionIndex,
+      targetQuestions: interviewMainQuestionTarget(CTX)
+    });
+    if (structuredCurrentQuestionIndex >= interviewMainQuestionTarget(CTX)) {
+      scheduleTargetReachedAutoFinish('candidate_audio_after_target', STRUCTURED_AUTOFINISH_IDLE_MS);
+    } else {
+      scheduleInterviewAutoFinishCheck('candidate_audio_item');
+    }
   }
 
   function canEndNow(){
@@ -2134,6 +2212,11 @@
 
       if (txtRaw) {
         userUtterances += 1;
+        if (structuredCurrentQuestionIndex >= interviewMainQuestionTarget(CTX)) {
+          scheduleTargetReachedAutoFinish('user_transcript_after_target', STRUCTURED_AUTOFINISH_IDLE_MS);
+        } else {
+          scheduleInterviewAutoFinishCheck('user_transcript_completed');
+        }
 
         emitTranscript('user', txtRaw, {
           itemId: data.item_id || data.itemId || '',
@@ -2213,10 +2296,14 @@
       const hasInputText = contentTypes.includes('input_text');
 
       if (hasInputAudio) {
+        const audioItemId = it.id || data.item_id || data.itemId || '';
         log('[TRANSCRIPT] user input_audio item observed, waiting for transcription.completed', {
-          itemId: it.id || data.item_id || '',
+          itemId: audioItemId,
           contentTypes
         });
+        // GA fallback: if no completed transcription event follows, this still lets
+        // the technical Q-cap/hangup logic know that the candidate answered.
+        markCandidateAudioItem(audioItemId, eventType);
         return;
       }
 
@@ -2439,6 +2526,14 @@
         }
       }
 
+      return;
+    }
+
+    /* RESPONSE DONE — GA safety: after the target is reached, do not wait forever for user transcription events. */
+    if (eventType === 'response.done' || eventType === 'response.completed') {
+      if (isInterviewLiveContext(CTX) && !isInterviewHybrid(CTX) && structuredCurrentQuestionIndex >= interviewMainQuestionTarget(CTX)) {
+        scheduleTargetReachedAutoFinish('response_done_after_target', STRUCTURED_AUTOFINISH_IDLE_MS);
+      }
       return;
     }
 
@@ -3789,6 +3884,13 @@
 
     interviewStartedAt = Date.now();
     userUtterances = 0;
+    try { seenUserAudioItemIds.clear(); } catch(_) {}
+    userAudioItems = 0;
+    targetMainQuestionReachedAt = 0;
+    try { if (targetAutoFinishTimer) clearTimeout(targetAutoFinishTimer); } catch(_) {}
+    try { if (targetExtraQuestionAutoFinishTimer) clearTimeout(targetExtraQuestionAutoFinishTimer); } catch(_) {}
+    targetAutoFinishTimer = null;
+    targetExtraQuestionAutoFinishTimer = null;
     structuredAutoFinishRequested = false;
     try { if (structuredAutoFinishTimer) clearTimeout(structuredAutoFinishTimer); } catch(_) {}
     structuredAutoFinishTimer = null;
