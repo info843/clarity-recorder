@@ -2396,6 +2396,46 @@
             sourceEvent: eventType,
             final: true
           });
+
+          // v3.10.5 HOTFIX: In GA Realtime the final spoken text often arrives
+          // reliably via response.output_item.done, while response.audio_transcript.done
+          // and/or the end_interview tool call may be delayed or absent.
+          // Treat the recognized closing/handoff text as a valid processing trigger.
+          if (finalClosingDetected(finalText)) {
+            if (shouldBlockEarlyInterviewClosing()) {
+              const target = interviewMainQuestionTarget(CTX);
+              const closeEnoughForSafeFinish =
+                structuredCurrentQuestionIndex >= Math.max(1, target - 1) &&
+                userUtterances >= Math.max(MIN_USER_UTTERANCES, target - 1);
+
+              if (!closeEnoughForSafeFinish) {
+                requestMissingInterviewQuestion('early_final_output_item_done');
+                return;
+              }
+
+              log('[QLOCK] accepted near-complete final closing from output_item.done', {
+                mainQuestions: structuredCurrentQuestionIndex,
+                targetQuestions: target,
+                userUtterances
+              });
+            }
+
+            FINAL_MESSAGE_SPOKEN = true;
+            FINAL_MESSAGE_ITEM_ID = it.id || data.item_id || data.itemId || '';
+            log('[END] final/handoff text detected in output_item.done', {
+              itemId: FINAL_MESSAGE_ITEM_ID,
+              responseId: data.response_id || data.responseId || '',
+              mainQuestions: structuredCurrentQuestionIndex,
+              targetQuestions: interviewMainQuestionTarget(CTX),
+              userUtterances
+            });
+
+            if (!FINAL_HANGUP_TIMER && !END_CALLED) {
+              beginFinalHangup(isAssessmentHybrid(CTX)
+                ? 'hybrid_handoff_output_item_done'
+                : (isInterviewHybrid(CTX) ? 'interview_handoff_output_item_done' : 'final_output_item_done'));
+            }
+          }
         }
       }
 
