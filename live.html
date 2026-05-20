@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v3.10.0 RECORDER_UI_PROCESS_LOCK: recorder status is recording-only until parent confirms final processing; stop button is hidden after hangup/upload -->
+  <!-- v3.11.0 HARD_END_BASELINE: strict Q-cap hard-end; locks listening after target; forces final hangup/upload without changing natural flow -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -1074,8 +1074,14 @@
   let targetMainQuestionReachedAt = 0;
   let targetAutoFinishTimer = null;
   let targetExtraQuestionAutoFinishTimer = null;
+  let HARD_END_LOCK = false;
+  let TARGET_FINALIZE_REQUESTED = false;
+  let HARD_END_WATCHDOG_TIMER = null;
   const TARGET_QUESTION_ANSWER_GRACE_MS = Math.max(30000, Math.min(120000, Number(Q.get('targetAnswerGraceMs') || 65000) || 65000));
-  const EXTRA_AFTER_TARGET_FINISH_MS = Math.max(1500, Math.min(12000, Number(Q.get('extraAfterTargetFinishMs') || 4500) || 4500));
+  const TARGET_FOLLOWUP_WAIT_MS = Math.max(6000, Math.min(20000, Number(Q.get('targetFollowupWaitMs') || 11000) || 11000));
+  const TARGET_FINALIZE_AFTER_ANSWER_MS = Math.max(2000, Math.min(9000, Number(Q.get('targetFinalizeAfterAnswerMs') || 3500) || 3500));
+  const EXTRA_AFTER_TARGET_FINISH_MS = Math.max(1000, Math.min(8000, Number(Q.get('extraAfterTargetFinishMs') || 2500) || 2500));
+  const HARD_END_WATCHDOG_MS = Math.max(9000, Math.min(30000, Number(Q.get('hardEndWatchdogMs') || 14000) || 14000));
   const MIN_SECONDS_BEFORE_END = 120;
   const MIN_USER_UTTERANCES = 7;
 
@@ -1270,9 +1276,19 @@
     if (looksLikeReadyWelcome(text)) return false;
     if (looksLikeExplicitNextMainQuestion(text)) return false;
 
-    // After every interview main question, the next assistant question is the single follow-up slot.
-    // This preserves natural, topic-specific follow-ups without forcing the exact same wording.
-    return true;
+    // v3.11.0: Do NOT blindly classify the next assistant question as a follow-up.
+    // That caused real next main questions to be counted as follow-ups, delayed the Q-cap,
+    // and allowed never-ending Q10 loops. Only clear deepening/addition prompts are forced as follow-ups.
+    const followUpSignals = [
+      'add anything', 'anything else', 'can you elaborate', 'could you elaborate', 'can you clarify', 'could you clarify',
+      'give an example', 'specific example', 'tell me more', 'what exactly', 'how exactly', 'what was your role',
+      'noch etwas', 'erganzen', 'ergänzen', 'hinzufugen', 'hinzufügen', 'konkretes beispiel', 'genauer erläutern', 'genauer erlautern',
+      'können sie das näher', 'koennen sie das naeher', 'was genau', 'wie genau', 'welche rolle hatten sie',
+      'ajouter', 'un exemple', 'preciser', 'préciser', 'plus de details', 'plus de détails',
+      'anadir', 'añadir', 'un ejemplo', 'puede precisar', 'mas detalles', 'más detalles',
+      'aggiungere', 'un esempio', 'può chiarire', 'puo chiarire', 'piu dettagli', 'più dettagli'
+    ];
+    return followUpSignals.some(w => n.includes(normalizeForMatch(w)));
   }
   function isInterviewLiveContext(ctx = CTX){
     return !looksAssessmentContext(ctx) && !(typeof isAssessmentContext === 'function' && isAssessmentContext(ctx));
@@ -1419,7 +1435,7 @@
         try {
           if (targetExtraQuestionAutoFinishTimer) clearTimeout(targetExtraQuestionAutoFinishTimer);
           targetExtraQuestionAutoFinishTimer = setTimeout(() => {
-            sendFinalCloseInstruction('extra_question_after_target', true);
+            requestHardEnd('extra_question_after_target', { speakFinal: true, cancelActive: true });
           }, EXTRA_AFTER_TARGET_FINISH_MS);
         } catch(_) {}
         structuredLastAssistantTurnType = 'system';
@@ -1470,16 +1486,26 @@
 
   function inferCandidateStructuredMeta(){
     const q = structuredCurrentQuestionIndex || 0;
+    const target = interviewMainQuestionTarget(CTX);
     const isFollowUp = structuredLastAssistantTurnType === 'follow_up_question';
     const isMainAnswer = q > 0 && structuredLastAssistantTurnType === 'main_question';
     const isAnswerAddition = q > 0 && isFollowUp;
 
     if (isMainAnswer && isInterviewLiveContext(CTX)) {
       structuredAwaitingFollowUpQuestion = true;
+      if (q >= target) {
+        // Give the model a short window to ask the one allowed final follow-up.
+        // If it does not, close the interview instead of waiting indefinitely.
+        scheduleStrictTargetFinalization('target_main_answer_wait_followup', TARGET_FOLLOWUP_WAIT_MS);
+      }
     }
 
     if (isAnswerAddition) {
       structuredAwaitingFollowUpQuestion = false;
+      if (q >= target) {
+        // Final Q follow-up has been answered: close quickly and do not allow Q10.1/Q10.6 loops.
+        scheduleStrictTargetFinalization('target_followup_answer_completed', TARGET_FINALIZE_AFTER_ANSWER_MS);
+      }
     }
 
     structuredLastCandidateTurnType = isAnswerAddition ? 'answer_addition' : (isMainAnswer ? 'answer' : 'system');
@@ -1712,6 +1738,116 @@
     });
   }
 
+  function clearHardEndTimers(){
+    try { if (targetAutoFinishTimer) clearTimeout(targetAutoFinishTimer); } catch(_) {}
+    try { if (targetExtraQuestionAutoFinishTimer) clearTimeout(targetExtraQuestionAutoFinishTimer); } catch(_) {}
+    try { if (structuredAutoFinishTimer) clearTimeout(structuredAutoFinishTimer); } catch(_) {}
+    targetAutoFinishTimer = null;
+    targetExtraQuestionAutoFinishTimer = null;
+    structuredAutoFinishTimer = null;
+  }
+
+  function lockRealtimeListeningForEnd(source){
+    try {
+      dcSend({
+        type: 'session.update',
+        session: { turn_detection: { type: 'none' } }
+      });
+    } catch(_) {}
+
+    try { disableMicUplink(); } catch(_) {}
+
+    log('[HARD-END] listening locked', {
+      source: source || '',
+      mainQuestions: structuredCurrentQuestionIndex,
+      targetQuestions: interviewMainQuestionTarget(CTX),
+      userUtterances,
+      userAudioItems
+    });
+  }
+
+  function requestHardEnd(source, opts = {}){
+    if (END_CALLED || FINAL_HANGUP_TIMER) return;
+    if (!isInterviewLiveContext(CTX) || isInterviewHybrid(CTX)) {
+      sendFinalCloseInstruction(source || 'hard_end_non_interview', true);
+      return;
+    }
+    if (structuredCurrentQuestionIndex < interviewMainQuestionTarget(CTX)) return;
+
+    const speakFinal = opts.speakFinal !== false;
+    const cancelActive = opts.cancelActive !== false;
+
+    HARD_END_LOCK = true;
+    TARGET_FINALIZE_REQUESTED = true;
+    clearHardEndTimers();
+    lockRealtimeListeningForEnd(source || 'hard_end');
+    setStatus('warn', t('processing'));
+
+    postToParent('clarity.live.hard_end_lock', {
+      uid: UID,
+      companyId: COMPANY_ID,
+      source: source || '',
+      mainQuestions: structuredCurrentQuestionIndex,
+      targetQuestions: interviewMainQuestionTarget(CTX),
+      ts: new Date().toISOString()
+    });
+
+    try { if (cancelActive) dcSend({ type: 'response.cancel' }); } catch(_) {}
+
+    if (speakFinal && !FINAL_MESSAGE_SPOKEN) {
+      const lk = activeInterviewLang(CTX);
+      const finalClose = finalClosingText({ ...CTX, lang: lk });
+      const instruction = lk === 'de'
+        ? `Das Interview ist jetzt endgültig abgeschlossen. Stelle keine weitere Frage. Sage jetzt exakt diesen Abschluss ohne zusätzliche Erklärungen: „${finalClose}“ Danach rufe end_interview auf.`
+        : `The interview is now definitively complete. Do not ask another question. Now say exactly this closing message without additional explanation: “${finalClose}” Then call end_interview.`;
+
+      try {
+        dcSend({
+          type: 'conversation.item.create',
+          item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: instruction }] }
+        });
+        dcSend({ type: 'response.create', response: { conversation: 'default', modalities: ['audio'] } });
+      } catch (e) {
+        log('[HARD-END] final instruction failed', errMsg(e));
+      }
+    } else {
+      beginFinalHangup(source || 'hard_end_no_final_needed');
+      return;
+    }
+
+    try { if (HARD_END_WATCHDOG_TIMER) clearTimeout(HARD_END_WATCHDOG_TIMER); } catch(_) {}
+    HARD_END_WATCHDOG_TIMER = setTimeout(() => {
+      if (END_CALLED || FINAL_HANGUP_TIMER) return;
+      log('[HARD-END] watchdog -> force hangup/upload', {
+        source: source || '',
+        mainQuestions: structuredCurrentQuestionIndex,
+        targetQuestions: interviewMainQuestionTarget(CTX)
+      });
+      FINAL_MESSAGE_SPOKEN = true;
+      beginFinalHangup(source || 'hard_end_watchdog');
+    }, HARD_END_WATCHDOG_MS);
+  }
+
+  function scheduleStrictTargetFinalization(source, delayMs){
+    if (END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK) return;
+    if (!isInterviewLiveContext(CTX) || isInterviewHybrid(CTX)) return;
+    if (structuredCurrentQuestionIndex < interviewMainQuestionTarget(CTX)) return;
+
+    const delay = Math.max(1000, Number(delayMs) || TARGET_FINALIZE_AFTER_ANSWER_MS);
+    try { if (targetAutoFinishTimer) clearTimeout(targetAutoFinishTimer); } catch(_) {}
+    targetAutoFinishTimer = setTimeout(() => {
+      requestHardEnd(source || 'strict_target_finalization', { speakFinal: true, cancelActive: true });
+    }, delay);
+
+    log('[HARD-END] strict target finalization scheduled', {
+      source: source || '',
+      delayMs: delay,
+      mainQuestions: structuredCurrentQuestionIndex,
+      targetQuestions: interviewMainQuestionTarget(CTX),
+      followUpAsked: !!structuredFollowUpAskedForQuestion[structuredCurrentQuestionIndex || 0]
+    });
+  }
+
   function effectiveCandidateResponseCount(){
     return Math.max(Number(userUtterances || 0), Number(userAudioItems || 0));
   }
@@ -1736,6 +1872,14 @@
   function sendFinalCloseInstruction(source, forced = false){
     if (END_CALLED || FINAL_HANGUP_TIMER) return;
     if (!forced && !shouldAutoFinishInterview()) return;
+
+    if (forced && isInterviewLiveContext(CTX) && !isInterviewHybrid(CTX)) {
+      HARD_END_LOCK = true;
+      TARGET_FINALIZE_REQUESTED = true;
+      clearHardEndTimers();
+      lockRealtimeListeningForEnd(source || 'forced_final_close');
+      try { dcSend({ type: 'response.cancel' }); } catch(_) {}
+    }
 
     if (FINAL_MESSAGE_SPOKEN) {
       beginFinalHangup(source || 'autofinish_final_spoken');
@@ -1771,12 +1915,13 @@
       log('[END] autofinish instruction failed', errMsg(e));
     }
 
-    setTimeout(() => {
+    try { if (HARD_END_WATCHDOG_TIMER) clearTimeout(HARD_END_WATCHDOG_TIMER); } catch(_) {}
+    HARD_END_WATCHDOG_TIMER = setTimeout(() => {
       if (END_CALLED || FINAL_HANGUP_TIMER) return;
       log('[END] autofinish force hangup after missing model tool/final audio');
       FINAL_MESSAGE_SPOKEN = true;
       beginFinalHangup('autofinish_force_timeout');
-    }, STRUCTURED_AUTOFINISH_FORCE_MS);
+    }, forced ? HARD_END_WATCHDOG_MS : STRUCTURED_AUTOFINISH_FORCE_MS);
   }
 
   function requestAutoFinishInterview(source){
@@ -1801,7 +1946,7 @@
     targetAutoFinishTimer = setTimeout(() => {
       if (END_CALLED || FINAL_HANGUP_TIMER) return;
       if (structuredCurrentQuestionIndex < interviewMainQuestionTarget(CTX)) return;
-      sendFinalCloseInstruction(source || 'target_reached_timer', true);
+      requestHardEnd(source || 'target_reached_timer', { speakFinal: true, cancelActive: true });
     }, Math.max(1500, delay));
 
     log('[END] target reached autofinish scheduled', {
@@ -1828,7 +1973,9 @@
       targetQuestions: interviewMainQuestionTarget(CTX)
     });
     if (structuredCurrentQuestionIndex >= interviewMainQuestionTarget(CTX)) {
-      scheduleTargetReachedAutoFinish('candidate_audio_after_target', STRUCTURED_AUTOFINISH_IDLE_MS);
+      const q = structuredCurrentQuestionIndex || 0;
+      const delay = structuredFollowUpAskedForQuestion[q] ? TARGET_FINALIZE_AFTER_ANSWER_MS : TARGET_FOLLOWUP_WAIT_MS;
+      scheduleStrictTargetFinalization('candidate_audio_after_target', delay);
     } else {
       scheduleInterviewAutoFinishCheck('candidate_audio_item');
     }
@@ -1838,13 +1985,20 @@
     if (!interviewStartedAt) return false;
 
     const elapsed = (Date.now() - interviewStartedAt) / 1000;
+    const answerCount = effectiveCandidateResponseCount();
+    const target = interviewMainQuestionTarget(CTX);
+    const qComplete = !shouldBlockEarlyInterviewClosing();
 
-    if (elapsed < MIN_SECONDS_BEFORE_END) return false;
-    if (userUtterances < MIN_USER_UTTERANCES) return false;
+    // Before the Q-set is complete, keep the old safety floor.
+    if (!qComplete) {
+      if (elapsed < MIN_SECONDS_BEFORE_END) return false;
+      if (answerCount < MIN_USER_UTTERANCES) return false;
+      return false;
+    }
 
-    // Interview Q-lock: the model must not close before the selected Q-set has been completed.
-    // Assessment remains governed by its own policy because it does not use mandatory follow-ups.
-    if (shouldBlockEarlyInterviewClosing()) return false;
+    // After the selected Q-set is complete, do not ignore end_interview just because
+    // GA did not emit all completed user transcription events. Raw user audio items count here.
+    if (answerCount < Math.max(3, target - 1) && elapsed < Math.max(75, target * 9)) return false;
 
     return true;
   }
@@ -1852,6 +2006,8 @@
   function beginFinalHangup(source){
     if (END_CALLED) return;
     if (FINAL_HANGUP_TIMER) return;
+    try { if (HARD_END_WATCHDOG_TIMER) clearTimeout(HARD_END_WATCHDOG_TIMER); } catch(_) {}
+    HARD_END_WATCHDOG_TIMER = null;
 
     log('[END] final hangup scheduled', {
       source: source || 'unknown',
@@ -3898,6 +4054,10 @@
     END_REQUESTED_BY_MODEL = false;
     FINAL_MESSAGE_SPOKEN = false;
     FINAL_MESSAGE_ITEM_ID = '';
+    HARD_END_LOCK = false;
+    TARGET_FINALIZE_REQUESTED = false;
+    try { if (HARD_END_WATCHDOG_TIMER) clearTimeout(HARD_END_WATCHDOG_TIMER); } catch(_) {}
+    HARD_END_WATCHDOG_TIMER = null;
     try { if (structuredEarlyClosingRecoveryTimer) clearTimeout(structuredEarlyClosingRecoveryTimer); } catch(_) {}
     structuredEarlyClosingRecoveryTimer = null;
     if (FINAL_HANGUP_TIMER) {
@@ -4001,6 +4161,9 @@
     }
     try { if (structuredEarlyClosingRecoveryTimer) clearTimeout(structuredEarlyClosingRecoveryTimer); } catch(_) {}
     structuredEarlyClosingRecoveryTimer = null;
+    try { if (HARD_END_WATCHDOG_TIMER) clearTimeout(HARD_END_WATCHDOG_TIMER); } catch(_) {}
+    HARD_END_WATCHDOG_TIMER = null;
+    clearHardEndTimers();
 
     if (destroyed && reason !== 'user_fallback_end') return;
 
@@ -4008,6 +4171,13 @@
     setStopButtonAvailable(false);
     setStatus('warn', t('processing'));
     postToParent('clarity.live.processing_started', {
+      uid: UID,
+      companyId: COMPANY_ID,
+      reason: reason || '',
+      ts: new Date().toISOString()
+    });
+    // Compatibility event for older/current Wix page handlers. Duplicate-safe parent code should guard exports.
+    postToParent('clarity.live.ended', {
       uid: UID,
       companyId: COMPANY_ID,
       reason: reason || '',
