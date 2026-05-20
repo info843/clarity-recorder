@@ -1276,13 +1276,27 @@
     if (looksLikeReadyWelcome(text)) return false;
     if (looksLikeExplicitNextMainQuestion(text)) return false;
 
-    // v3.11.0: Do NOT blindly classify the next assistant question as a follow-up.
-    // That caused real next main questions to be counted as follow-ups, delayed the Q-cap,
-    // and allowed never-ending Q10 loops. Only clear deepening/addition prompts are forced as follow-ups.
+    // v3.11.1: Deterministic interview sequence restored.
+    // The product rule is: main question -> candidate answer -> exactly one follow-up/deepening question
+    // -> candidate addition -> next main question. Therefore the first assistant question after a main
+    // answer is the follow-up slot unless the model explicitly announces a next main question.
+    // This prevents natural follow-ups like "Könnten Sie noch ein Beispiel nennen?" or
+    // "Gibt es noch eine Kennzahl...?" from consuming the Q10/Q20/Q30 main-question count.
+    if (structuredAwaitingFollowUpQuestion) {
+      log('[QCOUNT] sequence-forced follow-up question', {
+        currentQuestion: q,
+        targetQuestions: interviewMainQuestionTarget(CTX),
+        textPreview: String(text || '').slice(0, 140)
+      });
+      return true;
+    }
+
+    // Fallback for cases where the candidate-answer event was observed but the awaiting flag
+    // was not set because GA Realtime omitted the completed transcription event.
     const followUpSignals = [
       'add anything', 'anything else', 'can you elaborate', 'could you elaborate', 'can you clarify', 'could you clarify',
       'give an example', 'specific example', 'tell me more', 'what exactly', 'how exactly', 'what was your role',
-      'noch etwas', 'erganzen', 'ergänzen', 'hinzufugen', 'hinzufügen', 'konkretes beispiel', 'genauer erläutern', 'genauer erlautern',
+      'noch etwas', 'erganzen', 'ergänzen', 'hinzufugen', 'hinzufügen', 'beispiel', 'kennzahl', 'genauer erläutern', 'genauer erlautern',
       'können sie das näher', 'koennen sie das naeher', 'was genau', 'wie genau', 'welche rolle hatten sie',
       'ajouter', 'un exemple', 'preciser', 'préciser', 'plus de details', 'plus de détails',
       'anadir', 'añadir', 'un ejemplo', 'puede precisar', 'mas detalles', 'más detalles',
@@ -1413,6 +1427,19 @@
       structuredLastAssistantTurnType = 'follow_up_question';
       structuredAwaitingFollowUpQuestion = false;
       if (q > 0) structuredFollowUpAskedForQuestion[q] = true;
+
+      // If this is the allowed follow-up after the final main question, cancel the earlier
+      // "no follow-up arrived" close timer. The close timer is then rescheduled after
+      // the candidate's follow-up answer, so the system does not hang up mid-answer.
+      if (isInterviewLiveContext(CTX) && q >= interviewMainQuestionTarget(CTX)) {
+        try { if (targetAutoFinishTimer) clearTimeout(targetAutoFinishTimer); } catch(_) {}
+        targetAutoFinishTimer = null;
+        log('[QCOUNT] final-main follow-up accepted; target close timer deferred until answer', {
+          currentQuestion: q,
+          targetQuestions: interviewMainQuestionTarget(CTX)
+        });
+      }
+
       return {
         role: 'assistant',
         turnType: 'follow_up_question',
