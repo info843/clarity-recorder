@@ -1099,6 +1099,10 @@
   // v3.9.8: must be declared before startInterview() resets it.
   // Without this declaration, strict-mode assignment throws before media/token startup.
   let structuredEarlyClosingRecoveryTimer = null;
+  let structuredAutoFinishTimer = null;
+  let structuredAutoFinishRequested = false;
+  const STRUCTURED_AUTOFINISH_IDLE_MS = Math.max(12000, Math.min(45000, Number(Q.get('autoFinishIdleMs') || 22000) || 22000));
+  const STRUCTURED_AUTOFINISH_FORCE_MS = Math.max(8000, Math.min(30000, Number(Q.get('autoFinishForceMs') || 16000) || 16000));
 
   function textHasQuestion(text){
     const t = String(text || '').trim();
@@ -1118,25 +1122,57 @@
     if (!n) return false;
 
     const transitionSignals = [
-      'nachste frage', 'nächste frage', 'zweite frage', 'dritte frage', 'vierte frage', 'funfte frage', 'fünfte frage', 'sechste frage', 'siebte frage', 'achte frage', 'neunte frage', 'zehnte frage', 'letzte frage',
-      'gehen wir weiter', 'gehen wir zur', 'kommen wir zur', 'machen wir weiter', 'nächstes thema', 'naechstes thema',
+      'nachste frage', 'naechste frage', 'nächste frage', 'zweite frage', 'dritte frage', 'vierte frage', 'funfte frage', 'fünfte frage', 'sechste frage', 'siebte frage', 'achte frage', 'neunte frage', 'zehnte frage', 'letzte frage',
+      'gehen wir weiter', 'gehen wir zur', 'kommen wir zur', 'machen wir weiter', 'nachstes thema', 'naechstes thema', 'nächstes thema',
       'next question', 'second question', 'third question', 'fourth question', 'fifth question', 'sixth question', 'seventh question', 'eighth question', 'ninth question', 'tenth question', 'last question', 'next topic', 'move on to',
       'siguiente pregunta', 'ultima pregunta', 'última pregunta', 'proxima pregunta', 'próxima pregunta',
       'question suivante', 'derniere question', 'dernière question',
       'prossima domanda', 'ultima domanda'
     ];
 
-    if (!transitionSignals.some(m => n.includes(normalizeForMatch(m)))) return false;
+    const normalizedSignals = transitionSignals.map(normalizeForMatch).filter(Boolean);
+    const transitionPos = normalizedSignals
+      .map(sig => ({ sig, idx: n.indexOf(sig) }))
+      .filter(x => x.idx >= 0)
+      .sort((a, b) => a.idx - b.idx)[0];
 
-    const after = textAfterTransitionColon(raw);
-    const afterN = normalizeForMatch(after);
-    if (!afterN) return false;
+    if (!transitionPos) return false;
 
-    // If a transition phrase introduces a substantive role-related question after a colon,
-    // it is a new main question, not a follow-up continuation offer.
-    const addOnlySignals = ['add anything', 'anything else', 'etwas erganzen', 'etwas ergänzen', 'hinzufugen', 'hinzufügen', 'ajouter', 'anadir', 'añadir', 'aggiungere'];
-    const isAddOnly = addOnlySignals.some(m => afterN.includes(normalizeForMatch(m))) && afterN.length < 140;
-    return !isAddOnly && (after.length >= 24 || textHasQuestion(after));
+    const afterColon = textAfterTransitionColon(raw);
+    const afterColonN = normalizeForMatch(afterColon);
+
+    // Classic pattern: "... next question: What ...?". Keep this as a new main question.
+    if (afterColonN) {
+      const addOnlySignals = ['add anything', 'anything else', 'etwas erganzen', 'etwas ergänzen', 'hinzufugen', 'hinzufügen', 'ajouter', 'anadir', 'añadir', 'aggiungere'];
+      const isAddOnly = addOnlySignals.some(m => afterColonN.includes(normalizeForMatch(m))) && afterColonN.length < 140;
+      return !isAddOnly && (afterColon.length >= 18 || textHasQuestion(afterColon));
+    }
+
+    // Natural speech often has no colon, e.g. "Dann gehen wir weiter zur nächsten Frage:"
+    // can be transcribed as "Dann gehen wir weiter zur nächsten Frage wie priorisieren Sie ...".
+    // In that case, detect a substantive question starter after the transition phrase.
+    const afterTransition = n.slice(transitionPos.idx + transitionPos.sig.length).trim();
+    const substantiveStarters = [
+      'was ', 'wie ', 'welche ', 'welchen ', 'welcher ', 'warum ', 'womit ', 'konnen sie ', 'koennen sie ', 'konntest du ', 'kannst du ', 'beschreiben sie ', 'beschreibe ', 'gibt es ', 'haben sie ',
+      'what ', 'how ', 'which ', 'why ', 'can you ', 'could you ', 'describe ', 'tell me ', 'do you ', 'would you ',
+      'que ', 'como ', 'cual ', 'cuál ', 'puede ', 'podria ', 'podría ',
+      'comment ', 'quel ', 'quelle ', 'pourquoi ', 'pouvez vous ',
+      'come ', 'quale ', 'perche ', 'perché ', 'puo ', 'può '
+    ].map(normalizeForMatch);
+
+    const hasSubstantiveQuestionAfterTransition = substantiveStarters.some(st => {
+      if (!st) return false;
+      const idx = afterTransition.indexOf(st);
+      return idx >= 0 && idx <= 90;
+    });
+
+    if (hasSubstantiveQuestionAfterTransition && afterTransition.length >= 18) return true;
+
+    // Long transition sentences containing a question mark are likely a new main question,
+    // while short "shall we continue?" style prompts remain follow-ups.
+    if (textHasQuestion(raw) && afterTransition.length >= 45) return true;
+
+    return false;
   }
 
   function looksLikeReadyWelcome(text){
@@ -1554,6 +1590,15 @@
     log('[TRANSCRIPT]', payload);
     postToParent('rt.transcript.partial', payload);
     emitStructuredTurnFromTranscript(payload);
+
+    if (payload.final !== false) {
+      if (String(payload.speaker || '').toLowerCase() === 'user') {
+        scheduleInterviewAutoFinishCheck('candidate_transcript_final');
+      } else if (String(payload.speaker || '').toLowerCase() === 'assistant') {
+        // New assistant activity means the model is still active; defer idle autofinish.
+        if (!finalClosingDetected(payload.text)) scheduleInterviewAutoFinishCheck('assistant_transcript_final');
+      }
+    }
   }
 
   function isInterviewDe(ctx = {}) {
@@ -1643,6 +1688,72 @@
       const w = normalizeForMatch(word);
       return w && normalized.includes(w);
     });
+  }
+
+  function shouldAutoFinishInterview(){
+    if (!STARTED || END_CALLED || FINAL_HANGUP_TIMER) return false;
+    if (!isInterviewLiveContext(CTX)) return false;
+    if (isInterviewHybrid(CTX)) return false;
+    if (!interviewStartedAt) return false;
+
+    const target = interviewMainQuestionTarget(CTX);
+    const elapsedMs = Date.now() - interviewStartedAt;
+    const targetReached = structuredCurrentQuestionIndex >= target && userUtterances >= Math.max(MIN_USER_UTTERANCES, target - 1);
+    const nearTargetAndAnswered = structuredCurrentQuestionIndex >= Math.max(1, target - 1) && userUtterances >= Math.max(MIN_USER_UTTERANCES, target);
+    const longEnough = elapsedMs >= Math.max(180000, target * 24000);
+
+    return targetReached || (nearTargetAndAnswered && longEnough);
+  }
+
+  function requestAutoFinishInterview(source){
+    if (!shouldAutoFinishInterview()) return;
+
+    if (FINAL_MESSAGE_SPOKEN) {
+      beginFinalHangup(source || 'autofinish_final_spoken');
+      return;
+    }
+
+    if (structuredAutoFinishRequested) return;
+    structuredAutoFinishRequested = true;
+
+    const lk = activeInterviewLang(CTX);
+    const finalClose = finalClosingText({ ...CTX, lang: lk });
+    const instruction = lk === 'de'
+      ? `Bitte beende das Interview jetzt. Sage exakt diesen Abschluss ohne zusätzliche Erklärungen: „${finalClose}“ Danach rufe end_interview auf.`
+      : `Please end the interview now. Say exactly this closing message without additional explanation: “${finalClose}” Then call end_interview.`;
+
+    log('[END] autofinish requested', {
+      source: source || '',
+      mainQuestions: structuredCurrentQuestionIndex,
+      targetQuestions: interviewMainQuestionTarget(CTX),
+      userUtterances
+    });
+
+    try {
+      dcSend({
+        type: 'conversation.item.create',
+        item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: instruction }] }
+      });
+      dcSend({ type: 'response.create', response: { conversation: 'default', modalities: ['audio'] } });
+    } catch (e) {
+      log('[END] autofinish instruction failed', errMsg(e));
+    }
+
+    setTimeout(() => {
+      if (END_CALLED || FINAL_HANGUP_TIMER) return;
+      if (!shouldAutoFinishInterview()) return;
+      log('[END] autofinish force hangup after missing model tool/final audio');
+      FINAL_MESSAGE_SPOKEN = true;
+      beginFinalHangup('autofinish_force_timeout');
+    }, STRUCTURED_AUTOFINISH_FORCE_MS);
+  }
+
+  function scheduleInterviewAutoFinishCheck(source){
+    try { if (structuredAutoFinishTimer) clearTimeout(structuredAutoFinishTimer); } catch(_) {}
+    if (!isInterviewLiveContext(CTX) || isInterviewHybrid(CTX)) return;
+    structuredAutoFinishTimer = setTimeout(() => {
+      requestAutoFinishInterview(source || 'idle_after_candidate_answer');
+    }, STRUCTURED_AUTOFINISH_IDLE_MS);
   }
 
   function canEndNow(){
@@ -3638,6 +3749,9 @@
 
     interviewStartedAt = Date.now();
     userUtterances = 0;
+    structuredAutoFinishRequested = false;
+    try { if (structuredAutoFinishTimer) clearTimeout(structuredAutoFinishTimer); } catch(_) {}
+    structuredAutoFinishTimer = null;
     END_CALLED = false;
     END_REQUESTED_BY_MODEL = false;
     FINAL_MESSAGE_SPOKEN = false;
