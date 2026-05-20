@@ -1772,26 +1772,43 @@
       throw new Error('token_http_' + r.status + ': ' + (txt || r.statusText));
     }
 
-    if (!data?.ok) {
-      throw new Error('token_error: ' + (data?.error || 'unknown') + ' ' + (data?.message || ''));
+    // v3.10.3: GA-token compatibility.
+    // Some backends wrap the OpenAI client secret as { ok:true, token/client_secret },
+    // while the GA /v1/realtime/client_secrets endpoint can return the raw shape
+    // { value, expires_at, ... }. Accept both. Only fail if no usable ephemeral key exists.
+    const sec =
+      data?.client_secret?.value ||
+      data?.client_secret ||
+      data?.clientSecret?.value ||
+      data?.clientSecret ||
+      data?.token?.value ||
+      data?.token ||
+      data?.value ||
+      data?.secret ||
+      '';
+
+    if (!sec) {
+      const openAiErr = data?.error?.message || data?.error || '';
+      const code = data?.error?.code || data?.code || '';
+      const msg = data?.message || openAiErr || 'client_secret_missing';
+      throw new Error('token_error: ' + [code, msg].filter(Boolean).join(' '));
     }
 
-    const sec =
-      data.client_secret ||
-      data?.clientSecret ||
-      data?.token ||
-      data?.client_secret?.value;
-
-    if (!sec) throw new Error('client_secret_missing');
+    if (data?.ok === false) {
+      const openAiErr = data?.error?.message || data?.error || '';
+      const code = data?.error?.code || data?.code || '';
+      const msg = data?.message || openAiErr || 'token_error';
+      throw new Error('token_error: ' + [code, msg].filter(Boolean).join(' '));
+    }
 
     log('[Live] effective', {
-      lang: data.lang,
-      reportLang: data.reportLang,
-      voice: data.voice,
-      model: data.model
+      lang: data.lang || data.session?.lang || '',
+      reportLang: data.reportLang || '',
+      voice: data.voice || data.session?.audio?.output?.voice || '',
+      model: data.model || data.session?.model || ''
     });
 
-    return { secret: sec, ctx: data };
+    return { secret: sec, ctx: data?.ok === false ? {} : data };
   }
 
   /* ===== WebRTC ===== */
@@ -1915,7 +1932,7 @@
 
     await pc.setLocalDescription(offer);
 
-    // v3.10.2: GA Realtime WebRTC uses /v1/realtime/calls.
+    // v3.10.3: GA Realtime WebRTC uses /v1/realtime/calls; token parser accepts GA raw client_secret shape.
     // The old SDP exchange endpoint /v1/realtime?model=... now returns beta_api_shape_disabled.
     const r = await fetch('https://api.openai.com/v1/realtime/calls', {
       method: 'POST',
