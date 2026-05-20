@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v3.11.0 HARD_END_BASELINE: strict Q-cap hard-end; locks listening after target; forces final hangup/upload without changing natural flow -->
+  <!-- v3.11.3 SLOT_FINALIZER_FIX: fixed Q-slot plan + safe full finalizer; no premature mic stop before processing -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -1077,11 +1077,18 @@
   let HARD_END_LOCK = false;
   let TARGET_FINALIZE_REQUESTED = false;
   let HARD_END_WATCHDOG_TIMER = null;
+  let ABSOLUTE_FINALIZE_TIMER = null;
+  let MODEL_END_NO_FINAL_TIMER = null;
+  let SLOT_STALL_TIMER = null;
   const TARGET_QUESTION_ANSWER_GRACE_MS = Math.max(30000, Math.min(120000, Number(Q.get('targetAnswerGraceMs') || 65000) || 65000));
   const TARGET_FOLLOWUP_WAIT_MS = Math.max(6000, Math.min(20000, Number(Q.get('targetFollowupWaitMs') || 11000) || 11000));
   const TARGET_FINALIZE_AFTER_ANSWER_MS = Math.max(2000, Math.min(9000, Number(Q.get('targetFinalizeAfterAnswerMs') || 3500) || 3500));
   const EXTRA_AFTER_TARGET_FINISH_MS = Math.max(1000, Math.min(8000, Number(Q.get('extraAfterTargetFinishMs') || 2500) || 2500));
   const HARD_END_WATCHDOG_MS = Math.max(9000, Math.min(30000, Number(Q.get('hardEndWatchdogMs') || 14000) || 14000));
+  const SLOT_FOLLOWUP_STALL_MS = Math.max(9000, Math.min(26000, Number(Q.get('slotFollowupStallMs') || 14500) || 14500));
+  const SLOT_NEXT_MAIN_STALL_MS = Math.max(7000, Math.min(24000, Number(Q.get('slotNextMainStallMs') || 12000) || 12000));
+  const ABSOLUTE_FINALIZE_AFTER_HARD_END_MS = Math.max(32000, Math.min(85000, Number(Q.get('absoluteFinalizeMs') || 56000) || 56000));
+  const MODEL_END_NO_FINAL_GRACE_MS = Math.max(5000, Math.min(16000, Number(Q.get('modelEndNoFinalGraceMs') || 8000) || 8000));
   const MIN_SECONDS_BEFORE_END = 120;
   const MIN_USER_UTTERANCES = 7;
 
@@ -1291,6 +1298,8 @@
     }
     structuredCurrentSubTurnIndex = 0;
     structuredAwaitingFollowUpQuestion = false;
+    try { if (SLOT_STALL_TIMER) clearTimeout(SLOT_STALL_TIMER); } catch(_) {}
+    SLOT_STALL_TIMER = null;
     try { if (structuredEarlyClosingRecoveryTimer) clearTimeout(structuredEarlyClosingRecoveryTimer); } catch(_) {}
     structuredEarlyClosingRecoveryTimer = null;
     structuredLastAssistantTurnType = 'main_question';
@@ -1629,6 +1638,8 @@
       structuredCurrentSubTurnIndex = Math.max(1, (structuredCurrentSubTurnIndex || 0) + 1);
       structuredLastAssistantTurnType = 'follow_up_question';
       structuredAwaitingFollowUpQuestion = false;
+      try { if (SLOT_STALL_TIMER) clearTimeout(SLOT_STALL_TIMER); } catch(_) {}
+      SLOT_STALL_TIMER = null;
       if (q > 0) structuredFollowUpAskedForQuestion[q] = true;
 
       // If this is the allowed follow-up after the final main question, cancel the earlier
@@ -1717,6 +1728,14 @@
       if (q >= target) {
         // Final Q follow-up has been answered: close quickly and do not allow Q10.1/Q10.6 loops.
         scheduleStrictTargetFinalization('target_followup_answer_completed', TARGET_FINALIZE_AFTER_ANSWER_MS);
+      }
+    }
+
+    if (isInterviewLiveContext(CTX) && !isInterviewHybrid(CTX) && q > 0 && q < target) {
+      if (isMainAnswer) {
+        scheduleSlotStallRecovery('followup', q, SLOT_FOLLOWUP_STALL_MS, 'candidate_main_answer_completed');
+      } else if (isAnswerAddition) {
+        scheduleSlotStallRecovery('next_main', q, SLOT_NEXT_MAIN_STALL_MS, 'candidate_followup_answer_completed');
       }
     }
 
@@ -1954,9 +1973,11 @@
     try { if (targetAutoFinishTimer) clearTimeout(targetAutoFinishTimer); } catch(_) {}
     try { if (targetExtraQuestionAutoFinishTimer) clearTimeout(targetExtraQuestionAutoFinishTimer); } catch(_) {}
     try { if (structuredAutoFinishTimer) clearTimeout(structuredAutoFinishTimer); } catch(_) {}
+    try { if (SLOT_STALL_TIMER) clearTimeout(SLOT_STALL_TIMER); } catch(_) {}
     targetAutoFinishTimer = null;
     targetExtraQuestionAutoFinishTimer = null;
     structuredAutoFinishTimer = null;
+    SLOT_STALL_TIMER = null;
   }
 
   function lockRealtimeListeningForEnd(source){
@@ -1967,15 +1988,38 @@
       });
     } catch(_) {}
 
-    try { disableMicUplink(); } catch(_) {}
+    // v3.11.3: Do NOT disable the actual microphone track here.
+    // Lock only Realtime turn detection while the final message is requested.
+    // Disabling the track before full finalization can leave the UI in a half-ended state:
+    // mic appears stopped, but recorder/video continues and the parent processing flow is not triggered.
 
-    log('[HARD-END] listening locked', {
+    log('[HARD-END] listening locked softly', {
       source: source || '',
       mainQuestions: structuredCurrentQuestionIndex,
       targetQuestions: interviewMainQuestionTarget(CTX),
       userUtterances,
       userAudioItems
     });
+  }
+
+  function scheduleAbsoluteFullFinalize(source, ms = ABSOLUTE_FINALIZE_AFTER_HARD_END_MS){
+    try { if (ABSOLUTE_FINALIZE_TIMER) clearTimeout(ABSOLUTE_FINALIZE_TIMER); } catch(_) {}
+    const delay = Math.max(12000, Number(ms) || ABSOLUTE_FINALIZE_AFTER_HARD_END_MS);
+    ABSOLUTE_FINALIZE_TIMER = setTimeout(() => {
+      if (END_CALLED) return;
+      if (FINAL_HANGUP_TIMER) return;
+      log('[FINALIZER] absolute full finalize fallback -> hangup', {
+        source: source || '',
+        delayMs: delay,
+        mainQuestions: structuredCurrentQuestionIndex,
+        targetQuestions: interviewMainQuestionTarget(CTX),
+        uploadStarted,
+        uploadFinished
+      });
+      FINAL_MESSAGE_SPOKEN = true;
+      beginFinalHangup(source || 'absolute_finalize_fallback');
+    }, delay);
+    log('[FINALIZER] absolute full finalize fallback scheduled', { source: source || '', delayMs: delay });
   }
 
   function requestHardEnd(source, opts = {}){
@@ -2003,6 +2047,8 @@
       targetQuestions: interviewMainQuestionTarget(CTX),
       ts: new Date().toISOString()
     });
+
+    scheduleAbsoluteFullFinalize(source || 'hard_end_absolute_fallback');
 
     try { if (cancelActive) dcSend({ type: 'response.cancel' }); } catch(_) {}
 
@@ -2140,6 +2186,104 @@
     sendFinalCloseInstruction(source || 'autofinish', false);
   }
 
+  function slotPlanQuestionAt(no){
+    const plan = currentStructuredQuestionPlan(CTX);
+    return String(plan[Math.max(0, Number(no || 0) - 1)] || '').trim();
+  }
+
+  function clearSlotStallTimer(){
+    try { if (SLOT_STALL_TIMER) clearTimeout(SLOT_STALL_TIMER); } catch(_) {}
+    SLOT_STALL_TIMER = null;
+  }
+
+  function createAssistantAudioResponseFromInstruction(instruction, source){
+    if (!instruction || !dcSend || END_CALLED || FINAL_HANGUP_TIMER) return false;
+    try {
+      dcSend({
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: instruction }]
+        }
+      });
+      dcSend({ type: 'response.create', response: { conversation: 'default', modalities: ['audio'] } });
+      log('[SLOT] recovery instruction sent', { source: source || '', instructionPreview: String(instruction).slice(0, 180) });
+      return true;
+    } catch(e) {
+      log('[SLOT] recovery instruction failed', { source: source || '', message: errMsg(e) });
+      return false;
+    }
+  }
+
+  function requestSlotFollowUp(source){
+    if (!isInterviewLiveContext(CTX) || isInterviewHybrid(CTX)) return false;
+    const q = structuredCurrentQuestionIndex || 0;
+    if (q <= 0 || q >= interviewMainQuestionTarget(CTX)) return false;
+    if (structuredFollowUpAskedForQuestion[q]) return false;
+    if (END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK) return false;
+
+    const lk = activeInterviewLang(CTX);
+    const instruction = lk === 'de'
+      ? 'Bitte stelle jetzt genau eine kurze, natürliche Nachfrage oder Ergänzungsmöglichkeit zur letzten Antwort. Stelle keine neue Hauptfrage und verwende keine spätere Kundenfrage. Warte danach auf die Ergänzungsantwort.'
+      : 'Please now ask exactly one short, natural follow-up or addition opportunity about the last answer. Do not ask a new main question and do not use a later customer question. Then wait for the addition answer.';
+
+    return createAssistantAudioResponseFromInstruction(instruction, source || 'slot_followup_stall');
+  }
+
+  function requestNextPlannedMainQuestion(source){
+    if (!isInterviewLiveContext(CTX) || isInterviewHybrid(CTX)) return false;
+    if (END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK) return false;
+    const target = interviewMainQuestionTarget(CTX);
+    const nextNo = Math.min(target, (structuredCurrentQuestionIndex || 0) + 1);
+    if (nextNo <= 0 || nextNo > target) return false;
+
+    const plannedQuestion = slotPlanQuestionAt(nextNo);
+    const lk = activeInterviewLang(CTX);
+    const instruction = lk === 'de'
+      ? (plannedQuestion
+        ? `Bitte stelle jetzt exakt diese nächste Hauptfrage aus dem festen Interviewplan. Sage nur die Frage selbst und keine Meta-Erklärung: ${plannedQuestion}`
+        : 'Bitte stelle jetzt direkt die nächste rollenbezogene Hauptfrage. Sage nur die Frage selbst und keine Meta-Erklärung.')
+      : (plannedQuestion
+        ? `Please now ask exactly this next main question from the fixed interview plan. Say only the question itself and no meta explanation: ${plannedQuestion}`
+        : 'Please now ask the next role-specific main question directly. Say only the question itself and no meta explanation.');
+
+    return createAssistantAudioResponseFromInstruction(instruction, source || 'slot_next_main_stall');
+  }
+
+  function scheduleSlotStallRecovery(kind, q, delayMs, source){
+    if (!isInterviewLiveContext(CTX) || isInterviewHybrid(CTX)) return;
+    if (END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK) return;
+    const target = interviewMainQuestionTarget(CTX);
+    if (!q || q >= target) return;
+
+    clearSlotStallTimer();
+    const delay = Math.max(3000, Number(delayMs) || SLOT_NEXT_MAIN_STALL_MS);
+    SLOT_STALL_TIMER = setTimeout(() => {
+      if (END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK) return;
+      if ((structuredCurrentQuestionIndex || 0) !== q) return;
+      if (kind === 'followup') {
+        if (structuredLastAssistantTurnType === 'main_question' && !structuredFollowUpAskedForQuestion[q]) {
+          requestSlotFollowUp(source || 'slot_followup_stall');
+        }
+        return;
+      }
+      if (kind === 'next_main') {
+        if (structuredLastCandidateTurnType === 'answer_addition' || structuredLastAssistantTurnType === 'follow_up_question') {
+          requestNextPlannedMainQuestion(source || 'slot_next_main_stall');
+        }
+      }
+    }, delay);
+
+    log('[SLOT] stall recovery scheduled', {
+      kind,
+      q,
+      delayMs: delay,
+      source: source || '',
+      target
+    });
+  }
+
   function scheduleInterviewAutoFinishCheck(source){
     try { if (structuredAutoFinishTimer) clearTimeout(structuredAutoFinishTimer); } catch(_) {}
     if (!isInterviewLiveContext(CTX) || isInterviewHybrid(CTX)) return;
@@ -2208,10 +2352,9 @@
       return false;
     }
 
-    // After the selected Q-set is complete, do not ignore end_interview just because
-    // GA did not emit all completed user transcription events. Raw user audio items count here.
-    if (answerCount < Math.max(3, target - 1) && elapsed < Math.max(75, target * 9)) return false;
-
+    // v3.11.3: After the selected Q-set is complete, accept end_interview.
+    // The slot plan itself is now the stronger completion signal. Do not block the finalizer
+    // only because Realtime missed one user transcription event.
     return true;
   }
 
@@ -2219,7 +2362,7 @@
     const base = Math.max(2500, Number(FINAL_HANGUP_BUFFER_MS) || 8500);
     // Interview closing text is intentionally long and candidate-facing. Keep assessment on its
     // established value, but give interviews enough time so the final sentence is not cut off.
-    if (isInterviewLiveContext(CTX)) return Math.max(22000, Math.min(36000, base));
+    if (isInterviewLiveContext(CTX)) return Math.max(30000, Math.min(46000, base));
     return Math.max(2500, Math.min(36000, base));
   }
 
@@ -2286,7 +2429,24 @@
 
     if (FINAL_MESSAGE_SPOKEN) {
       beginFinalHangup(source || 'model_end');
+      return;
     }
+
+    // v3.11.3: Some Realtime runs emit the end_interview tool call without a transcript
+    // that our finalClosingDetected() can classify as the closing message. Previously that
+    // left the interview half-ended: microphone/input stopped or model done, but recorder/video
+    // kept running and the parent processing flow never started.
+    // Now a valid end_interview request after the slot plan is complete always leads to a full
+    // finalizer. We still try to request the spoken closing once; if it is not produced quickly,
+    // we finalize rather than hanging indefinitely.
+    try { if (MODEL_END_NO_FINAL_TIMER) clearTimeout(MODEL_END_NO_FINAL_TIMER); } catch(_) {}
+    sendFinalCloseInstruction(source || 'model_end_without_detected_closing', true);
+    MODEL_END_NO_FINAL_TIMER = setTimeout(() => {
+      if (END_CALLED || FINAL_HANGUP_TIMER) return;
+      log('[FINALIZER] model end without detected closing -> finalize fallback', { source: source || '' });
+      FINAL_MESSAGE_SPOKEN = true;
+      beginFinalHangup(source || 'model_end_no_final_fallback');
+    }, MODEL_END_NO_FINAL_GRACE_MS);
   }
 
   /* ===== DC Queue ===== */
@@ -4281,6 +4441,12 @@
     TARGET_FINALIZE_REQUESTED = false;
     try { if (HARD_END_WATCHDOG_TIMER) clearTimeout(HARD_END_WATCHDOG_TIMER); } catch(_) {}
     HARD_END_WATCHDOG_TIMER = null;
+    try { if (ABSOLUTE_FINALIZE_TIMER) clearTimeout(ABSOLUTE_FINALIZE_TIMER); } catch(_) {}
+    ABSOLUTE_FINALIZE_TIMER = null;
+    try { if (MODEL_END_NO_FINAL_TIMER) clearTimeout(MODEL_END_NO_FINAL_TIMER); } catch(_) {}
+    MODEL_END_NO_FINAL_TIMER = null;
+    try { if (SLOT_STALL_TIMER) clearTimeout(SLOT_STALL_TIMER); } catch(_) {}
+    SLOT_STALL_TIMER = null;
     try { if (structuredEarlyClosingRecoveryTimer) clearTimeout(structuredEarlyClosingRecoveryTimer); } catch(_) {}
     structuredEarlyClosingRecoveryTimer = null;
     if (FINAL_HANGUP_TIMER) {
@@ -4387,6 +4553,10 @@
     structuredEarlyClosingRecoveryTimer = null;
     try { if (HARD_END_WATCHDOG_TIMER) clearTimeout(HARD_END_WATCHDOG_TIMER); } catch(_) {}
     HARD_END_WATCHDOG_TIMER = null;
+    try { if (ABSOLUTE_FINALIZE_TIMER) clearTimeout(ABSOLUTE_FINALIZE_TIMER); } catch(_) {}
+    ABSOLUTE_FINALIZE_TIMER = null;
+    try { if (MODEL_END_NO_FINAL_TIMER) clearTimeout(MODEL_END_NO_FINAL_TIMER); } catch(_) {}
+    MODEL_END_NO_FINAL_TIMER = null;
     clearHardEndTimers();
 
     if (destroyed && reason !== 'user_fallback_end') return;
