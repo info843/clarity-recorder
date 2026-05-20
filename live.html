@@ -1111,6 +1111,19 @@
   let structuredLastCandidateTurnType = '';
   let structuredAwaitingFollowUpQuestion = false;
   const structuredFollowUpAskedForQuestion = Object.create(null);
+
+  // v3.11.2 SLOT PLAN:
+  // One selected Q-set = fixed main-question slots. Customer snapshot questions, AI-filled
+  // questions and mixed plans all become the same structure:
+  // main_question -> answer -> optional/expected follow_up_question -> answer_addition -> next slot.
+  // This prevents follow-ups from consuming Q10 and prevents future customer questions from being
+  // misclassified as follow-ups.
+  let structuredQuestionPlan = [];
+  let structuredQuestionPlanSignatures = [];
+  let structuredCustomerQuestionCount = 0;
+  let structuredQuestionPlanSource = '';
+  let structuredLastPlannedMainMatch = null;
+
   let structuredEarlyClosingContinueRequests = 0;
   // v3.9.8: must be declared before startInterview() resets it.
   // Without this declaration, strict-mode assignment throws before media/token startup.
@@ -1119,6 +1132,171 @@
   let structuredAutoFinishRequested = false;
   const STRUCTURED_AUTOFINISH_IDLE_MS = Math.max(12000, Math.min(45000, Number(Q.get('autoFinishIdleMs') || 22000) || 22000));
   const STRUCTURED_AUTOFINISH_FORCE_MS = Math.max(8000, Math.min(30000, Number(Q.get('autoFinishForceMs') || 16000) || 16000));
+
+
+  function selectedCustomerQuestionLines(ctx = CTX){
+    if (!isInterviewLiveContext(ctx)) return [];
+    const raw = [
+      ctx?.finalQuestionsSnapshot,
+      ctx?.finalQuestionsText,
+      ctx?.selectedQuestionsText,
+      ctx?.customQuestionsText,
+      ctx?.questionsText,
+      ctx?.interviewConfig?.customQuestionsText,
+      ctx?.interviewConfig?.questionsText
+    ].map(v => String(v || '').trim()).find(Boolean) || '';
+    return parseQuestionLines(raw).slice(0, interviewMainQuestionTarget(ctx));
+  }
+
+  function buildSlotQuestionPlan(ctx = CTX){
+    if (!isInterviewLiveContext(ctx)) return { questions: [], customerCount: 0, source: 'not_interview' };
+
+    const target = interviewMainQuestionTarget(ctx);
+    const customer = selectedCustomerQuestionLines(ctx).slice(0, target);
+    const seeds = [];
+    const seen = new Set();
+    const add = (q) => {
+      const clean = String(q || '').replace(/\s+/g, ' ').trim();
+      if (!clean) return;
+      const key = normalizeForMatch(clean);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      seeds.push(clean);
+    };
+
+    customer.forEach(add);
+
+    // Only fill missing slots. Customer questions always keep priority and order.
+    if (seeds.length < target) {
+      const lk = activeInterviewLang(ctx);
+      const profile = langProfile(lk);
+      const base = (profile.baseQuestions || LANG_PROFILES.en.baseQuestions || []).slice();
+      base.forEach(add);
+    }
+
+    if (seeds.length < target) {
+      const prefix = (langProfile(activeInterviewLang(ctx)).jobPrefix || LANG_PROFILES.en.jobPrefix || 'Role context: ');
+      const text = [ctx?.roleProfileText, ctx?.docsText, ctx?.jobAd].map(v => String(v || '').trim()).filter(Boolean).join('\n');
+      text.split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(Boolean)
+        .filter(line => !/^\d{1,2}[.)]\s*/.test(line))
+        .forEach(line => add(prefix + line));
+    }
+
+    while (seeds.length < target) {
+      const no = seeds.length + 1;
+      const lk = activeInterviewLang(ctx);
+      add(lk === 'de'
+        ? 'Welche konkrete Erfahrung oder welches Beispiel ist für diese Rolle besonders relevant?'
+        : 'Which concrete experience or example is especially relevant for this role?');
+      if (seeds.length < no) break;
+    }
+
+    return {
+      questions: seeds.slice(0, target),
+      customerCount: customer.length,
+      source: customer.length ? 'customer_snapshot_first' : 'ai_or_context_fill'
+    };
+  }
+
+  function refreshStructuredQuestionPlan(ctx = CTX, reason = 'refresh'){
+    const plan = buildSlotQuestionPlan(ctx);
+    structuredQuestionPlan = plan.questions || [];
+    structuredCustomerQuestionCount = Number(plan.customerCount || 0);
+    structuredQuestionPlanSource = plan.source || '';
+    structuredQuestionPlanSignatures = structuredQuestionPlan.map((q, i) => ({
+      number: i + 1,
+      text: q,
+      normalized: normalizeForMatch(q),
+      tokens: matchTokens(q),
+      isCustomer: i < structuredCustomerQuestionCount
+    }));
+    log('[SLOT] plan refreshed', {
+      reason,
+      target: interviewMainQuestionTarget(ctx),
+      questions: structuredQuestionPlan.length,
+      customerQuestions: structuredCustomerQuestionCount,
+      source: structuredQuestionPlanSource,
+      first: structuredQuestionPlan[0] || '',
+      last: structuredQuestionPlan[structuredQuestionPlan.length - 1] || ''
+    });
+    return structuredQuestionPlan;
+  }
+
+  function currentStructuredQuestionPlan(ctx = CTX){
+    if (!structuredQuestionPlan.length && isInterviewLiveContext(ctx)) refreshStructuredQuestionPlan(ctx, 'lazy');
+    return structuredQuestionPlan;
+  }
+
+  function matchTokens(value){
+    const n = normalizeForMatch(value);
+    return n.split(/\s+/).map(t => t.trim()).filter(t => t.length >= 4 && !['welche','welchen','welcher','would','could','sollten','bitte','please','danke','thank','frage','question'].includes(t));
+  }
+
+  function plannedMainQuestionMatch(text, ctx = CTX){
+    if (!isInterviewLiveContext(ctx)) return null;
+    const plan = currentStructuredQuestionPlan(ctx);
+    if (!plan.length || !structuredQuestionPlanSignatures.length) return null;
+
+    const raw = String(text || '').trim();
+    const normalized = normalizeForMatch(raw);
+    if (!normalized || !textHasQuestion(raw)) return null;
+
+    const current = structuredCurrentQuestionIndex || 0;
+    const nextExpected = Math.min(interviewMainQuestionTarget(ctx), current + 1);
+    const future = structuredQuestionPlanSignatures.filter(p => p.number > current);
+
+    let best = null;
+    for (const p of future) {
+      if (!p.normalized || p.normalized.length < 16) continue;
+      let score = 0;
+      let reason = '';
+      if (normalized.includes(p.normalized)) {
+        score = 1;
+        reason = 'snapshot_substring';
+      } else {
+        const tokens = p.tokens || [];
+        if (tokens.length) {
+          const hits = tokens.filter(tok => normalized.includes(tok)).length;
+          const ratio = hits / tokens.length;
+          if (hits >= 5 && ratio >= 0.68) {
+            score = ratio;
+            reason = 'token_overlap';
+          }
+        }
+      }
+      if (score > 0 && (!best || score > best.score || (score === best.score && Math.abs(p.number - nextExpected) < Math.abs(best.number - nextExpected)))) {
+        best = { ...p, score, reason, isNext: p.number === nextExpected, isFuture: p.number > nextExpected };
+      }
+    }
+    if (!best) return null;
+    if (!best.isCustomer && best.score < 0.92) return null;
+    return best;
+  }
+
+  function registerAssistantMainQuestionMeta(questionNumber = 0, source = 'main_question'){
+    const target = interviewMainQuestionTarget(CTX);
+    let nextNo = Number(questionNumber || 0);
+    if (!Number.isFinite(nextNo) || nextNo <= 0) nextNo = (structuredCurrentQuestionIndex || 0) + 1;
+    nextNo = Math.max(1, Math.min(target, Math.round(nextNo)));
+    if (nextNo <= structuredCurrentQuestionIndex) {
+      structuredLastAssistantTurnType = 'system';
+      return { role:'assistant', turnType:'system', questionIndex: structuredCurrentQuestionIndex || nextNo, subTurnIndex: structuredCurrentSubTurnIndex || 0, isMainQuestion:false, isFollowUp:false, isIncludedInReport:false, isTechnical:true };
+    }
+    structuredCurrentQuestionIndex = nextNo;
+    if (isInterviewLiveContext(CTX) && structuredCurrentQuestionIndex >= target && !targetMainQuestionReachedAt) {
+      targetMainQuestionReachedAt = Date.now();
+      scheduleTargetReachedAutoFinish('target_main_question_asked', TARGET_QUESTION_ANSWER_GRACE_MS);
+    }
+    structuredCurrentSubTurnIndex = 0;
+    structuredAwaitingFollowUpQuestion = false;
+    try { if (structuredEarlyClosingRecoveryTimer) clearTimeout(structuredEarlyClosingRecoveryTimer); } catch(_) {}
+    structuredEarlyClosingRecoveryTimer = null;
+    structuredLastAssistantTurnType = 'main_question';
+    structuredLastPlannedMainMatch = source;
+    return { role:'assistant', turnType:'main_question', questionIndex: structuredCurrentQuestionIndex, subTurnIndex:0, isMainQuestion:true, isFollowUp:false, isIncludedInReport:true };
+  }
 
   function textHasQuestion(text){
     const t = String(text || '').trim();
@@ -1274,9 +1452,22 @@
     if (!n) return false;
     if (finalClosingDetected(text)) return false;
     if (looksLikeReadyWelcome(text)) return false;
+
+    const plannedMain = plannedMainQuestionMatch(text, CTX);
+    if (plannedMain && plannedMain.number > structuredCurrentQuestionIndex) {
+      log('[SLOT] planned main beats sequence follow-up', {
+        currentQuestion: structuredCurrentQuestionIndex,
+        plannedNumber: plannedMain.number,
+        reason: plannedMain.reason,
+        isCustomer: plannedMain.isCustomer,
+        textPreview: String(text || '').slice(0, 140)
+      });
+      return false;
+    }
+
     if (looksLikeExplicitNextMainQuestion(text)) return false;
 
-    // v3.11.1: Deterministic interview sequence restored.
+    // v3.11.2: Deterministic slot plan sequence restored.
     // The product rule is: main question -> candidate answer -> exactly one follow-up/deepening question
     // -> candidate addition -> next main question. Therefore the first assistant question after a main
     // answer is the follow-up slot unless the model explicitly announces a next main question.
@@ -1332,9 +1523,15 @@
     const target = interviewMainQuestionTarget(CTX);
     const nextNo = Math.min(target, structuredCurrentQuestionIndex + 1);
 
+    const plan = currentStructuredQuestionPlan(CTX);
+    const plannedQuestion = String(plan[nextNo - 1] || '').trim();
     const instruction = lk === 'de'
-      ? `Bitte stelle jetzt direkt die nächste rollenbezogene Hauptfrage. Sage nur die Frage selbst. Erwähne nicht, dass Fragen fehlen, entschuldige dich nicht und wiederhole nicht den Abschlusssatz. Nach der Antwort darfst du genau eine kurze, natürlich formulierte Ergänzungs- oder Vertiefungsfrage stellen.`
-      : `Please now ask the next role-specific main question directly. Say only the question itself. Do not mention that questions are missing, do not apologize, and do not repeat the closing message. After the answer, you may ask exactly one short, naturally phrased follow-up or deepening question.`;
+      ? (plannedQuestion
+        ? `Bitte stelle jetzt direkt exakt diese nächste Hauptfrage aus dem Interviewplan. Sage nur die Frage selbst. Erwähne nicht, dass Fragen fehlen, entschuldige dich nicht und wiederhole nicht den Abschlusssatz. Nach der Antwort darfst du genau eine kurze, natürlich formulierte Ergänzungs- oder Vertiefungsfrage stellen: ${plannedQuestion}`
+        : `Bitte stelle jetzt direkt die nächste rollenbezogene Hauptfrage. Sage nur die Frage selbst. Erwähne nicht, dass Fragen fehlen, entschuldige dich nicht und wiederhole nicht den Abschlusssatz. Nach der Antwort darfst du genau eine kurze, natürlich formulierte Ergänzungs- oder Vertiefungsfrage stellen.`)
+      : (plannedQuestion
+        ? `Please now ask exactly this next main question from the interview plan. Say only the question itself. Do not mention that questions are missing, do not apologize, and do not repeat the closing message. After the answer, you may ask exactly one short, naturally phrased follow-up or deepening question: ${plannedQuestion}`
+        : `Please now ask the next role-specific main question directly. Say only the question itself. Do not mention that questions are missing, do not apologize, and do not repeat the closing message. After the answer, you may ask exactly one short, naturally phrased follow-up or deepening question.`);
 
     log('[QLOCK] blocked early closing and requested missing question', {
       source: source || '',
@@ -1400,6 +1597,12 @@
         isFollowUp: false,
         isIncludedInReport: false
       };
+    }
+
+    const plannedMain = plannedMainQuestionMatch(clean, CTX);
+    if (plannedMain && plannedMain.number > structuredCurrentQuestionIndex) {
+      log('[SLOT] planned main question accepted', { plannedNumber: plannedMain.number, currentBefore: structuredCurrentQuestionIndex, reason: plannedMain.reason, isCustomer: plannedMain.isCustomer, score: plannedMain.score, textPreview: clean.slice(0, 160) });
+      return registerAssistantMainQuestionMeta(plannedMain.number, plannedMain);
     }
 
     const forcedSequenceFollowUp = shouldForceInterviewFollowUpBySequence(clean);
@@ -1478,25 +1681,7 @@
         };
       }
 
-      structuredCurrentQuestionIndex += 1;
-      if (isInterviewLiveContext(CTX) && structuredCurrentQuestionIndex >= target && !targetMainQuestionReachedAt) {
-        targetMainQuestionReachedAt = Date.now();
-        scheduleTargetReachedAutoFinish('target_main_question_asked', TARGET_QUESTION_ANSWER_GRACE_MS);
-      }
-      structuredCurrentSubTurnIndex = 0;
-      structuredAwaitingFollowUpQuestion = false;
-      try { if (structuredEarlyClosingRecoveryTimer) clearTimeout(structuredEarlyClosingRecoveryTimer); } catch(_) {}
-      structuredEarlyClosingRecoveryTimer = null;
-      structuredLastAssistantTurnType = 'main_question';
-      return {
-        role: 'assistant',
-        turnType: 'main_question',
-        questionIndex: structuredCurrentQuestionIndex,
-        subTurnIndex: 0,
-        isMainQuestion: true,
-        isFollowUp: false,
-        isIncludedInReport: true
-      };
+      return registerAssistantMainQuestionMeta((structuredCurrentQuestionIndex || 0) + 1, 'unplanned_detected_question');
     }
 
     structuredLastAssistantTurnType = 'system';
@@ -2030,17 +2215,26 @@
     return true;
   }
 
+  function effectiveFinalHangupBufferMs(){
+    const base = Math.max(2500, Number(FINAL_HANGUP_BUFFER_MS) || 8500);
+    // Interview closing text is intentionally long and candidate-facing. Keep assessment on its
+    // established value, but give interviews enough time so the final sentence is not cut off.
+    if (isInterviewLiveContext(CTX)) return Math.max(22000, Math.min(36000, base));
+    return Math.max(2500, Math.min(36000, base));
+  }
+
   function beginFinalHangup(source){
     if (END_CALLED) return;
     if (FINAL_HANGUP_TIMER) return;
     try { if (HARD_END_WATCHDOG_TIMER) clearTimeout(HARD_END_WATCHDOG_TIMER); } catch(_) {}
     HARD_END_WATCHDOG_TIMER = null;
+    const hangupBufferMs = effectiveFinalHangupBufferMs();
 
     log('[END] final hangup scheduled', {
       source: source || 'unknown',
       finalMessageSpoken: FINAL_MESSAGE_SPOKEN,
       itemId: FINAL_MESSAGE_ITEM_ID || '',
-      bufferMs: FINAL_HANGUP_BUFFER_MS
+      bufferMs: hangupBufferMs
     });
 
     setStatus('warn', t('processing'));
@@ -2049,7 +2243,7 @@
       uid: UID,
       companyId: COMPANY_ID,
       source: source || '',
-      bufferMs: FINAL_HANGUP_BUFFER_MS,
+      bufferMs: hangupBufferMs,
       ts: new Date().toISOString()
     });
 
@@ -2060,19 +2254,19 @@
 
       log('[END] final hangup accepted after buffer', {
         source: source || 'unknown',
-        bufferMs: FINAL_HANGUP_BUFFER_MS
+        bufferMs: hangupBufferMs
       });
 
       postToParent('clarity.live.final_message_done', {
         uid: UID,
         companyId: COMPANY_ID,
         source: source || '',
-        bufferMs: FINAL_HANGUP_BUFFER_MS,
+        bufferMs: hangupBufferMs,
         ts: new Date().toISOString()
       });
 
       hangup(source || 'final_message_done');
-    }, FINAL_HANGUP_BUFFER_MS);
+    }, hangupBufferMs);
   }
 
   function requestEndNow(source){
@@ -2839,22 +3033,21 @@
   function questionPolicyText(ctx = CTX){
     const maxQ = interviewMaxQuestions(ctx);
     const qset = String(ctx?.questionSet || ctx?.interviewConfig?.questionSet || `Q${maxQ}`).toUpperCase();
-    const customQuestions = parseQuestionLines(ctx?.customQuestionsText || ctx?.questionsText || '');
+    const customQuestions = selectedCustomerQuestionLines(ctx).slice(0, maxQ);
     const missing = Math.max(0, maxQ - customQuestions.length);
     const capNoteDe = spokenMediaQuestionCap(ctx) === 30 ? ' Für Video- und Audio-Interviews ist Q30 das aktuelle Maximum im Live-Gespräch.' : '';
     const capNoteEn = spokenMediaQuestionCap(ctx) === 30 ? ' For video and audio interviews, Q30 is the current maximum for the live conversation.' : '';
     const hybridNoteDe = isInterviewHybrid(ctx) ? ` Dies ist nur der mündliche Teil eines hybriden Interviews. Stelle hier genau ${maxQ} mündliche Hauptfragen; der restliche schriftliche Teil folgt im Chat. Beende den mündlichen Teil mit dem vorgegebenen Übergabesatz.` : '';
     const hybridNoteEn = isInterviewHybrid(ctx) ? ` This is only the spoken part of a hybrid interview. Ask exactly ${maxQ} spoken main questions here; the remaining written part follows in chat. End the spoken part with the provided handoff message.` : '';
-
+    const hasCustomerPlan = customQuestions.length > 0;
     if (activeInterviewLang(ctx) === 'de') {
-      return customQuestions.length
-        ? `Interner Interviewumfang ${qset}: Stelle genau ${maxQ} Hauptfragen. Nutze zuerst die kundeneigenen Fragen aus dem Kontext. Wenn weniger als ${maxQ} kundeneigene Fragen vorhanden sind, ergänze ${missing} passende rollenbezogene Fragen. Zähle nur intern mit: Hauptfragen zählen, Anschluss-/Ergänzungsfragen zählen niemals als Hauptfrage. Sage im Gespräch keine Fragennummern, kein Q10/Q20/Q30 und keine Formulierungen wie „zweite Frage“, „Frage 8“ oder „letzte Frage“. Nutze stattdessen natürliche professionelle Übergänge. Beende das Interview erst nach genau ${maxQ} Hauptfragen.${capNoteDe}${hybridNoteDe}`
-        : `Interner Interviewumfang ${qset}: Stelle genau ${maxQ} passende rollenbezogene Hauptfragen. Zähle nur intern mit: Hauptfragen zählen, Anschluss-/Ergänzungsfragen zählen niemals als Hauptfrage. Sage im Gespräch keine Fragennummern, kein Q10/Q20/Q30 und keine Formulierungen wie „zweite Frage“, „Frage 8“ oder „letzte Frage“. Nutze stattdessen natürliche professionelle Übergänge. Die letzte Hauptfrage sollte nach Möglichkeit den ersten 90 Tagen in der Rolle gelten. Beende das Interview erst nach genau ${maxQ} Hauptfragen.${capNoteDe}${hybridNoteDe}`;
+      return hasCustomerPlan
+        ? `Interner Interviewumfang ${qset}: Es gibt einen festen Slot-Plan mit genau ${maxQ} Hauptfragen. Stelle zuerst die kundeneigenen Fragen exakt in der gespeicherten Reihenfolge. Wenn nur ${customQuestions.length} kundeneigene Fragen vorhanden sind, ergänze danach ${missing} passende rollenbezogene Hauptfragen. Pro Slot gilt strikt: Hauptfrage stellen, vollständige Antwort abwarten, genau eine kurze natürliche Nachfrage oder Ergänzungsmöglichkeit stellen, Ergänzungsantwort abwarten, erst dann nächster Slot. Eine Nachfrage darf NIEMALS eine spätere kundeneigene Hauptfrage enthalten und zählt NIEMALS als Hauptfrage. Sage im Gespräch keine Fragennummern, kein Q10/Q20/Q30 und keine Formulierungen wie „zweite Frage“, „Frage 8“ oder „letzte Frage“. Beende erst nach Slot ${maxQ} und dessen Antwort/Ergänzung.${capNoteDe}${hybridNoteDe}`
+        : `Interner Interviewumfang ${qset}: Stelle genau ${maxQ} passende rollenbezogene Hauptfragen in einem festen Slot-Plan. Pro Slot gilt strikt: Hauptfrage stellen, vollständige Antwort abwarten, genau eine kurze natürliche Nachfrage oder Ergänzungsmöglichkeit stellen, Ergänzungsantwort abwarten, erst dann nächster Slot. Eine Nachfrage zählt NIEMALS als Hauptfrage. Sage im Gespräch keine Fragennummern, kein Q10/Q20/Q30 und keine Formulierungen wie „zweite Frage“, „Frage 8“ oder „letzte Frage“. Nutze natürliche professionelle Übergänge. Beende erst nach Slot ${maxQ} und dessen Antwort/Ergänzung.${capNoteDe}${hybridNoteDe}`;
     }
-
-    return customQuestions.length
-      ? `Internal interview scope ${qset}: Ask exactly ${maxQ} main questions. Use the customer's own questions from context first. If fewer than ${maxQ} customer questions are available, add ${missing} suitable role-specific questions. Count silently: main questions count, follow-up/addition opportunities never count as main questions. Do not announce question numbers, Q10/Q20/Q30, or phrases like “question 8”, “second question”, or “last question” to the candidate. Use natural professional transitions instead. End the interview only after exactly ${maxQ} main questions.${capNoteEn}${hybridNoteEn}`
-      : `Internal interview scope ${qset}: Ask exactly ${maxQ} suitable role-specific main questions. Count silently: main questions count, follow-up/addition opportunities never count as main questions. Do not announce question numbers, Q10/Q20/Q30, or phrases like “question 8”, “second question”, or “last question” to the candidate. Use natural professional transitions instead. The final main question should preferably address the candidate's first 90 days in the role. End the interview only after exactly ${maxQ} main questions.${capNoteEn}${hybridNoteEn}`;
+    return hasCustomerPlan
+      ? `Internal interview scope ${qset}: There is a fixed slot plan with exactly ${maxQ} main questions. Ask the customer's own questions first, exactly in the stored order. If only ${customQuestions.length} customer questions are available, add ${missing} suitable role-specific main questions afterwards. Per slot, strictly follow: ask the main question, wait for the complete answer, ask exactly one short natural follow-up or addition opportunity, wait for the addition answer, only then move to the next slot. A follow-up must NEVER contain a later customer main question and NEVER counts as a main question. Do not announce question numbers, Q10/Q20/Q30, or phrases like “question 8”, “second question”, or “last question”. End only after slot ${maxQ} and its answer/addition.${capNoteEn}${hybridNoteEn}`
+      : `Internal interview scope ${qset}: Ask exactly ${maxQ} suitable role-specific main questions in a fixed slot plan. Per slot, strictly follow: ask the main question, wait for the complete answer, ask exactly one short natural follow-up or addition opportunity, wait for the addition answer, only then move to the next slot. A follow-up NEVER counts as a main question. Do not announce question numbers, Q10/Q20/Q30, or phrases like “question 8”, “second question”, or “last question”. Use natural professional transitions. End only after slot ${maxQ} and its answer/addition.${capNoteEn}${hybridNoteEn}`;
   }
 
   function isAssessmentContext(ctx){
@@ -3076,10 +3269,10 @@
     if (lk === 'de') {
       return [
         'Sprich ausschließlich DEUTSCH. Wechsle nie die Sprache.',
-        'Führe ein strukturiertes Job-Interview: nur EINE Hauptfrage zur Zeit, danach genau eine kurze natürliche Anschlussfrage oder Ergänzungsmöglichkeit. Bleibe strikt am Jobprofil und stelle nie zwei Hauptfragen in einer Nachricht.',
+        'Führe ein strukturiertes Job-Interview mit festem Slot-Plan: nur EINE Hauptfrage zur Zeit, danach genau eine kurze natürliche Anschlussfrage oder Ergänzungsmöglichkeit. Bleibe strikt am Jobprofil und stelle nie zwei Hauptfragen in einer Nachricht.',
         questionPolicyText(ctx),
-        'Ablauf pro Hauptfrage: 1) stelle die Hauptfrage, 2) warte die Antwort vollständig ab, 3) stelle genau eine kurze Anschlussreaktion. Diese darf natürlich variieren: kurze Ergänzungsmöglichkeit, kurze Verständnis-/Vertiefungsfrage oder Angebot zum Fortfahren. Verwende nicht immer dieselbe Formulierung. 4) warte diese Ergänzungsantwort ab, 5) erst dann nächste Hauptfrage. Diese Anschlussfrage zählt NICHT als Hauptfrage. Sprich natürlich und professionell, nicht mechanisch oder nummeriert.',
-        'Nach jeder Frage warten, bis die Kandidatin/der Kandidat wirklich fertig ist. Kurze Atemgeräusche, Füllwörter oder sehr kurze Geräusche zählen NICHT als Antwort. Gib nach einer Antwort einen natürlichen Moment für Ergänzungen, bevor du fortfährst.',
+        'Ablauf pro Slot: 1) stelle die Hauptfrage aus dem Plan, 2) warte die Antwort vollständig ab, 3) stelle genau eine kurze Anschlussreaktion. Diese darf natürlich variieren: konkrete Vertiefungsfrage, kurze Ergänzungsmöglichkeit oder Angebot zum Fortfahren. Verwende nicht immer dieselbe Formulierung. 4) warte diese Ergänzungsantwort ab, 5) erst dann nächste Hauptfrage aus dem Plan. Diese Anschlussfrage zählt NICHT als Hauptfrage und darf keine spätere geplante Hauptfrage vorwegnehmen. Sprich natürlich und professionell, nicht mechanisch oder nummeriert.',
+        'Nach jeder Frage geduldig warten, bis die Kandidatin/der Kandidat wirklich fertig ist. Kurze Atemgeräusche, Füllwörter, ein kurzer Satz oder eine kurze Pause zählen NICHT sofort als vollständige Antwort. Lass nach einer Antwort einen natürlichen Moment für Ergänzungen, bevor du fortfährst.',
         'Nutze ausschließlich die FIRMENKENNTNISSE aus „KONTEXT“ für Antworten zu Firma, Stelle, Prozessen, Benefits usw. Wenn etwas nicht im KONTEXT steht, sage freundlich, dass dies mit der Firma direkt zu klären ist.',
         'Starte die erste Frage erst, nachdem die Person „bereit“ gesagt hat (oder nach Fallback-Timeout).',
         `Erst wenn genau ${interviewMainQuestionTarget(ctx)} Hauptfragen gestellt und die letzte Antwort/Ergänzung abgeschlossen ist, sage zum Abschluss EXAKT diesen Satz, ohne technische Details hinzuzufügen: „${finalClose}“ Danach rufe end_interview auf.`,
@@ -3090,10 +3283,10 @@
     return [
       `Speak strictly in ${profile.englishName.toUpperCase()}. Do not switch languages.`,
       `The full interview, welcome messages, questions, follow-ups, candidate-facing explanations, and closing message must be spoken in ${profile.englishName}.`,
-      'Conduct a structured job interview: one main question at a time, then exactly one short follow-up opportunity. Stick to the job profile and never ask two main questions in one message.',
+      'Conduct a structured job interview with a fixed slot plan: one main question at a time, then exactly one short follow-up opportunity. Stick to the job profile and never ask two main questions in one message.',
       questionPolicyText(ctx),
-      'Flow per main question: 1) ask the main question, 2) wait for the complete answer, 3) briefly ask whether the candidate would like to add anything or whether you should continue, 4) wait for that additional answer, 5) only then ask the next main question. This follow-up opportunity does NOT count as a main question. Speak naturally and professionally, never mechanically or with spoken question numbering.',
-      'After each question, wait until the candidate has truly finished. Breathing, filler words, or very short noises do NOT count as an answer. Leave a natural pause after each answer so the candidate can add more, then continue.',
+      'Flow per slot: 1) ask the planned main question, 2) wait for the complete answer, 3) ask exactly one short follow-up. It may be a concrete deepening question, a short opportunity to add something, or an offer to continue. Vary the wording naturally. 4) wait for the addition answer, 5) only then ask the next planned main question. This follow-up does NOT count as a main question and must not preview a later planned main question. Speak naturally and professionally, never mechanically or with spoken question numbering.',
+      'After each question, wait patiently until the candidate has truly finished. Breathing, filler words, one short sentence, or a short pause do NOT immediately count as a complete answer. Leave a natural moment after each answer so the candidate can add more, then continue.',
       'Use only the COMPANY KNOWLEDGE from “CONTEXT” to answer company/job/process/benefits questions. If it is not in CONTEXT, politely say the candidate should check with the company.',
       `Ask the first question only after the user says one of these readiness words or after the fallback timeout: ${(profile.readyWords || ['ready']).join(', ')}.`,
       `Only after exactly ${interviewMainQuestionTarget(ctx)} main questions have been asked and the final answer/addition is complete, say exactly this closing message in ${profile.englishName} and do not add technical details: “${finalClose}” Then call end_interview.`,
@@ -3121,7 +3314,7 @@
 
     const header = '=== KONTEXT / CONTEXT START ===';
     const footer = '=== KONTEXT / CONTEXT ENDE ===';
-    const questions = isAssessmentContext(CTX) ? '' : parseQuestionLines(CTX.customQuestionsText || CTX.questionsText || '')
+    const questions = isAssessmentContext(CTX) ? '' : currentStructuredQuestionPlan(CTX)
       .map((q, i) => `${i + 1}. ${q}`)
       .join('\n');
 
@@ -3295,9 +3488,9 @@
           session: {
             turn_detection: {
               type: 'server_vad',
-              threshold: 0.82,
-              prefix_padding_ms: 450,
-              silence_duration_ms: 1450
+              threshold: isAssessmentContext(CTX) ? 0.82 : 0.84,
+              prefix_padding_ms: isAssessmentContext(CTX) ? 450 : 650,
+              silence_duration_ms: isAssessmentContext(CTX) ? 1450 : 2350
             }
           }
         });
@@ -3334,7 +3527,7 @@
     const prefix = profile.jobPrefix || LANG_PROFILES.en.jobPrefix;
     const maxQ = interviewMaxQuestions(ctx);
 
-    const customQuestions = parseQuestionLines(ctx.customQuestionsText || ctx.questionsText || '').slice(0, maxQ);
+    const customQuestions = selectedCustomerQuestionLines(ctx).slice(0, maxQ);
     customQuestions.forEach(q => seeds.push(q));
 
     const base = (profile.baseQuestions || LANG_PROFILES.en.baseQuestions).slice();
@@ -3393,7 +3586,7 @@
     FIRST_Q_SENT = true;
 
     const lk = activeInterviewLang(CTX);
-    const plan = buildInterviewPlan(CTX);
+    const plan = currentStructuredQuestionPlan(CTX);
     const first = plan[0] || fallbackFirstQuestion(lk);
 
     dcSend({
@@ -3414,6 +3607,8 @@
       productType: CTX.productType || '',
       moduleArea: CTX.moduleArea || '',
       questionCount: interviewMaxQuestions(CTX),
+      customerQuestions: structuredCustomerQuestionCount,
+      planSource: structuredQuestionPlanSource,
       question: first
     });
 
@@ -4075,6 +4270,7 @@
     targetAutoFinishTimer = null;
     targetExtraQuestionAutoFinishTimer = null;
     structuredAutoFinishRequested = false;
+    refreshStructuredQuestionPlan(CTX, 'interview_start_reset');
     try { if (structuredAutoFinishTimer) clearTimeout(structuredAutoFinishTimer); } catch(_) {}
     structuredAutoFinishTimer = null;
     END_CALLED = false;
@@ -4148,6 +4344,7 @@
 
       // Merge token response without letting a smaller token context overwrite the parent Access snapshot.
       CTX = normalizeIncomingContext({ ...(ctx || {}), ...CTX });
+      refreshStructuredQuestionPlan(CTX, 'token_context_merged');
       applyStaticTexts();
 
       // If no remote track arrives, do not leave the candidate in an endless "started" state.
@@ -4254,6 +4451,7 @@
 
     if (type === 'clarity.live.context'){
       CTX = normalizeIncomingContext({ ...CTX, ...(msg.data || {}) });
+      refreshStructuredQuestionPlan(CTX, 'parent_context');
       applyStaticTexts();
       log('[CTX]', {
         ...CTX,
@@ -4270,6 +4468,7 @@
     else if (type === 'clarity.live.prime'){
       // Prime may contain only language/mode. Merge it without clearing assessment/product snapshot fields.
       CTX = normalizeIncomingContext({ ...CTX, ...(msg.data || {}) });
+      refreshStructuredQuestionPlan(CTX, 'parent_prime');
       applyStaticTexts();
 
       const rep = CTX.reportLang || LANG;
@@ -4286,6 +4485,7 @@
 
     else if (type === 'clarity.live.start'){
       CTX = normalizeIncomingContext({ ...CTX, ...(msg.data || {}) });
+      refreshStructuredQuestionPlan(CTX, 'parent_start');
       log('[START] received from parent', {
         productType: CTX.productType || '',
         assessment: CTX.assessment === true,
