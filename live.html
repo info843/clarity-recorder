@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v3.11.5 VIDEO_MIX_EARLY_END_GUARD: strict early-end guard for video/video+chat; customer snapshot main slots protected; safe handoff/finalizer -->
+  <!-- v3.11.6 HYBRID_HANDOFF_VIDEO_TARGET_GUARD: spoken handoff restored; video-only near-complete timeout guard; hybrid spoken-target handling -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -1599,9 +1599,54 @@
     return Math.max(1, Math.min(30, interviewMaxQuestions(ctx)));
   }
 
+  function interviewLiveQuestionTarget(ctx = CTX){
+    const total = interviewMainQuestionTarget(ctx);
+    if (!isInterviewLiveContext(ctx)) return total;
+    if (!isInterviewHybrid(ctx)) return total;
+
+    const explicitSpoken = Number(
+      ctx?.spokenQuestionCount ||
+      ctx?.mediaQuestionCount ||
+      ctx?.oralQuestionCount ||
+      ctx?.voiceQuestionCount ||
+      ctx?.videoQuestionCount ||
+      0
+    );
+    if (Number.isFinite(explicitSpoken) && explicitSpoken > 0) {
+      return Math.max(1, Math.min(total, Math.round(explicitSpoken)));
+    }
+
+    const chatQ = Number(
+      ctx?.chatQuestionCount ||
+      ctx?.writtenQuestionCount ||
+      ctx?.textQuestionCount ||
+      ctx?.chatQuestionsCount ||
+      0
+    );
+    if (Number.isFinite(chatQ) && chatQ > 0 && chatQ < total) {
+      return Math.max(1, Math.min(total, total - Math.round(chatQ)));
+    }
+
+    // Default Mix policy: about 70% spoken, remaining slots in chat.
+    return Math.max(1, Math.min(total, Math.ceil(total * 0.7)));
+  }
+
+  function nearCompleteVideoOnlyByRuntime(ctx = CTX){
+    if (!STARTED || !interviewStartedAt) return false;
+    if (!isInterviewLiveContext(ctx) || isInterviewHybrid(ctx) || AUDIO_ONLY) return false;
+    const target = interviewLiveQuestionTarget(ctx);
+    const elapsedMs = Date.now() - interviewStartedAt;
+    const answerCount = effectiveCandidateResponseCount();
+    const q = structuredCurrentQuestionIndex || 0;
+    const enoughSlotProgress = q >= Math.max(1, target - 3);
+    const enoughAnswerProgress = answerCount >= Math.max(4, target - 4);
+    const longEnough = elapsedMs >= Math.max(420000, target * 42000);
+    return enoughSlotProgress && enoughAnswerProgress && longEnough;
+  }
+
   function interviewMainQuestionsComplete(ctx = CTX){
     if (!isInterviewLiveContext(ctx)) return true;
-    return structuredCurrentQuestionIndex >= interviewMainQuestionTarget(ctx);
+    return structuredCurrentQuestionIndex >= interviewLiveQuestionTarget(ctx);
   }
 
   function shouldBlockEarlyInterviewClosing(){
@@ -1640,7 +1685,7 @@
 
     const lk = activeInterviewLang(CTX);
     const profile = langProfile(lk);
-    const target = interviewMainQuestionTarget(CTX);
+    const target = interviewLiveQuestionTarget(CTX);
     const nextNo = Math.min(target, structuredCurrentQuestionIndex + 1);
 
     const plan = currentStructuredQuestionPlan(CTX);
@@ -1769,7 +1814,7 @@
       // If this is the allowed follow-up after the final main question, cancel the earlier
       // "no follow-up arrived" close timer. The close timer is then rescheduled after
       // the candidate's follow-up answer, so the system does not hang up mid-answer.
-      if (isInterviewLiveContext(CTX) && q >= interviewMainQuestionTarget(CTX)) {
+      if (isInterviewLiveContext(CTX) && q >= interviewLiveQuestionTarget(CTX)) {
         try { if (targetAutoFinishTimer) clearTimeout(targetAutoFinishTimer); } catch(_) {}
         targetAutoFinishTimer = null;
         log('[QCOUNT] final-main follow-up accepted; target close timer deferred until answer', {
@@ -1790,7 +1835,27 @@
     }
 
     if (textHasQuestion(clean)) {
-      const target = interviewMainQuestionTarget(CTX);
+      const target = interviewLiveQuestionTarget(CTX);
+
+      if (nearCompleteVideoOnlyByRuntime(CTX)) {
+        try {
+          if (targetExtraQuestionAutoFinishTimer) clearTimeout(targetExtraQuestionAutoFinishTimer);
+          targetExtraQuestionAutoFinishTimer = setTimeout(() => {
+            requestHardEnd('video_near_complete_extra_question', { speakFinal: true, cancelActive: true });
+          }, EXTRA_AFTER_TARGET_FINISH_MS);
+        } catch(_) {}
+        structuredLastAssistantTurnType = 'system';
+        return {
+          role: 'assistant',
+          turnType: 'system',
+          questionIndex: structuredCurrentQuestionIndex || target,
+          subTurnIndex: structuredCurrentSubTurnIndex || 0,
+          isMainQuestion: false,
+          isFollowUp: false,
+          isIncludedInReport: false,
+          isTechnical: true
+        };
+      }
 
       // For live interview products, never let an extra main question exceed the chosen Q-set.
       // Extra questions after the cap are treated as non-report system context unless they are follow-ups.
@@ -1837,7 +1902,7 @@
 
   function inferCandidateStructuredMeta(){
     const q = structuredCurrentQuestionIndex || 0;
-    const target = interviewMainQuestionTarget(CTX);
+    const target = interviewLiveQuestionTarget(CTX);
     const isFollowUp = structuredLastAssistantTurnType === 'follow_up_question';
     const isMainAnswer = q > 0 && structuredLastAssistantTurnType === 'main_question';
     const isAnswerAddition = q > 0 && isFollowUp;
@@ -2233,7 +2298,7 @@
   function scheduleStrictTargetFinalization(source, delayMs){
     if (END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK) return;
     if (!isInterviewLiveContext(CTX)) return;
-    if (structuredCurrentQuestionIndex < interviewMainQuestionTarget(CTX)) return;
+    if (structuredCurrentQuestionIndex < interviewLiveQuestionTarget(CTX) && !nearCompleteVideoOnlyByRuntime(CTX)) return;
 
     const delay = Math.max(1000, Number(delayMs) || TARGET_FINALIZE_AFTER_ANSWER_MS);
     try { if (targetAutoFinishTimer) clearTimeout(targetAutoFinishTimer); } catch(_) {}
@@ -2259,10 +2324,10 @@
     if (!isInterviewLiveContext(CTX)) return false;
     if (!interviewStartedAt) return false;
 
-    const target = interviewMainQuestionTarget(CTX);
+    const target = interviewLiveQuestionTarget(CTX);
     const elapsedMs = Date.now() - interviewStartedAt;
     const answerCount = effectiveCandidateResponseCount();
-    const targetReached = structuredCurrentQuestionIndex >= target;
+    const targetReached = structuredCurrentQuestionIndex >= target || nearCompleteVideoOnlyByRuntime(CTX);
     const hasEnoughResponses = answerCount >= Math.max(3, target - 1);
     const longEnough = elapsedMs >= Math.max(180000, target * 24000);
 
@@ -2291,10 +2356,17 @@
     structuredAutoFinishRequested = true;
 
     const lk = activeInterviewLang(CTX);
-    const finalClose = finalClosingText({ ...CTX, lang: lk });
+    const profile = langProfile(lk);
+    const finalClose = isInterviewHybrid(CTX)
+      ? (interviewHybridClosingText(CTX, lk, profile) || finalClosingText({ ...CTX, lang: lk }))
+      : finalClosingText({ ...CTX, lang: lk });
     const instruction = lk === 'de'
-      ? `Das Interview ist jetzt abgeschlossen. Stelle keine weitere Frage. Sage jetzt exakt diesen Abschluss ohne zusätzliche Erklärungen: „${finalClose}“ Danach rufe end_interview auf.`
-      : `The interview is now complete. Do not ask another question. Now say exactly this closing message without additional explanation: “${finalClose}” Then call end_interview.`;
+      ? (isInterviewHybrid(CTX)
+        ? `Der mündliche Teil ist jetzt abgeschlossen. Stelle keine weitere mündliche Frage. Sage jetzt exakt diesen Übergabesatz ohne zusätzliche Erklärungen: „${finalClose}“ Danach rufe end_interview auf.`
+        : `Das Interview ist jetzt abgeschlossen. Stelle keine weitere Frage. Sage jetzt exakt diesen Abschluss ohne zusätzliche Erklärungen: „${finalClose}“ Danach rufe end_interview auf.`)
+      : (isInterviewHybrid(CTX)
+        ? `The spoken part is now complete. Do not ask another spoken question. Now say exactly this handoff message without additional explanation: “${finalClose}” Then call end_interview.`
+        : `The interview is now complete. Do not ask another question. Now say exactly this closing message without additional explanation: “${finalClose}” Then call end_interview.`);
 
     log('[END] autofinish requested', {
       source: source || '',
@@ -2438,7 +2510,7 @@
   function scheduleTargetReachedAutoFinish(source, delayMs){
     if (!isInterviewLiveContext(CTX)) return;
     if (END_CALLED || FINAL_HANGUP_TIMER) return;
-    if (structuredCurrentQuestionIndex < interviewMainQuestionTarget(CTX)) return;
+    if (structuredCurrentQuestionIndex < interviewLiveQuestionTarget(CTX) && !nearCompleteVideoOnlyByRuntime(CTX)) return;
 
     const delay = Number.isFinite(Number(delayMs)) ? Number(delayMs) : TARGET_QUESTION_ANSWER_GRACE_MS;
     try { if (targetAutoFinishTimer) clearTimeout(targetAutoFinishTimer); } catch(_) {}
@@ -2471,7 +2543,7 @@
       mainQuestions: structuredCurrentQuestionIndex,
       targetQuestions: interviewMainQuestionTarget(CTX)
     });
-    if (structuredCurrentQuestionIndex >= interviewMainQuestionTarget(CTX)) {
+    if (structuredCurrentQuestionIndex >= interviewLiveQuestionTarget(CTX) || nearCompleteVideoOnlyByRuntime(CTX)) {
       const q = structuredCurrentQuestionIndex || 0;
       const delay = structuredFollowUpAskedForQuestion[q] ? TARGET_FINALIZE_AFTER_ANSWER_MS : TARGET_FOLLOWUP_WAIT_MS;
       scheduleStrictTargetFinalization('candidate_audio_after_target', delay);
@@ -2485,8 +2557,8 @@
 
     const elapsed = (Date.now() - interviewStartedAt) / 1000;
     const answerCount = effectiveCandidateResponseCount();
-    const target = interviewMainQuestionTarget(CTX);
-    const qComplete = !shouldBlockEarlyInterviewClosing();
+    const target = interviewLiveQuestionTarget(CTX);
+    const qComplete = !shouldBlockEarlyInterviewClosing() || nearCompleteVideoOnlyByRuntime(CTX);
 
     // Before the Q-set is complete, keep the old safety floor.
     if (!qComplete) {
@@ -3362,8 +3434,9 @@
     const missing = Math.max(0, maxQ - customQuestions.length);
     const capNoteDe = spokenMediaQuestionCap(ctx) === 30 ? ' Für Video- und Audio-Interviews ist Q30 das aktuelle Maximum im Live-Gespräch.' : '';
     const capNoteEn = spokenMediaQuestionCap(ctx) === 30 ? ' For video and audio interviews, Q30 is the current maximum for the live conversation.' : '';
-    const hybridNoteDe = isInterviewHybrid(ctx) ? ` Dies ist nur der mündliche Teil eines hybriden Interviews. Stelle hier genau ${maxQ} mündliche Hauptfragen; der restliche schriftliche Teil folgt im Chat. Beende den mündlichen Teil mit dem vorgegebenen Übergabesatz.` : '';
-    const hybridNoteEn = isInterviewHybrid(ctx) ? ` This is only the spoken part of a hybrid interview. Ask exactly ${maxQ} spoken main questions here; the remaining written part follows in chat. End the spoken part with the provided handoff message.` : '';
+    const spokenQ = isInterviewHybrid(ctx) ? interviewLiveQuestionTarget(ctx) : maxQ;
+    const hybridNoteDe = isInterviewHybrid(ctx) ? ` Dies ist nur der mündliche Teil eines hybriden Interviews. Stelle hier genau ${spokenQ} mündliche Hauptfragen; der restliche schriftliche Teil folgt im Chat. Beende den mündlichen Teil mit dem vorgegebenen Übergabesatz.` : '';
+    const hybridNoteEn = isInterviewHybrid(ctx) ? ` This is only the spoken part of a hybrid interview. Ask exactly ${spokenQ} spoken main questions here; the remaining written part follows in chat. End the spoken part with the provided handoff message.` : '';
     const hasCustomerPlan = customQuestions.length > 0;
     if (activeInterviewLang(ctx) === 'de') {
       return hasCustomerPlan
@@ -3600,7 +3673,7 @@
         'Nach jeder Frage geduldig warten, bis die Kandidatin/der Kandidat wirklich fertig ist. Kurze Atemgeräusche, Füllwörter, ein kurzer Satz oder eine kurze Pause zählen NICHT sofort als vollständige Antwort. Lass nach einer Antwort einen natürlichen Moment für Ergänzungen, bevor du fortfährst.',
         'Nutze ausschließlich die FIRMENKENNTNISSE aus „KONTEXT“ für Antworten zu Firma, Stelle, Prozessen, Benefits usw. Wenn etwas nicht im KONTEXT steht, sage freundlich, dass dies mit der Firma direkt zu klären ist.',
         'Starte die erste Frage erst, nachdem die Person „bereit“ gesagt hat (oder nach Fallback-Timeout).',
-        `Erst wenn genau ${interviewMainQuestionTarget(ctx)} Hauptfragen gestellt und die letzte Antwort/Ergänzung abgeschlossen ist, sage zum Abschluss EXAKT diesen Satz, ohne technische Details hinzuzufügen: „${finalClose}“ Danach rufe end_interview auf.`,
+        `Erst wenn genau ${interviewLiveQuestionTarget(ctx)} mündliche Hauptfragen gestellt und die letzte Antwort/Ergänzung abgeschlossen ist, sage zum Abschluss EXAKT diesen Satz, ohne technische Details hinzuzufügen: „${finalClose}“ Danach rufe end_interview auf.`,
         `Rufe end_interview NUR auf, wenn das Interview wirklich abgeschlossen ist. Vorher NIEMALS. Mindestanforderung: mindestens ${MIN_USER_UTTERANCES} Kandidaten-Antworten und ein sinnvoller Abschluss/Verabschiedung.`
       ].join(' ');
     }
@@ -3614,7 +3687,7 @@
       'After each question, wait patiently until the candidate has truly finished. Breathing, filler words, one short sentence, or a short pause do NOT immediately count as a complete answer. Leave a natural moment after each answer so the candidate can add more, then continue.',
       'Use only the COMPANY KNOWLEDGE from “CONTEXT” to answer company/job/process/benefits questions. If it is not in CONTEXT, politely say the candidate should check with the company.',
       `Ask the first question only after the user says one of these readiness words or after the fallback timeout: ${(profile.readyWords || ['ready']).join(', ')}.`,
-      `Only after exactly ${interviewMainQuestionTarget(ctx)} main questions have been asked and the final answer/addition is complete, say exactly this closing message in ${profile.englishName} and do not add technical details: “${finalClose}” Then call end_interview.`,
+      `Only after exactly ${interviewLiveQuestionTarget(ctx)} spoken main questions have been asked and the final answer/addition is complete, say exactly this closing message in ${profile.englishName} and do not add technical details: “${finalClose}” Then call end_interview.`,
       `Call end_interview ONLY when the interview is truly complete. NEVER before. Minimum: at least ${MIN_USER_UTTERANCES} candidate answers and a proper closing/goodbye.`
     ].join(' ');
   }
