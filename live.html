@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v3.11.4 STRICT_PLANNED_MAIN_ONLY: fixed Q-slot plan + safe finalizer + customer snapshot questions are the only main slots while open -->
+  <!-- v3.11.5 VIDEO_MIX_EARLY_END_GUARD: strict early-end guard for video/video+chat; customer snapshot main slots protected; safe handoff/finalizer -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -1288,7 +1288,7 @@
     // Pure AI-generated Q10 interviews stay flexible, because the model may phrase role questions
     // differently from our fallback seed plan. Mixed interviews are strict while customer slots are open,
     // then flexible for AI-filled remaining slots.
-    if (!isInterviewLiveContext(ctx) || isInterviewHybrid(ctx)) return false;
+    if (!isInterviewLiveContext(ctx)) return false;
     const target = interviewMainQuestionTarget(ctx);
     const customerCount = Math.max(0, Math.min(target, Number(structuredCustomerQuestionCount || 0)));
     if (!customerCount) return false;
@@ -1606,12 +1606,36 @@
 
   function shouldBlockEarlyInterviewClosing(){
     if (!isInterviewLiveContext(CTX)) return false;
-    if (isInterviewHybrid(CTX)) return false;
+    // v3.11.5: Video+Chat / Mix must also complete the spoken media target before
+    // any handoff or final processing may be accepted. The parent page sends
+    // maxQuestions as the media-question count for hybrid modes.
     return !interviewMainQuestionsComplete(CTX);
   }
 
   function requestMissingInterviewQuestion(source){
-    if (!dcSend || structuredEarlyClosingContinueRequests > 3) return;
+    if (!dcSend) return;
+    if (structuredEarlyClosingContinueRequests > 8) {
+      log('[QLOCK] early closing blocked but retry limit reached; keeping session open for manual recovery', {
+        source: source || '',
+        current: structuredCurrentQuestionIndex,
+        target: interviewMainQuestionTarget(CTX),
+        attempts: structuredEarlyClosingContinueRequests,
+        mode: CTX?.mode || '',
+        hybrid: isInterviewHybrid(CTX),
+        audioOnly: AUDIO_ONLY
+      });
+      setStatus('warn', t('fallbackEnd'));
+      postToParent('clarity.live.early_end_blocked', {
+        uid: UID,
+        companyId: COMPANY_ID,
+        source: source || '',
+        current: structuredCurrentQuestionIndex,
+        target: interviewMainQuestionTarget(CTX),
+        attempts: structuredEarlyClosingContinueRequests,
+        ts: new Date().toISOString()
+      });
+      return;
+    }
     structuredEarlyClosingContinueRequests += 1;
 
     const lk = activeInterviewLang(CTX);
@@ -1654,13 +1678,26 @@
     });
 
     try { if (structuredEarlyClosingRecoveryTimer) clearTimeout(structuredEarlyClosingRecoveryTimer); } catch(_) {}
+    const requestedQuestionIndex = structuredCurrentQuestionIndex;
     structuredEarlyClosingRecoveryTimer = setTimeout(() => {
       if (END_CALLED || FINAL_HANGUP_TIMER) return;
-      // Safety valve: never leave the candidate in silence after the closing sentence.
-      // If the recovery question did not start quickly, process the interview with the captured turns.
-      log('[QLOCK] early closing recovery watchdog -> final hangup safety');
-      FINAL_MESSAGE_SPOKEN = true;
-      beginFinalHangup('early_closing_recovery_watchdog');
+      if (!shouldBlockEarlyInterviewClosing()) return;
+
+      // v3.11.5: never convert an early closing recovery timeout into processing.
+      // This was the remaining path that could end video/video+chat after only one or a few questions.
+      // Instead, request the missing planned question again. If the retry limit is reached, keep the
+      // session open and surface a recoverable status rather than creating an incomplete report.
+      log('[QLOCK] early closing recovery watchdog -> re-request missing question, no finalization', {
+        source: source || '',
+        requestedQuestionIndex,
+        current: structuredCurrentQuestionIndex,
+        target: interviewMainQuestionTarget(CTX),
+        attempts: structuredEarlyClosingContinueRequests,
+        mode: CTX?.mode || '',
+        hybrid: isInterviewHybrid(CTX),
+        audioOnly: AUDIO_ONLY
+      });
+      requestMissingInterviewQuestion('early_closing_recovery_retry');
     }, 16000);
   }
 
@@ -2115,11 +2152,27 @@
 
   function requestHardEnd(source, opts = {}){
     if (END_CALLED || FINAL_HANGUP_TIMER) return;
-    if (!isInterviewLiveContext(CTX) || isInterviewHybrid(CTX)) {
+
+    if (isInterviewLiveContext(CTX) && structuredCurrentQuestionIndex < interviewMainQuestionTarget(CTX)) {
+      log('[HARD-END] blocked before media target complete', {
+        source: source || '',
+        current: structuredCurrentQuestionIndex,
+        target: interviewMainQuestionTarget(CTX),
+        hybrid: isInterviewHybrid(CTX),
+        audioOnly: AUDIO_ONLY
+      });
+      return;
+    }
+
+    if (!isInterviewLiveContext(CTX)) {
       sendFinalCloseInstruction(source || 'hard_end_non_interview', true);
       return;
     }
-    if (structuredCurrentQuestionIndex < interviewMainQuestionTarget(CTX)) return;
+
+    if (isInterviewHybrid(CTX)) {
+      sendFinalCloseInstruction(source || 'hard_end_hybrid_handoff', true);
+      return;
+    }
 
     const speakFinal = opts.speakFinal !== false;
     const cancelActive = opts.cancelActive !== false;
@@ -2179,7 +2232,7 @@
 
   function scheduleStrictTargetFinalization(source, delayMs){
     if (END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK) return;
-    if (!isInterviewLiveContext(CTX) || isInterviewHybrid(CTX)) return;
+    if (!isInterviewLiveContext(CTX)) return;
     if (structuredCurrentQuestionIndex < interviewMainQuestionTarget(CTX)) return;
 
     const delay = Math.max(1000, Number(delayMs) || TARGET_FINALIZE_AFTER_ANSWER_MS);
@@ -2204,7 +2257,6 @@
   function shouldAutoFinishInterview({ forceAfterTarget = false } = {}){
     if (!STARTED || END_CALLED || FINAL_HANGUP_TIMER) return false;
     if (!isInterviewLiveContext(CTX)) return false;
-    if (isInterviewHybrid(CTX)) return false;
     if (!interviewStartedAt) return false;
 
     const target = interviewMainQuestionTarget(CTX);
@@ -2222,7 +2274,7 @@
     if (END_CALLED || FINAL_HANGUP_TIMER) return;
     if (!forced && !shouldAutoFinishInterview()) return;
 
-    if (forced && isInterviewLiveContext(CTX) && !isInterviewHybrid(CTX)) {
+    if (forced && isInterviewLiveContext(CTX)) {
       HARD_END_LOCK = true;
       TARGET_FINALIZE_REQUESTED = true;
       clearHardEndTimers();
@@ -2384,7 +2436,7 @@
   }
 
   function scheduleTargetReachedAutoFinish(source, delayMs){
-    if (!isInterviewLiveContext(CTX) || isInterviewHybrid(CTX)) return;
+    if (!isInterviewLiveContext(CTX)) return;
     if (END_CALLED || FINAL_HANGUP_TIMER) return;
     if (structuredCurrentQuestionIndex < interviewMainQuestionTarget(CTX)) return;
 
@@ -2443,8 +2495,28 @@
       return false;
     }
 
-    // v3.11.3: After the selected Q-set is complete, accept end_interview.
-    // The slot plan itself is now the stronger completion signal. Do not block the finalizer
+    // v3.11.5: Video-only and Video+Chat must not finalize on a falsely advanced
+    // question index with too little captured candidate material. This keeps the finalizer
+    // robust for real completed interviews while blocking short, incomplete video runs.
+    const stricterMediaGuard = isInterviewLiveContext(CTX) && (!AUDIO_ONLY || isInterviewHybrid(CTX));
+    if (stricterMediaGuard) {
+      const minResponses = Math.max(2, Math.min(target, target - 1));
+      const elapsedLongEnough = elapsed >= Math.max(90, target * 12);
+      if (answerCount < minResponses && !elapsedLongEnough) {
+        log('[END] end_interview blocked by video/mix response guard', {
+          elapsedSec: elapsed.toFixed(1),
+          answerCount,
+          minResponses,
+          target,
+          hybrid: isInterviewHybrid(CTX),
+          audioOnly: AUDIO_ONLY
+        });
+        return false;
+      }
+    }
+
+    // After the selected Q-set/media target is complete, accept end_interview.
+    // The slot plan itself is the stronger completion signal; do not block the finalizer
     // only because Realtime missed one user transcription event.
     return true;
   }
@@ -2481,6 +2553,18 @@
       ts: new Date().toISOString()
     });
 
+    if (isInterviewHybrid(CTX)) {
+      postToParent('clarity.live.handoff_pending', {
+        uid: UID,
+        companyId: COMPANY_ID,
+        source: source || '',
+        targetQuestions: interviewMainQuestionTarget(CTX),
+        mainQuestions: structuredCurrentQuestionIndex,
+        chatQuestionCount: Number(CTX?.chatQuestionCount || 0),
+        ts: new Date().toISOString()
+      });
+    }
+
     FINAL_HANGUP_TIMER = setTimeout(() => {
       if (END_CALLED) return;
 
@@ -2498,6 +2582,18 @@
         bufferMs: hangupBufferMs,
         ts: new Date().toISOString()
       });
+
+      if (isInterviewHybrid(CTX)) {
+        postToParent('clarity.live.handoff_ready', {
+          uid: UID,
+          companyId: COMPANY_ID,
+          source: source || '',
+          targetQuestions: interviewMainQuestionTarget(CTX),
+          mainQuestions: structuredCurrentQuestionIndex,
+          chatQuestionCount: Number(CTX?.chatQuestionCount || 0),
+          ts: new Date().toISOString()
+        });
+      }
 
       hangup(source || 'final_message_done');
     }, hangupBufferMs);
@@ -2998,17 +3094,8 @@
 
         if (finalClosingDetected(txt)) {
           if (shouldBlockEarlyInterviewClosing()) {
-            const target = interviewMainQuestionTarget(CTX);
-            const closeEnoughForSafeFinish = structuredCurrentQuestionIndex >= Math.max(1, target - 1) && userUtterances >= Math.max(MIN_USER_UTTERANCES, target);
-            if (!closeEnoughForSafeFinish) {
-              requestMissingInterviewQuestion('early_final_audio_transcript_done');
-              return;
-            }
-            log('[QLOCK] accepted near-complete final closing to avoid stuck interview', {
-              mainQuestions: structuredCurrentQuestionIndex,
-              targetQuestions: target,
-              userUtterances
-            });
+            requestMissingInterviewQuestion('early_final_audio_transcript_done');
+            return;
           }
 
           FINAL_MESSAGE_SPOKEN = true;
@@ -3118,21 +3205,8 @@
           // Treat the recognized closing/handoff text as a valid processing trigger.
           if (finalClosingDetected(finalText)) {
             if (shouldBlockEarlyInterviewClosing()) {
-              const target = interviewMainQuestionTarget(CTX);
-              const closeEnoughForSafeFinish =
-                structuredCurrentQuestionIndex >= Math.max(1, target - 1) &&
-                userUtterances >= Math.max(MIN_USER_UTTERANCES, target - 1);
-
-              if (!closeEnoughForSafeFinish) {
-                requestMissingInterviewQuestion('early_final_output_item_done');
-                return;
-              }
-
-              log('[QLOCK] accepted near-complete final closing from output_item.done', {
-                mainQuestions: structuredCurrentQuestionIndex,
-                targetQuestions: target,
-                userUtterances
-              });
+              requestMissingInterviewQuestion('early_final_output_item_done');
+              return;
             }
 
             FINAL_MESSAGE_SPOKEN = true;
@@ -3159,7 +3233,7 @@
 
     /* RESPONSE DONE — GA safety: after the target is reached, do not wait forever for user transcription events. */
     if (eventType === 'response.done' || eventType === 'response.completed') {
-      if (isInterviewLiveContext(CTX) && !isInterviewHybrid(CTX) && structuredCurrentQuestionIndex >= interviewMainQuestionTarget(CTX)) {
+      if (isInterviewLiveContext(CTX) && structuredCurrentQuestionIndex >= interviewMainQuestionTarget(CTX)) {
         scheduleTargetReachedAutoFinish('response_done_after_target', STRUCTURED_AUTOFINISH_IDLE_MS);
       }
       return;
