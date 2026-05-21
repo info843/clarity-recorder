@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v3.11.3 SLOT_FINALIZER_FIX: fixed Q-slot plan + safe full finalizer; no premature mic stop before processing -->
+  <!-- v3.11.4 STRICT_PLANNED_MAIN_ONLY: fixed Q-slot plan + safe finalizer + customer snapshot questions are the only main slots while open -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -1282,6 +1282,93 @@
     return best;
   }
 
+
+  function shouldEnforceStrictPlannedMainOnly(ctx = CTX){
+    // Strict mode is only for real customer/snapshot questions.
+    // Pure AI-generated Q10 interviews stay flexible, because the model may phrase role questions
+    // differently from our fallback seed plan. Mixed interviews are strict while customer slots are open,
+    // then flexible for AI-filled remaining slots.
+    if (!isInterviewLiveContext(ctx) || isInterviewHybrid(ctx)) return false;
+    const target = interviewMainQuestionTarget(ctx);
+    const customerCount = Math.max(0, Math.min(target, Number(structuredCustomerQuestionCount || 0)));
+    if (!customerCount) return false;
+    return (structuredCurrentQuestionIndex || 0) < customerCount;
+  }
+
+  function returnStrictPlannedUnmatchedQuestionAsFollowUp(text, source = 'strict_planned_main_only'){
+    const q = structuredCurrentQuestionIndex || 0;
+
+    // If no planned customer main question has been accepted yet, keep the unexpected question
+    // out of the report. The first planned question is requested by the normal first-question flow.
+    if (q <= 0) {
+      structuredLastAssistantTurnType = 'system';
+      structuredAwaitingFollowUpQuestion = false;
+      log('[SLOT] unmatched pre-plan assistant question kept as system', {
+        source,
+        customerQuestions: structuredCustomerQuestionCount,
+        textPreview: String(text || '').slice(0, 160)
+      });
+      return {
+        role: 'assistant',
+        turnType: 'system',
+        questionIndex: 0,
+        subTurnIndex: 0,
+        isMainQuestion: false,
+        isFollowUp: false,
+        isIncludedInReport: false,
+        isTechnical: true
+      };
+    }
+
+    // If the slot already has its one report-relevant follow-up, keep additional clarifying
+    // prompts out of the PDF instead of consuming the next customer main question.
+    if (structuredFollowUpAskedForQuestion[q]) {
+      structuredLastAssistantTurnType = 'system';
+      structuredAwaitingFollowUpQuestion = false;
+      log('[SLOT] unmatched assistant question suppressed after existing follow-up', {
+        source,
+        currentQuestion: q,
+        customerQuestions: structuredCustomerQuestionCount,
+        textPreview: String(text || '').slice(0, 160)
+      });
+      return {
+        role: 'assistant',
+        turnType: 'system',
+        questionIndex: q,
+        subTurnIndex: structuredCurrentSubTurnIndex || 1,
+        isMainQuestion: false,
+        isFollowUp: false,
+        isIncludedInReport: false,
+        isTechnical: true
+      };
+    }
+
+    structuredCurrentSubTurnIndex = Math.max(1, (structuredCurrentSubTurnIndex || 0) + 1);
+    structuredLastAssistantTurnType = 'follow_up_question';
+    structuredAwaitingFollowUpQuestion = false;
+    try { if (SLOT_STALL_TIMER) clearTimeout(SLOT_STALL_TIMER); } catch(_) {}
+    SLOT_STALL_TIMER = null;
+    structuredFollowUpAskedForQuestion[q] = true;
+
+    log('[SLOT] unmatched assistant question forced to follow-up under customer plan', {
+      source,
+      currentQuestion: q,
+      customerQuestions: structuredCustomerQuestionCount,
+      targetQuestions: interviewMainQuestionTarget(CTX),
+      textPreview: String(text || '').slice(0, 180)
+    });
+
+    return {
+      role: 'assistant',
+      turnType: 'follow_up_question',
+      questionIndex: q,
+      subTurnIndex: structuredCurrentSubTurnIndex,
+      isMainQuestion: false,
+      isFollowUp: true,
+      isIncludedInReport: true
+    };
+  }
+
   function registerAssistantMainQuestionMeta(questionNumber = 0, source = 'main_question'){
     const target = interviewMainQuestionTarget(CTX);
     let nextNo = Number(questionNumber || 0);
@@ -1690,6 +1777,10 @@
           isIncludedInReport: false,
           isTechnical: true
         };
+      }
+
+      if (shouldEnforceStrictPlannedMainOnly(CTX)) {
+        return returnStrictPlannedUnmatchedQuestionAsFollowUp(clean, 'unplanned_detected_question');
       }
 
       return registerAssistantMainQuestionMeta((structuredCurrentQuestionIndex || 0) + 1, 'unplanned_detected_question');
