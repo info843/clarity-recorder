@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v3.11.6 HYBRID_HANDOFF_VIDEO_TARGET_GUARD: spoken handoff restored; video-only near-complete timeout guard; hybrid spoken-target handling -->
+  <!-- v3.11.7 MIX_HANDOFF_AUTOFINALIZE: fixes hybrid target auto-handoff after spoken target; keeps audio/video-only v3.11.6 behavior -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -2190,6 +2190,8 @@
       source: source || '',
       mainQuestions: structuredCurrentQuestionIndex,
       targetQuestions: interviewMainQuestionTarget(CTX),
+      liveTargetQuestions: interviewLiveQuestionTarget(CTX),
+      hybrid: isInterviewHybrid(CTX),
       userUtterances,
       userAudioItems
     });
@@ -2501,10 +2503,22 @@
 
   function scheduleInterviewAutoFinishCheck(source){
     try { if (structuredAutoFinishTimer) clearTimeout(structuredAutoFinishTimer); } catch(_) {}
-    if (!isInterviewLiveContext(CTX) || isInterviewHybrid(CTX)) return;
+    if (!isInterviewLiveContext(CTX)) return;
+
+    // v3.11.7: Hybrid/Mix previously skipped the idle auto-finish path completely.
+    // That meant the model could speak the correct handoff sentence, but if it missed the
+    // end_interview tool call or transcript final event, the recorder stayed open until the
+    // user pressed the fallback button. Hybrid may now auto-finalize ONLY after the spoken
+    // media target is reached; before that it remains protected by the early-end guards.
+    if (isInterviewHybrid(CTX) && structuredCurrentQuestionIndex < interviewLiveQuestionTarget(CTX)) return;
+
     structuredAutoFinishTimer = setTimeout(() => {
-      requestAutoFinishInterview(source || 'idle_after_candidate_answer');
-    }, STRUCTURED_AUTOFINISH_IDLE_MS);
+      if (isInterviewHybrid(CTX)) {
+        sendFinalCloseInstruction(source || 'hybrid_idle_after_spoken_target', true);
+      } else {
+        requestAutoFinishInterview(source || 'idle_after_candidate_answer');
+      }
+    }, isInterviewHybrid(CTX) ? Math.max(3000, TARGET_FINALIZE_AFTER_ANSWER_MS) : STRUCTURED_AUTOFINISH_IDLE_MS);
   }
 
   function scheduleTargetReachedAutoFinish(source, delayMs){
@@ -2516,8 +2530,15 @@
     try { if (targetAutoFinishTimer) clearTimeout(targetAutoFinishTimer); } catch(_) {}
     targetAutoFinishTimer = setTimeout(() => {
       if (END_CALLED || FINAL_HANGUP_TIMER) return;
-      if (structuredCurrentQuestionIndex < interviewMainQuestionTarget(CTX)) return;
-      requestHardEnd(source || 'target_reached_timer', { speakFinal: true, cancelActive: true });
+
+      // v3.11.7: For Mix/Video+Chat the spoken target is intentionally lower than the
+      // full Q-set. The remaining slots are handled by chat. The old full-target guard
+      // blocked automatic handoff at Q7/10, so the correct handoff sentence could be
+      // spoken but the technical finalizer did not reliably run.
+      const requiredTarget = isInterviewHybrid(CTX) ? interviewLiveQuestionTarget(CTX) : interviewMainQuestionTarget(CTX);
+      if (structuredCurrentQuestionIndex < requiredTarget && !nearCompleteVideoOnlyByRuntime(CTX)) return;
+
+      requestHardEnd(source || (isInterviewHybrid(CTX) ? 'hybrid_spoken_target_reached_timer' : 'target_reached_timer'), { speakFinal: true, cancelActive: true });
     }, Math.max(1500, delay));
 
     log('[END] target reached autofinish scheduled', {
@@ -2525,6 +2546,8 @@
       delayMs: Math.max(1500, delay),
       mainQuestions: structuredCurrentQuestionIndex,
       targetQuestions: interviewMainQuestionTarget(CTX),
+      liveTargetQuestions: interviewLiveQuestionTarget(CTX),
+      hybrid: isInterviewHybrid(CTX),
       userUtterances,
       userAudioItems
     });
@@ -3305,8 +3328,10 @@
 
     /* RESPONSE DONE — GA safety: after the target is reached, do not wait forever for user transcription events. */
     if (eventType === 'response.done' || eventType === 'response.completed') {
-      if (isInterviewLiveContext(CTX) && structuredCurrentQuestionIndex >= interviewMainQuestionTarget(CTX)) {
-        scheduleTargetReachedAutoFinish('response_done_after_target', STRUCTURED_AUTOFINISH_IDLE_MS);
+      if (isInterviewLiveContext(CTX) && structuredCurrentQuestionIndex >= interviewLiveQuestionTarget(CTX)) {
+        // v3.11.7: In Hybrid/Mix the spoken target is e.g. 7/10. Once that response is done,
+        // schedule the handoff finalizer instead of waiting for the full Q10/Q20 count.
+        scheduleTargetReachedAutoFinish(isInterviewHybrid(CTX) ? 'hybrid_response_done_after_spoken_target' : 'response_done_after_target', isInterviewHybrid(CTX) ? TARGET_FINALIZE_AFTER_ANSWER_MS : STRUCTURED_AUTOFINISH_IDLE_MS);
       }
       return;
     }
