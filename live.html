@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v3.11.7 MIX_HANDOFF_AUTOFINALIZE: fixes hybrid target auto-handoff after spoken target; keeps audio/video-only v3.11.6 behavior -->
+  <!-- v3.11.8 MIX_ORAL_TARGET_LOCK: locks hybrid spoken target to the planned ~70% oral split before chat handoff; keeps v3.11.7 auto-handoff behavior -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -1599,10 +1599,19 @@
     return Math.max(1, Math.min(30, interviewMaxQuestions(ctx)));
   }
 
+  function hybridDefaultOralTarget(total){
+    const n = Math.max(1, Number(total) || 1);
+    // v3.11.8: Fixed Mix split. For Q10 this must be Q1-Q7 spoken and Q8-Q10 chat.
+    // For Q20/Q30 it scales to about 70% spoken, 30% written.
+    return Math.max(1, Math.min(n, Math.ceil(n * 0.7)));
+  }
+
   function interviewLiveQuestionTarget(ctx = CTX){
     const total = interviewMainQuestionTarget(ctx);
     if (!isInterviewLiveContext(ctx)) return total;
     if (!isInterviewHybrid(ctx)) return total;
+
+    const defaultOralTarget = hybridDefaultOralTarget(total);
 
     const explicitSpoken = Number(
       ctx?.spokenQuestionCount ||
@@ -1613,7 +1622,22 @@
       0
     );
     if (Number.isFinite(explicitSpoken) && explicitSpoken > 0) {
-      return Math.max(1, Math.min(total, Math.round(explicitSpoken)));
+      const rounded = Math.max(1, Math.min(total, Math.round(explicitSpoken)));
+      // v3.11.8: A too-low page/media value caused Mix to hand off after Q4 while the
+      // chat correctly started at Q8, leaving Q5-Q7 empty. Keep the spoken target locked
+      // to at least the product split unless the page explicitly sends a higher target.
+      if (rounded < defaultOralTarget) {
+        log('[MIX] explicit spoken target below product oral target; locking to default oral split', {
+          explicitSpoken: rounded,
+          defaultOralTarget,
+          totalQuestions: total,
+          mode: ctx?.mode || '',
+          mediaQuestionCount: ctx?.mediaQuestionCount || '',
+          chatQuestionCount: ctx?.chatQuestionCount || ''
+        });
+        return defaultOralTarget;
+      }
+      return rounded;
     }
 
     const chatQ = Number(
@@ -1624,11 +1648,21 @@
       0
     );
     if (Number.isFinite(chatQ) && chatQ > 0 && chatQ < total) {
-      return Math.max(1, Math.min(total, total - Math.round(chatQ)));
+      const fromChatRemainder = Math.max(1, Math.min(total, total - Math.round(chatQ)));
+      if (fromChatRemainder < defaultOralTarget) {
+        log('[MIX] chat remainder below product oral target; locking to default oral split', {
+          fromChatRemainder,
+          defaultOralTarget,
+          totalQuestions: total,
+          chatQuestionCount: chatQ
+        });
+        return defaultOralTarget;
+      }
+      return fromChatRemainder;
     }
 
     // Default Mix policy: about 70% spoken, remaining slots in chat.
-    return Math.max(1, Math.min(total, Math.ceil(total * 0.7)));
+    return defaultOralTarget;
   }
 
   function nearCompleteVideoOnlyByRuntime(ctx = CTX){
