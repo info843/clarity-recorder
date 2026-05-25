@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v3.11.8.1 VIDEO_ONLY_Q10_END_RESTORE: keeps stable AVATAR_BRIDGE_FULL_PATCHED + MIX_ORAL_TARGET_LOCK; only tightens exact-target video-only closing after Q10 -->
+  <!-- v3.11.8.2 VIDEO_ONLY_PROGRESS_WATCHDOG: v3.11.8 avatar bridge + Mix oral target lock + conservative Video-only missing-question watchdog -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -2197,29 +2197,8 @@
       if (String(payload.speaker || '').toLowerCase() === 'user') {
         scheduleInterviewAutoFinishCheck('candidate_transcript_final');
       } else if (String(payload.speaker || '').toLowerCase() === 'assistant') {
-        const isFinalClosing = finalClosingDetected(payload.text);
-        const isVideoOnlyExactTarget =
-          isInterviewLiveContext(CTX) &&
-          !isInterviewHybrid(CTX) &&
-          !AUDIO_ONLY &&
-          structuredCurrentQuestionIndex >= interviewLiveQuestionTarget(CTX);
-
-        if (!isFinalClosing && isVideoOnlyExactTarget) {
-          // v3.11.8.1 VIDEO_ONLY_Q10_END_RESTORE:
-          // After the exact Q10/Q20/Q30 target has been reached, assistant filler,
-          // coaching, motivation or generic GPT-style continuation must not reset
-          // the idle timer. Force the normal final closing path instead.
-          log('[END] video-only assistant after exact target -> schedule final close', {
-            source: payload.sourceEvent || '',
-            mainQuestions: structuredCurrentQuestionIndex,
-            targetQuestions: interviewMainQuestionTarget(CTX),
-            textPreview: String(payload.text || '').slice(0, 180)
-          });
-          scheduleStrictTargetFinalization('video_only_assistant_after_exact_target', TARGET_FINALIZE_AFTER_ANSWER_MS);
-        } else if (!isFinalClosing) {
-          // New assistant activity means the model is still active; defer idle autofinish.
-          scheduleInterviewAutoFinishCheck('assistant_transcript_final');
-        }
+        // New assistant activity means the model is still active; defer idle autofinish.
+        if (!finalClosingDetected(payload.text)) scheduleInterviewAutoFinishCheck('assistant_transcript_final');
       }
     }
   }
@@ -2619,6 +2598,65 @@
     return createAssistantAudioResponseFromInstruction(instruction, source || 'slot_next_main_stall');
   }
 
+  function requestVideoOnlyProgressRecovery(source){
+    // Conservative Video-only watchdog: do not end early, only keep the fixed interview plan moving.
+    // Audio-only already behaves well and Mix has its own 70/30 handoff logic, so both are excluded.
+    if (!isInterviewLiveContext(CTX) || isInterviewHybrid(CTX) || AUDIO_ONLY) return false;
+    if (END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK) return false;
+
+    const target = interviewMainQuestionTarget(CTX);
+    const liveTarget = interviewLiveQuestionTarget(CTX);
+    const current = Math.max(0, Number(structuredCurrentQuestionIndex || 0));
+    if (current >= target || current >= liveTarget) return false;
+
+    // If the last accepted report-relevant turn was a main question and the one allowed
+    // follow-up has not been asked yet, ask that follow-up first. This preserves the
+    // existing main-question -> answer -> follow-up -> addition -> next-main structure.
+    if (current > 0 && structuredLastAssistantTurnType === 'main_question' && !structuredFollowUpAskedForQuestion[current]) {
+      log('[VIDEO-WATCHDOG] requesting missing follow-up before next main question', {
+        source: source || '',
+        current,
+        target,
+        lastAssistant: structuredLastAssistantTurnType,
+        lastCandidate: structuredLastCandidateTurnType
+      });
+      return requestSlotFollowUp(source || 'video_only_watchdog_missing_followup');
+    }
+
+    // In Video-only, Realtime sometimes misses completed user/assistant transcript events while
+    // the media recording is otherwise fine. Then the internal q-counter can lag behind the
+    // conversation and the model may simply stop after Q7/Q8. Instead of guessing completion,
+    // give the model a short range from the fixed slot plan and tell it to continue with the
+    // next one that has not already been clearly asked. If the counter missed Q8 but Q8 was
+    // already spoken, the model can move to Q9 and plannedMainQuestionMatch() will jump the
+    // internal slot index forward.
+    const start = Math.min(target, current + 1);
+    const end = Math.min(target, start + 2);
+    const upcoming = [];
+    for (let i = start; i <= end; i += 1) {
+      const qText = slotPlanQuestionAt(i);
+      if (qText) upcoming.push(`${i}. ${qText}`);
+    }
+
+    const lk = activeInterviewLang(CTX);
+    const upcomingText = upcoming.join('\n');
+    const instruction = lk === 'de'
+      ? `Interne Interview-Steuerung: Das Video-Interview ist noch nicht vollständig abgeschlossen. Fahre jetzt mit der nächsten Hauptfrage aus dem festen Interviewplan fort, die im bisherigen Gespräch noch nicht klar gestellt wurde. Wiederhole keine bereits beantwortete Frage. Wenn die erste der folgenden Fragen bereits gestellt wurde, nimm die nächste. Sprich zur Kandidatin/zum Kandidaten nur die ausgewählte Frage, ohne Meta-Erklärung und ohne Nummerierung. Danach warte auf die Antwort.\n${upcomingText}`
+      : `Internal interview control: the video interview is not complete yet. Continue now with the next main question from the fixed interview plan that has not already been clearly asked in the conversation. Do not repeat an already answered question. If the first of the following questions has already been asked, take the next one. Say only the selected question to the candidate, with no meta explanation and no numbering. Then wait for the answer.\n${upcomingText}`;
+
+    log('[VIDEO-WATCHDOG] requesting next unasked planned main question', {
+      source: source || '',
+      current,
+      target,
+      upcomingCount: upcoming.length,
+      upcomingPreview: upcomingText.slice(0, 240),
+      lastAssistant: structuredLastAssistantTurnType,
+      lastCandidate: structuredLastCandidateTurnType
+    });
+
+    return createAssistantAudioResponseFromInstruction(instruction, source || 'video_only_watchdog_next_main');
+  }
+
   function scheduleSlotStallRecovery(kind, q, delayMs, source){
     if (!isInterviewLiveContext(CTX) || isInterviewHybrid(CTX)) return;
     if (END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK) return;
@@ -2664,11 +2702,31 @@
     if (isInterviewHybrid(CTX) && structuredCurrentQuestionIndex < interviewLiveQuestionTarget(CTX)) return;
 
     structuredAutoFinishTimer = setTimeout(() => {
+      if (END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK) return;
+
       if (isInterviewHybrid(CTX)) {
         sendFinalCloseInstruction(source || 'hybrid_idle_after_spoken_target', true);
-      } else {
-        requestAutoFinishInterview(source || 'idle_after_candidate_answer');
+        return;
       }
+
+      // Video-only must not silently idle before Q10. If Realtime misses a user/assistant
+      // transcript event, request the next planned question instead of doing nothing.
+      // Audio-only remains untouched because that flow is currently stable.
+      if (!AUDIO_ONLY && structuredCurrentQuestionIndex < interviewLiveQuestionTarget(CTX)) {
+        const recovered = requestVideoOnlyProgressRecovery(source || 'video_only_idle_before_target');
+        if (!recovered) {
+          log('[VIDEO-WATCHDOG] recovery skipped before target', {
+            source: source || '',
+            current: structuredCurrentQuestionIndex,
+            target: interviewLiveQuestionTarget(CTX),
+            lastAssistant: structuredLastAssistantTurnType,
+            lastCandidate: structuredLastCandidateTurnType
+          });
+        }
+        return;
+      }
+
+      requestAutoFinishInterview(source || 'idle_after_candidate_answer');
     }, isInterviewHybrid(CTX) ? Math.max(3000, TARGET_FINALIZE_AFTER_ANSWER_MS) : STRUCTURED_AUTOFINISH_IDLE_MS);
   }
 
@@ -2719,21 +2777,7 @@
     });
     if (structuredCurrentQuestionIndex >= interviewLiveQuestionTarget(CTX) || nearCompleteVideoOnlyByRuntime(CTX)) {
       const q = structuredCurrentQuestionIndex || 0;
-      const isVideoOnlyExactTarget =
-        isInterviewLiveContext(CTX) &&
-        !isInterviewHybrid(CTX) &&
-        !AUDIO_ONLY &&
-        structuredCurrentQuestionIndex >= interviewLiveQuestionTarget(CTX);
-
-      // v3.11.8.1 VIDEO_ONLY_Q10_END_RESTORE:
-      // For video-only, once the exact live target is reached and a candidate audio
-      // response is observed, close quickly like the stable audio flow. Do not use
-      // the old follow-up wait here, because that window allowed the model to drift
-      // into a private-GPT style conversation after Q10.
-      const delay = isVideoOnlyExactTarget
-        ? TARGET_FINALIZE_AFTER_ANSWER_MS
-        : (structuredFollowUpAskedForQuestion[q] ? TARGET_FINALIZE_AFTER_ANSWER_MS : TARGET_FOLLOWUP_WAIT_MS);
-
+      const delay = structuredFollowUpAskedForQuestion[q] ? TARGET_FINALIZE_AFTER_ANSWER_MS : TARGET_FOLLOWUP_WAIT_MS;
       scheduleStrictTargetFinalization('candidate_audio_after_target', delay);
     } else {
       scheduleInterviewAutoFinishCheck('candidate_audio_item');
@@ -3204,21 +3248,8 @@
         avatarLevel('user', 0.12, 'user_transcript_completed');
 
         userUtterances += 1;
-        if (structuredCurrentQuestionIndex >= interviewLiveQuestionTarget(CTX)) {
-          const isVideoOnlyExactTarget =
-            isInterviewLiveContext(CTX) &&
-            !isInterviewHybrid(CTX) &&
-            !AUDIO_ONLY &&
-            structuredCurrentQuestionIndex >= interviewLiveQuestionTarget(CTX);
-
-          // v3.11.8.1 VIDEO_ONLY_Q10_END_RESTORE:
-          // Keep the exact Q-target guard. No runtime "near complete" shortcut.
-          // Only after the real target is reached, video-only uses the shorter
-          // audio-like finalization delay instead of the long idle timer.
-          scheduleTargetReachedAutoFinish(
-            'user_transcript_after_target',
-            isVideoOnlyExactTarget ? TARGET_FINALIZE_AFTER_ANSWER_MS : STRUCTURED_AUTOFINISH_IDLE_MS
-          );
+        if (structuredCurrentQuestionIndex >= interviewMainQuestionTarget(CTX)) {
+          scheduleTargetReachedAutoFinish('user_transcript_after_target', STRUCTURED_AUTOFINISH_IDLE_MS);
         } else {
           scheduleInterviewAutoFinishCheck('user_transcript_completed');
         }
@@ -3666,12 +3697,12 @@
     const hasCustomerPlan = customQuestions.length > 0;
     if (activeInterviewLang(ctx) === 'de') {
       return hasCustomerPlan
-        ? `Interner Interviewumfang ${qset}: Es gibt einen festen Slot-Plan mit genau ${maxQ} Hauptfragen. Stelle zuerst die kundeneigenen Fragen exakt in der gespeicherten Reihenfolge. Wenn nur ${customQuestions.length} kundeneigene Fragen vorhanden sind, ergänze danach ${missing} passende rollenbezogene Hauptfragen. Pro Slot gilt strikt: Hauptfrage stellen, vollständige Antwort abwarten, genau eine kurze natürliche Nachfrage oder Ergänzungsmöglichkeit stellen, Ergänzungsantwort abwarten, erst dann nächster Slot. Eine Nachfrage darf NIEMALS eine spätere kundeneigene Hauptfrage enthalten und zählt NIEMALS als Hauptfrage. Sage im Gespräch keine Fragennummern, kein Q10/Q20/Q30 und keine Formulierungen wie „zweite Frage“, „Frage 8“ oder „letzte Frage“. Beende erst nach Slot ${maxQ} und dessen Antwort/Ergänzung. Danach kein Coaching, keine Motivation, keine Beratung und keinen offenen Dialog mehr führen; sofort den vorgesehenen Abschluss-/Übergabesatz sprechen und end_interview auslösen.${capNoteDe}${hybridNoteDe}`
-        : `Interner Interviewumfang ${qset}: Stelle genau ${maxQ} passende rollenbezogene Hauptfragen in einem festen Slot-Plan. Pro Slot gilt strikt: Hauptfrage stellen, vollständige Antwort abwarten, genau eine kurze natürliche Nachfrage oder Ergänzungsmöglichkeit stellen, Ergänzungsantwort abwarten, erst dann nächster Slot. Eine Nachfrage zählt NIEMALS als Hauptfrage. Sage im Gespräch keine Fragennummern, kein Q10/Q20/Q30 und keine Formulierungen wie „zweite Frage“, „Frage 8“ oder „letzte Frage“. Nutze natürliche professionelle Übergänge. Beende erst nach Slot ${maxQ} und dessen Antwort/Ergänzung. Danach kein Coaching, keine Motivation, keine Beratung und keinen offenen Dialog mehr führen; sofort den vorgesehenen Abschluss-/Übergabesatz sprechen und end_interview auslösen.${capNoteDe}${hybridNoteDe}`;
+        ? `Interner Interviewumfang ${qset}: Es gibt einen festen Slot-Plan mit genau ${maxQ} Hauptfragen. Stelle zuerst die kundeneigenen Fragen exakt in der gespeicherten Reihenfolge. Wenn nur ${customQuestions.length} kundeneigene Fragen vorhanden sind, ergänze danach ${missing} passende rollenbezogene Hauptfragen. Pro Slot gilt strikt: Hauptfrage stellen, vollständige Antwort abwarten, genau eine kurze natürliche Nachfrage oder Ergänzungsmöglichkeit stellen, Ergänzungsantwort abwarten, erst dann nächster Slot. Eine Nachfrage darf NIEMALS eine spätere kundeneigene Hauptfrage enthalten und zählt NIEMALS als Hauptfrage. Sage im Gespräch keine Fragennummern, kein Q10/Q20/Q30 und keine Formulierungen wie „zweite Frage“, „Frage 8“ oder „letzte Frage“. Beende erst nach Slot ${maxQ} und dessen Antwort/Ergänzung.${capNoteDe}${hybridNoteDe}`
+        : `Interner Interviewumfang ${qset}: Stelle genau ${maxQ} passende rollenbezogene Hauptfragen in einem festen Slot-Plan. Pro Slot gilt strikt: Hauptfrage stellen, vollständige Antwort abwarten, genau eine kurze natürliche Nachfrage oder Ergänzungsmöglichkeit stellen, Ergänzungsantwort abwarten, erst dann nächster Slot. Eine Nachfrage zählt NIEMALS als Hauptfrage. Sage im Gespräch keine Fragennummern, kein Q10/Q20/Q30 und keine Formulierungen wie „zweite Frage“, „Frage 8“ oder „letzte Frage“. Nutze natürliche professionelle Übergänge. Beende erst nach Slot ${maxQ} und dessen Antwort/Ergänzung.${capNoteDe}${hybridNoteDe}`;
     }
     return hasCustomerPlan
-      ? `Internal interview scope ${qset}: There is a fixed slot plan with exactly ${maxQ} main questions. Ask the customer's own questions first, exactly in the stored order. If only ${customQuestions.length} customer questions are available, add ${missing} suitable role-specific main questions afterwards. Per slot, strictly follow: ask the main question, wait for the complete answer, ask exactly one short natural follow-up or addition opportunity, wait for the addition answer, only then move to the next slot. A follow-up must NEVER contain a later customer main question and NEVER counts as a main question. Do not announce question numbers, Q10/Q20/Q30, or phrases like “question 8”, “second question”, or “last question”. End only after slot ${maxQ} and its answer/addition. After that, do not coach, motivate, advise, or keep an open dialogue; immediately say the required closing/handoff message and trigger end_interview.${capNoteEn}${hybridNoteEn}`
-      : `Internal interview scope ${qset}: Ask exactly ${maxQ} suitable role-specific main questions in a fixed slot plan. Per slot, strictly follow: ask the main question, wait for the complete answer, ask exactly one short natural follow-up or addition opportunity, wait for the addition answer, only then move to the next slot. A follow-up NEVER counts as a main question. Do not announce question numbers, Q10/Q20/Q30, or phrases like “question 8”, “second question”, or “last question”. Use natural professional transitions. End only after slot ${maxQ} and its answer/addition. After that, do not coach, motivate, advise, or keep an open dialogue; immediately say the required closing/handoff message and trigger end_interview.${capNoteEn}${hybridNoteEn}`;
+      ? `Internal interview scope ${qset}: There is a fixed slot plan with exactly ${maxQ} main questions. Ask the customer's own questions first, exactly in the stored order. If only ${customQuestions.length} customer questions are available, add ${missing} suitable role-specific main questions afterwards. Per slot, strictly follow: ask the main question, wait for the complete answer, ask exactly one short natural follow-up or addition opportunity, wait for the addition answer, only then move to the next slot. A follow-up must NEVER contain a later customer main question and NEVER counts as a main question. Do not announce question numbers, Q10/Q20/Q30, or phrases like “question 8”, “second question”, or “last question”. End only after slot ${maxQ} and its answer/addition.${capNoteEn}${hybridNoteEn}`
+      : `Internal interview scope ${qset}: Ask exactly ${maxQ} suitable role-specific main questions in a fixed slot plan. Per slot, strictly follow: ask the main question, wait for the complete answer, ask exactly one short natural follow-up or addition opportunity, wait for the addition answer, only then move to the next slot. A follow-up NEVER counts as a main question. Do not announce question numbers, Q10/Q20/Q30, or phrases like “question 8”, “second question”, or “last question”. Use natural professional transitions. End only after slot ${maxQ} and its answer/addition.${capNoteEn}${hybridNoteEn}`;
   }
 
   function isAssessmentContext(ctx){
