@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v3.11.8.2 VIDEO_ONLY_PROGRESS_WATCHDOG: v3.11.8 avatar bridge + Mix oral target lock + conservative Video-only missing-question watchdog -->
+  <!-- v3.11.8.3 VIDEO_ONLY_HARD_FINAL_LOCK: v3.11.8.2 progress watchdog + deterministic Q10 stop/recording lock for Video-only -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -252,7 +252,7 @@
   // bevor Audio, Mikrofon, Kamera und Recorder gestoppt werden.
   const FINAL_HANGUP_BUFFER_MS = Math.max(
     2500,
-    Math.min(30000, Number(Q.get('finalHangupBufferMs') || 26000) || 26000)
+    Math.min(26000, Number(Q.get('finalHangupBufferMs') || 8500) || 8500)
   );
 
   if (DEBUG_UI) document.body.classList.add('debug-ui');
@@ -1191,6 +1191,9 @@
   let uploadFinished = false;
   let recordingStartedAt = 0;
   let lastPutStatus = null;
+  // v3.11.8.3: Once the selected Video-only Q-set is complete, capture is stopped deterministically.
+  // The final message may still be spoken over the existing Realtime connection, but the candidate mic/camera/recorder no longer keep running.
+  let FINAL_MEDIA_STOPPED = false;
 
   /* ===== Candidate-only Audio Fallback Recorder ===== */
   let candidateRecorder = null;
@@ -2039,9 +2042,9 @@
     if (isMainAnswer && isInterviewLiveContext(CTX)) {
       structuredAwaitingFollowUpQuestion = true;
       if (q >= target) {
-        // Give the model a short window to ask the one allowed final follow-up.
-        // If it does not, close the interview instead of waiting indefinitely.
-        scheduleStrictTargetFinalization('target_main_answer_wait_followup', TARGET_FOLLOWUP_WAIT_MS);
+        // v3.11.8.3: Q10 answered means the paid interview is complete.
+        // Do not wait for another optional follow-up here; lock and finalize deterministically.
+        scheduleStrictTargetFinalization('target_main_answer_completed_final_lock', Math.max(900, TARGET_FINALIZE_AFTER_ANSWER_MS));
       }
     }
 
@@ -2327,6 +2330,59 @@
     });
   }
 
+
+  function isVideoOnlyInterviewContext(ctx = CTX){
+    return isInterviewLiveContext(ctx) && !isInterviewHybrid(ctx) && !AUDIO_ONLY;
+  }
+
+  function hardStopUserCaptureAfterTarget(source){
+    if (FINAL_MEDIA_STOPPED) return;
+    if (!isVideoOnlyInterviewContext(CTX)) return;
+    if (structuredCurrentQuestionIndex < interviewMainQuestionTarget(CTX)) return;
+
+    FINAL_MEDIA_STOPPED = true;
+
+    log('[FINAL-LOCK] video-only target reached -> stopping candidate capture and recorder', {
+      source: source || '',
+      mainQuestions: structuredCurrentQuestionIndex,
+      targetQuestions: interviewMainQuestionTarget(CTX),
+      userUtterances,
+      userAudioItems,
+      mediaRecorderState: mediaRecorder?.state || '',
+      recordingStarted: !!recordingStartedAt,
+      uploadStarted,
+      uploadFinished
+    });
+
+    // Stop Realtime listening first so the model cannot keep treating further user speech as new input.
+    try {
+      dcSend({ type: 'session.update', session: { turn_detection: { type: 'none' } } });
+    } catch(_) {}
+
+    // Disable uplink immediately. This is stronger than the soft lock and prevents end-of-interview loops.
+    try { disableMicUplink(); } catch(_) {}
+
+    // Stop local capture/recording now. The final spoken message is not needed in the recording/PDF.
+    // Upload/PDF processing can start while the final message is still being spoken.
+    try { stopRecording(); } catch(e) { log('[FINAL-LOCK] stopRecording failed', errMsg(e)); }
+
+    // Release physical devices early for privacy/cost control. Remote audio can still play through the existing receiver.
+    try { localStream?.getAudioTracks?.().forEach(track => { try { track.enabled = false; } catch(_) {} try { track.stop(); } catch(_) {} }); } catch(_) {}
+    try { localStream?.getVideoTracks?.().forEach(track => { try { track.enabled = false; } catch(_) {} try { track.stop(); } catch(_) {} }); } catch(_) {}
+
+    avatarSet('processing', 'video_only_final_capture_stopped');
+    avatarLevel('user', 0, 'video_only_final_capture_stopped');
+
+    postToParent('clarity.live.capture_stopped_after_target', {
+      uid: UID,
+      companyId: COMPANY_ID,
+      source: source || '',
+      mainQuestions: structuredCurrentQuestionIndex,
+      targetQuestions: interviewMainQuestionTarget(CTX),
+      ts: new Date().toISOString()
+    });
+  }
+
   function scheduleAbsoluteFullFinalize(source, ms = ABSOLUTE_FINALIZE_AFTER_HARD_END_MS){
     try { if (ABSOLUTE_FINALIZE_TIMER) clearTimeout(ABSOLUTE_FINALIZE_TIMER); } catch(_) {}
     const delay = Math.max(12000, Number(ms) || ABSOLUTE_FINALIZE_AFTER_HARD_END_MS);
@@ -2378,6 +2434,7 @@
     TARGET_FINALIZE_REQUESTED = true;
     clearHardEndTimers();
     lockRealtimeListeningForEnd(source || 'hard_end');
+    hardStopUserCaptureAfterTarget(source || 'hard_end');
     setStatus('warn', t('processing'));
 
     postToParent('clarity.live.hard_end_lock', {
@@ -2476,6 +2533,7 @@
       TARGET_FINALIZE_REQUESTED = true;
       clearHardEndTimers();
       lockRealtimeListeningForEnd(source || 'forced_final_close');
+      hardStopUserCaptureAfterTarget(source || 'forced_final_close');
       try { dcSend({ type: 'response.cancel' }); } catch(_) {}
     }
 
@@ -3249,7 +3307,7 @@
 
         userUtterances += 1;
         if (structuredCurrentQuestionIndex >= interviewMainQuestionTarget(CTX)) {
-          scheduleTargetReachedAutoFinish('user_transcript_after_target', STRUCTURED_AUTOFINISH_IDLE_MS);
+          scheduleStrictTargetFinalization('user_transcript_after_target_final_lock', Math.max(900, TARGET_FINALIZE_AFTER_ANSWER_MS));
         } else {
           scheduleInterviewAutoFinishCheck('user_transcript_completed');
         }
@@ -4956,6 +5014,7 @@
     uploadStarted = false;
     uploadFinished = false;
     lastPutStatus = null;
+    FINAL_MEDIA_STOPPED = false;
 
     try {
       destroyed = false;
