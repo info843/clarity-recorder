@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v3.11.8.3 VIDEO_ONLY_HARD_FINAL_LOCK: v3.11.8.2 progress watchdog + deterministic Q10 stop/recording lock for Video-only -->
+  <!-- v3.11.8.4 VIDEO_ONLY_SCRIPTED_DRIVER: keeps v3.11.8.3 hard final lock, but drives Video-only recovery/next questions via response.instructions instead of user-prompt items -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -1693,6 +1693,10 @@
     return !looksAssessmentContext(ctx) && !(typeof isAssessmentContext === 'function' && isAssessmentContext(ctx));
   }
 
+  function isVideoOnlyInterviewMode(ctx = CTX){
+    return isInterviewLiveContext(ctx) && !isInterviewHybrid(ctx) && !AUDIO_ONLY;
+  }
+
   function interviewMainQuestionTarget(ctx = CTX){
     return Math.max(1, Math.min(30, interviewMaxQuestions(ctx)));
   }
@@ -1838,21 +1842,7 @@
       attempts: structuredEarlyClosingContinueRequests
     });
 
-    // Use a user-style instruction here. In practice Realtime follows this more reliably
-    // as an immediate next spoken action than a late system item after an early closing sentence.
-    dcSend({
-      type: 'conversation.item.create',
-      item: {
-        type: 'message',
-        role: 'user',
-        content: [{ type: 'input_text', text: instruction }]
-      }
-    });
-
-    dcSend({
-      type: 'response.create',
-      response: { conversation: 'default', modalities: ['audio'] }
-    });
+    createAssistantAudioResponseFromInstruction(instruction, source || 'early_closing_missing_question');
 
     try { if (structuredEarlyClosingRecoveryTimer) clearTimeout(structuredEarlyClosingRecoveryTimer); } catch(_) {}
     const requestedQuestionIndex = structuredCurrentQuestionIndex;
@@ -2133,6 +2123,17 @@
           awaitingFollowUp: structuredAwaitingFollowUpQuestion
         }
       });
+
+      // If Video-only assistant output is classified as system/off-script before Q10,
+      // do not let it continue as normal GPT chat. Recover by forcing the next
+      // planned slot shortly after the stray output completes.
+      if (meta.role === 'assistant' && meta.turnType === 'system' && isVideoOnlyInterviewMode(CTX) && structuredCurrentQuestionIndex < interviewLiveQuestionTarget(CTX)) {
+        setTimeout(() => {
+          if (END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK) return;
+          if (structuredCurrentQuestionIndex >= interviewLiveQuestionTarget(CTX)) return;
+          requestVideoOnlyProgressRecovery('assistant_system_before_target');
+        }, 1200);
+      }
     } catch (e) {
       log('[TURN] emit failed', errMsg(e));
     }
@@ -2602,18 +2603,21 @@
   }
 
   function createAssistantAudioResponseFromInstruction(instruction, source){
-    if (!instruction || !dcSend || END_CALLED || FINAL_HANGUP_TIMER) return false;
+    if (!instruction || !dcSend || END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK) return false;
     try {
+      // Do not add control instructions as a fake user message. That polluted the
+      // realtime conversation and made Video-only drift into normal GPT chat.
+      // response.instructions is the intended control channel for forced assistant speech.
+      try { dcSend({ type: 'response.cancel' }); } catch(_) {}
       dcSend({
-        type: 'conversation.item.create',
-        item: {
-          type: 'message',
-          role: 'user',
-          content: [{ type: 'input_text', text: instruction }]
+        type: 'response.create',
+        response: {
+          conversation: 'default',
+          modalities: ['audio'],
+          instructions: String(instruction)
         }
       });
-      dcSend({ type: 'response.create', response: { conversation: 'default', modalities: ['audio'] } });
-      log('[SLOT] recovery instruction sent', { source: source || '', instructionPreview: String(instruction).slice(0, 180) });
+      log('[SLOT] recovery response.instructions sent', { source: source || '', instructionPreview: String(instruction).slice(0, 180) });
       return true;
     } catch(e) {
       log('[SLOT] recovery instruction failed', { source: source || '', message: errMsg(e) });
@@ -2653,6 +2657,15 @@
         ? `Please now ask exactly this next main question from the fixed interview plan. Say only the question itself and no meta explanation: ${plannedQuestion}`
         : 'Please now ask the next role-specific main question directly. Say only the question itself and no meta explanation.');
 
+    if (isVideoOnlyInterviewMode(CTX)) {
+      // The client is now the sequence controller for Video-only recovery.
+      // Register the planned main slot immediately so the next candidate audio is
+      // attributed to the intended Q-slot even if Realtime transcript events lag.
+      registerAssistantMainQuestionMeta(nextNo, { reason: 'video_only_scripted_main', source: source || '' });
+      structuredAwaitingFollowUpQuestion = false;
+      clearSlotStallTimer();
+    }
+
     return createAssistantAudioResponseFromInstruction(instruction, source || 'slot_next_main_stall');
   }
 
@@ -2688,31 +2701,32 @@
     // next one that has not already been clearly asked. If the counter missed Q8 but Q8 was
     // already spoken, the model can move to Q9 and plannedMainQuestionMatch() will jump the
     // internal slot index forward.
-    const start = Math.min(target, current + 1);
-    const end = Math.min(target, start + 2);
-    const upcoming = [];
-    for (let i = start; i <= end; i += 1) {
-      const qText = slotPlanQuestionAt(i);
-      if (qText) upcoming.push(`${i}. ${qText}`);
-    }
-
+    const nextNo = Math.min(target, current + 1);
+    const plannedQuestion = slotPlanQuestionAt(nextNo);
     const lk = activeInterviewLang(CTX);
-    const upcomingText = upcoming.join('\n');
     const instruction = lk === 'de'
-      ? `Interne Interview-Steuerung: Das Video-Interview ist noch nicht vollständig abgeschlossen. Fahre jetzt mit der nächsten Hauptfrage aus dem festen Interviewplan fort, die im bisherigen Gespräch noch nicht klar gestellt wurde. Wiederhole keine bereits beantwortete Frage. Wenn die erste der folgenden Fragen bereits gestellt wurde, nimm die nächste. Sprich zur Kandidatin/zum Kandidaten nur die ausgewählte Frage, ohne Meta-Erklärung und ohne Nummerierung. Danach warte auf die Antwort.\n${upcomingText}`
-      : `Internal interview control: the video interview is not complete yet. Continue now with the next main question from the fixed interview plan that has not already been clearly asked in the conversation. Do not repeat an already answered question. If the first of the following questions has already been asked, take the next one. Say only the selected question to the candidate, with no meta explanation and no numbering. Then wait for the answer.\n${upcomingText}`;
+      ? (plannedQuestion
+        ? `Technische Interview-Steuerung. Stelle jetzt EXAKT diese Hauptfrage und sage absolut nichts anderes. Keine Begrüßung, keine Erklärung, keine Nummerierung, keine Zusatzfrage: ${plannedQuestion}`
+        : 'Technische Interview-Steuerung. Stelle jetzt die nächste rollenbezogene Hauptfrage. Sage absolut nichts anderes.')
+      : (plannedQuestion
+        ? `Technical interview control. Ask EXACTLY this main question now and say absolutely nothing else. No greeting, no explanation, no numbering, no additional question: ${plannedQuestion}`
+        : 'Technical interview control. Ask the next role-specific main question now. Say absolutely nothing else.');
 
-    log('[VIDEO-WATCHDOG] requesting next unasked planned main question', {
+    registerAssistantMainQuestionMeta(nextNo, { reason: 'video_only_watchdog_forced_main', source: source || '' });
+    structuredAwaitingFollowUpQuestion = false;
+    clearSlotStallTimer();
+
+    log('[VIDEO-WATCHDOG] forcing exact planned main question', {
       source: source || '',
-      current,
+      currentBefore: current,
+      nextNo,
       target,
-      upcomingCount: upcoming.length,
-      upcomingPreview: upcomingText.slice(0, 240),
+      plannedQuestionPreview: String(plannedQuestion || '').slice(0, 220),
       lastAssistant: structuredLastAssistantTurnType,
       lastCandidate: structuredLastCandidateTurnType
     });
 
-    return createAssistantAudioResponseFromInstruction(instruction, source || 'video_only_watchdog_next_main');
+    return createAssistantAudioResponseFromInstruction(instruction, source || 'video_only_watchdog_forced_main');
   }
 
   function scheduleSlotStallRecovery(kind, q, delayMs, source){
@@ -2785,7 +2799,9 @@
       }
 
       requestAutoFinishInterview(source || 'idle_after_candidate_answer');
-    }, isInterviewHybrid(CTX) ? Math.max(3000, TARGET_FINALIZE_AFTER_ANSWER_MS) : STRUCTURED_AUTOFINISH_IDLE_MS);
+    }, isInterviewHybrid(CTX)
+      ? Math.max(3000, TARGET_FINALIZE_AFTER_ANSWER_MS)
+      : (isVideoOnlyInterviewMode(CTX) && structuredCurrentQuestionIndex < interviewLiveQuestionTarget(CTX) ? 8500 : STRUCTURED_AUTOFINISH_IDLE_MS));
   }
 
   function scheduleTargetReachedAutoFinish(source, delayMs){
@@ -3983,6 +3999,7 @@
       return [
         'Sprich ausschließlich DEUTSCH. Wechsle nie die Sprache.',
         'Führe ein strukturiertes Job-Interview mit festem Slot-Plan: nur EINE Hauptfrage zur Zeit, danach genau eine kurze natürliche Anschlussfrage oder Ergänzungsmöglichkeit. Bleibe strikt am Jobprofil und stelle nie zwei Hauptfragen in einer Nachricht.',
+        'Wenn eine technische Interview-Steuerung eine exakte Frage vorgibt, sprich ausschließlich diese Frage und füge nichts hinzu. Danach warte vollständig auf die Antwort.',
         questionPolicyText(ctx),
         'Ablauf pro Slot: 1) stelle die Hauptfrage aus dem Plan, 2) warte die Antwort vollständig ab, 3) stelle genau eine kurze Anschlussreaktion. Diese darf natürlich variieren: konkrete Vertiefungsfrage, kurze Ergänzungsmöglichkeit oder Angebot zum Fortfahren. Verwende nicht immer dieselbe Formulierung. 4) warte diese Ergänzungsantwort ab, 5) erst dann nächste Hauptfrage aus dem Plan. Diese Anschlussfrage zählt NICHT als Hauptfrage und darf keine spätere geplante Hauptfrage vorwegnehmen. Sprich natürlich und professionell, nicht mechanisch oder nummeriert.',
         'Nach jeder Frage geduldig warten, bis die Kandidatin/der Kandidat wirklich fertig ist. Kurze Atemgeräusche, Füllwörter, ein kurzer Satz oder eine kurze Pause zählen NICHT sofort als vollständige Antwort. Lass nach einer Antwort einen natürlichen Moment für Ergänzungen, bevor du fortfährst.',
@@ -3997,6 +4014,7 @@
       `Speak strictly in ${profile.englishName.toUpperCase()}. Do not switch languages.`,
       `The full interview, welcome messages, questions, follow-ups, candidate-facing explanations, and closing message must be spoken in ${profile.englishName}.`,
       'Conduct a structured job interview with a fixed slot plan: one main question at a time, then exactly one short follow-up opportunity. Stick to the job profile and never ask two main questions in one message.',
+      'When technical interview control provides an exact question, say only that question and add nothing else. Then wait fully for the answer.',
       questionPolicyText(ctx),
       'Flow per slot: 1) ask the planned main question, 2) wait for the complete answer, 3) ask exactly one short follow-up. It may be a concrete deepening question, a short opportunity to add something, or an offer to continue. Vary the wording naturally. 4) wait for the addition answer, 5) only then ask the next planned main question. This follow-up does NOT count as a main question and must not preview a later planned main question. Speak naturally and professionally, never mechanically or with spoken question numbering.',
       'After each question, wait patiently until the candidate has truly finished. Breathing, filler words, one short sentence, or a short pause do NOT immediately count as a complete answer. Leave a natural moment after each answer so the candidate can add more, then continue.',
@@ -4303,17 +4321,9 @@
     const plan = currentStructuredQuestionPlan(CTX);
     const first = plan[0] || fallbackFirstQuestion(lk);
 
-    dcSend({
-      type: 'conversation.item.create',
-      item: {
-        type: 'message',
-        role: 'user',
-        content: [{
-          type: 'input_text',
-          text: firstQuestionInstruction(first, lk)
-        }]
-      }
-    });
+    if (isVideoOnlyInterviewMode(CTX)) {
+      registerAssistantMainQuestionMeta(1, { reason: 'video_only_first_question_scripted' });
+    }
 
     log('[QUESTION] first item created', {
       lang: lk,
@@ -4330,7 +4340,8 @@
       type: 'response.create',
       response: {
         conversation: 'default',
-        modalities: ['audio']
+        modalities: ['audio'],
+        instructions: firstQuestionInstruction(first, lk)
       }
     });
 
