@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-<title>CLARITY Avatar v2.1 Final Reactive Signal</title>
+<title>CLARITY Avatar v2.1.1 Clean Reactive Orb</title>
 <style>
   :root{
     --c-cyan:#3DE6F5;
@@ -124,32 +124,32 @@
     position:absolute;
     border-radius:50%;
     border:2px solid transparent;
-    opacity:calc(.48 + var(--visual-level) * .30);
-    filter:drop-shadow(0 0 calc(8px + var(--visual-level) * 22px) var(--state-c1));
+    opacity:calc(.62 + var(--visual-level) * .34);
+    filter:drop-shadow(0 0 calc(12px + var(--visual-level) * 30px) var(--state-c1));
     transform-style:preserve-3d;
   }
   .ringA{
     inset:15%;
     border-top-color:var(--state-c1);
-    border-left-color:rgba(61,230,245,.26);
-    border-bottom-color:rgba(255,255,255,.20);
+    border-left-color:rgba(61,230,245,.42);
+    border-bottom-color:rgba(255,255,255,.30);
     transform:rotateX(68deg) rotateZ(-10deg) scale(calc(1 + var(--visual-level) * .10));
     animation:spinA var(--orbit-speed) linear infinite;
   }
   .ringB{
     inset:10%;
     border-top-color:var(--state-c3);
-    border-right-color:rgba(239,0,184,.30);
-    border-left-color:rgba(255,255,255,.10);
-    opacity:calc(.35 + var(--visual-level) * .38);
+    border-right-color:rgba(239,0,184,.46);
+    border-left-color:rgba(255,255,255,.18);
+    opacity:calc(.52 + var(--visual-level) * .38);
     transform:rotateX(76deg) rotateY(19deg) rotateZ(86deg) scale(calc(.96 + var(--visual-level) * .14));
     animation:spinB calc(var(--orbit-speed) * 1.25) linear infinite reverse;
   }
   .ringC{
     inset:21%;
-    border-top-color:rgba(255,255,255,.72);
-    border-right-color:rgba(61,230,245,.18);
-    opacity:calc(.26 + var(--visual-level) * .28);
+    border-top-color:rgba(255,255,255,.86);
+    border-right-color:rgba(61,230,245,.34);
+    opacity:calc(.42 + var(--visual-level) * .30);
     transform:rotateX(31deg) rotateY(68deg) rotateZ(18deg) scale(calc(.92 + var(--visual-level) * .10));
     animation:spinC calc(var(--orbit-speed) * 1.55) linear infinite;
   }
@@ -162,12 +162,12 @@
     border-radius:999px;
     background:var(--c-white);
     box-shadow:0 0 14px rgba(255,255,255,.96),0 0 30px var(--state-c1);
-    opacity:calc(.48 + var(--visual-level) * .48);
+    opacity:calc(.62 + var(--visual-level) * .38);
     animation:particleA 8.8s linear infinite;
   }
   .p2{width:7px;height:7px;background:var(--state-c1);box-shadow:0 0 17px var(--state-c1),0 0 32px var(--state-c1);animation:particleB 6.7s linear infinite reverse}
   .p3{width:6px;height:6px;background:var(--state-c3);box-shadow:0 0 17px var(--state-c3),0 0 33px var(--state-c4);animation:particleC 10.9s linear infinite}
-  .p4{width:5px;height:5px;background:#fff;box-shadow:0 0 14px #fff,0 0 24px var(--state-c3);animation:particleD 12.4s linear infinite reverse;opacity:calc(.32 + var(--visual-level) * .42)}
+  .p4{width:5px;height:5px;background:#fff;box-shadow:0 0 14px #fff,0 0 24px var(--state-c3);animation:particleD 12.4s linear infinite reverse;opacity:calc(.46 + var(--visual-level) * .40)}
 
   .sphere{
     position:absolute;
@@ -177,18 +177,19 @@
     opacity:.98;
     transform:scale(calc(1 + var(--visual-level) * .035));
     background:
-      radial-gradient(circle at 31% 24%, rgba(255,255,255,.95) 0 3.7%, rgba(255,255,255,.32) 4.2%, transparent 12%),
-      radial-gradient(circle at 35% 34%, rgba(61,230,245,.88), transparent 29%),
-      radial-gradient(circle at 70% 64%, rgba(239,0,184,.86), transparent 36%),
-      radial-gradient(circle at 50% 51%, rgba(106,53,255,.76), transparent 54%),
-      linear-gradient(136deg, var(--state-c1), var(--state-c2) 48%, var(--state-c3));
+      radial-gradient(circle at 31% 24%, rgba(255,255,255,.92) 0 3.6%, rgba(255,255,255,.30) 4.1%, transparent 12%),
+      radial-gradient(circle at 36% 34%, rgba(61,230,245,.72), transparent 28%),
+      radial-gradient(circle at 70% 64%, rgba(239,0,184,.62), transparent 36%),
+      radial-gradient(circle at 52% 52%, rgba(106,53,255,.58), transparent 55%),
+      linear-gradient(136deg, rgba(10,119,170,.96), rgba(5,49,112,.98) 46%, rgba(63,38,145,.94));
     box-shadow:
       inset 0 1px 0 rgba(255,255,255,.72),
-      inset -18px -22px 58px rgba(4,29,72,.42),
-      inset 19px 18px 58px rgba(61,230,245,.22),
+      inset -22px -26px 66px rgba(4,29,72,.58),
+      inset 19px 18px 58px rgba(61,230,245,.18),
       0 0 calc(22px + var(--visual-level) * 42px) rgba(61,230,245,.24),
       0 0 calc(48px + var(--visual-level) * 78px) rgba(239,0,184,.14);
     animation:sphereBreath var(--speed) ease-in-out infinite;
+    backdrop-filter:blur(1px) saturate(1.14);
   }
   .sphere::before{
     content:"";
@@ -199,7 +200,7 @@
     background:linear-gradient(180deg, rgba(255,255,255,.42), rgba(255,255,255,.09) 58%, transparent);
     transform:rotate(-13deg);
     mix-blend-mode:screen;
-    opacity:var(--shell-opacity);
+    opacity:calc(var(--shell-opacity) * .82);
     z-index:8;
   }
   .sphere::after{
@@ -230,8 +231,8 @@
   .audioCore{
     position:absolute;
     left:50%;top:50%;
-    width:30%;height:30%;
-    margin:-15% 0 0 -15%;
+    width:33%;height:33%;
+    margin:-16.5% 0 0 -16.5%;
     border-radius:50%;
     z-index:5;
     background:
@@ -241,9 +242,9 @@
       0 0 calc(14px + var(--visual-level) * 44px) var(--state-c1),
       0 0 calc(22px + var(--visual-level) * 70px) var(--state-c3),
       inset 0 0 calc(10px + var(--visual-level) * 22px) rgba(255,255,255,.42);
-    opacity:calc(.46 + var(--visual-level) * .46);
+    opacity:calc(.62 + var(--visual-level) * .36);
     transform:scale(var(--core-scale));
-    filter:saturate(1.32) blur(.15px);
+    filter:saturate(1.45) brightness(1.12) blur(.08px);
     transition:box-shadow .16s ease-out, opacity .16s ease-out;
     animation:corePulse .9s ease-in-out infinite;
   }
@@ -257,24 +258,6 @@
     animation:coreSpin calc(var(--speed) * .74) linear infinite;
   }
 
-  .innerWave{
-    position:absolute;
-    left:10%;right:10%;
-    height:2px;
-    border-radius:999px;
-    z-index:6;
-    background:linear-gradient(90deg, transparent, rgba(255,255,255,.44), var(--state-c1), rgba(255,255,255,.70), transparent);
-    box-shadow:0 0 calc(9px + var(--visual-level) * 28px) var(--state-c1);
-    opacity:calc(var(--wave-opacity) + var(--visual-level) * .42);
-    transform-origin:center;
-    animation:voiceLine .58s ease-in-out infinite;
-  }
-  .w1{top:35%;transform:scaleX(calc(.36 + var(--visual-level) * .72)) translateY(calc(var(--visual-level) * -14px));animation-delay:-.04s}
-  .w2{top:42%;transform:scaleX(calc(.52 + var(--visual-level) * .58)) translateY(calc(var(--visual-level) * -7px));animation-delay:-.16s}
-  .w3{top:50%;transform:scaleX(calc(.70 + var(--visual-level) * .42));animation-delay:-.28s}
-  .w4{top:58%;transform:scaleX(calc(.50 + var(--visual-level) * .66)) translateY(calc(var(--visual-level) * 7px));animation-delay:-.40s}
-  .w5{top:65%;transform:scaleX(calc(.34 + var(--visual-level) * .78)) translateY(calc(var(--visual-level) * 14px));animation-delay:-.52s}
-
   .shell{
     position:absolute;
     inset:16%;
@@ -284,7 +267,7 @@
     background:
       radial-gradient(circle at 34% 20%, rgba(255,255,255,.20), transparent 24%),
       radial-gradient(circle at 50% 50%, rgba(255,255,255,.07), transparent 65%);
-    border:1px solid rgba(255,255,255,.28);
+    border:1px solid rgba(255,255,255,.22);
     box-shadow:
       inset 0 0 28px rgba(255,255,255,.13),
       inset 0 0 64px rgba(61,230,245,.10),
@@ -320,9 +303,6 @@
   }
 
   body[data-state="processing"] .sweep{opacity:calc(.48 + var(--visual-level) * .34)}
-  body[data-state="processing"] .innerWave{animation-duration:.38s}
-  body[data-state="ai_speaking"] .innerWave{animation-duration:.34s;opacity:calc(.48 + var(--visual-level) * .48);background:linear-gradient(90deg, transparent, rgba(255,255,255,.64), var(--state-c3), var(--state-c1), transparent)}
-  body[data-state="user_speaking"] .innerWave{animation-duration:.44s;opacity:calc(.42 + var(--visual-level) * .50)}
   body[data-state="thinking"] .audioCore{animation-duration:1.7s}
   body[data-state="complete"] .reactiveHalo{animation-duration:1.2s}
   body[data-state="error"] .reactiveHalo{animation-duration:1.05s}
@@ -394,13 +374,12 @@
   @keyframes sheen{0%,100%{transform:translateX(-3%) rotate(0deg);opacity:.28}50%{transform:translateX(5%) rotate(1deg);opacity:.56}}
   @keyframes corePulse{0%,100%{transform:scale(calc(var(--core-scale) * .96));opacity:calc(.38 + var(--visual-level) * .36)}50%{transform:scale(calc(var(--core-scale) * 1.09));opacity:calc(.58 + var(--visual-level) * .40)}}
   @keyframes coreSpin{from{rotate:0deg}to{rotate:360deg}}
-  @keyframes voiceLine{0%,100%{filter:blur(.1px);height:2px}50%{filter:blur(1.2px);height:calc(2px + var(--visual-level) * 6px)}}
   @keyframes expandingPulse{0%{opacity:0;transform:scale(.82)}18%{opacity:calc(.08 + var(--visual-level) * .45)}100%{opacity:0;transform:scale(calc(1.18 + var(--visual-level) * .44))}}
   @keyframes processingSweep{from{rotate:0deg}to{rotate:360deg}}
 
   @media (prefers-reduced-motion:reduce){
     .atomRing,.particle,.audioCore::after,.sweep{animation-duration:9s!important}
-    .innerWave,.expandingPulse,.reactiveHalo,.outerGlow,.sphere,.audioCore{animation-duration:4s!important}
+    .expandingPulse,.reactiveHalo,.outerGlow,.sphere,.audioCore{animation-duration:4s!important}
   }
 </style>
 </head>
@@ -423,11 +402,6 @@
     <div class="sphere" id="sphere">
       <canvas id="innerCanvas"></canvas>
       <div class="audioCore"></div>
-      <span class="innerWave w1"></span>
-      <span class="innerWave w2"></span>
-      <span class="innerWave w3"></span>
-      <span class="innerWave w4"></span>
-      <span class="innerWave w5"></span>
     </div>
     <div class="shell"></div>
     <div class="sweep"></div>
@@ -443,7 +417,7 @@
 (()=>{
   'use strict';
 
-  const VERSION = 'clarity_avatar_v2_1_FINAL_REACTIVE_SIGNAL';
+  const VERSION = 'clarity_avatar_v2_1_1_CLEAN_REACTIVE_ORB';
   const Q = new URLSearchParams(location.search || '');
   const DEBUG = Q.get('debug') === '1';
   const SHOW_LABEL = Q.get('label') === '1' || Q.get('showLabel') === '1';
@@ -665,38 +639,22 @@
       ctx.beginPath();
       ctx.arc(cx,cy,rr,0,Math.PI*2);
       ctx.strokeStyle = i%2 ? rgba(s.c3, alpha) : rgba(s.c1, alpha);
-      ctx.lineWidth = Math.max(1, r*(.006 + energy*.006));
+      ctx.lineWidth = Math.max(1, r*(.0045 + energy*.004));
       ctx.stroke();
     }
 
-    // Waveform lines in the sphere; deliberately strong enough to be visible.
-    const lines = 5;
-    for (let j=0;j<lines;j++){
-      const y = cy + (j-(lines-1)/2) * r*.15;
-      const amp = r * (.012 + energy*.105) * (1 - Math.abs(j-2)*.12);
-      const len = r * (.55 + energy*.34) * (1 - Math.abs(j-2)*.07);
-      const start = cx - len;
-      const end = cx + len;
+    // Clean circular signal: no horizontal waveform bars, only soft round energy rings.
+    const microCount = 3;
+    for (let j=0;j<microCount;j++){
+      const phase = ((t*.82 + j/microCount) % 1);
+      const rr = r * (.10 + phase * (.24 + energy*.12));
+      const alpha = (1-phase) * (.08 + energy*.22);
       ctx.beginPath();
-      for (let i=0;i<=90;i++){
-        const p = i/90;
-        const x = start + (end-start)*p;
-        const env = Math.sin(Math.PI*p);
-        const wave = Math.sin(p*Math.PI*(3.2 + j*.35) + t*(stateName === 'ai_speaking' ? 10.5 : 7.2) + j*.74);
-        const jitter = Math.sin(p*Math.PI*12 + t*5.2 + j) * .22;
-        const yy = y + (wave + jitter) * amp * env;
-        if (i===0) ctx.moveTo(x,yy); else ctx.lineTo(x,yy);
-      }
-      const grad = ctx.createLinearGradient(start,y,end,y);
-      grad.addColorStop(0,'rgba(255,255,255,0)');
-      grad.addColorStop(.18,rgba(s.c1,.18 + energy*.32));
-      grad.addColorStop(.5,rgba('#ffffff',.28 + energy*.42));
-      grad.addColorStop(.82,rgba(s.c3,.18 + energy*.32));
-      grad.addColorStop(1,'rgba(255,255,255,0)');
-      ctx.strokeStyle = grad;
-      ctx.lineWidth = Math.max(1.1, r*(.007 + energy*.011));
-      ctx.shadowColor = s.c1;
-      ctx.shadowBlur = r*(.02 + energy*.08);
+      ctx.arc(cx, cy, rr, 0, Math.PI*2);
+      ctx.strokeStyle = j%2 ? rgba(s.c3, alpha) : rgba(s.c1, alpha);
+      ctx.lineWidth = Math.max(1, r*(.0045 + energy*.004));
+      ctx.shadowColor = j%2 ? s.c3 : s.c1;
+      ctx.shadowBlur = r*(.018 + energy*.045);
       ctx.stroke();
     }
 
@@ -706,9 +664,9 @@
       const phase = t*(.75 + k*.18) + k*2.1;
       const rr = r * (.30 + k*.12 + energy*.08);
       ctx.beginPath();
-      ctx.ellipse(cx, cy, rr*(1.15 + energy*.10), rr*(.38 + k*.06), phase*.28, phase, phase + Math.PI*(.55 + energy*.25));
-      ctx.strokeStyle = k%2 ? rgba(s.c3,.18 + energy*.24) : rgba(s.c1,.20 + energy*.26);
-      ctx.lineWidth = Math.max(1, r*(.006 + energy*.006));
+      ctx.arc(cx, cy, rr*(.62 + energy*.06), phase, phase + Math.PI*(.70 + energy*.20));
+      ctx.strokeStyle = k%2 ? rgba(s.c3,.10 + energy*.15) : rgba(s.c1,.12 + energy*.16);
+      ctx.lineWidth = Math.max(1, r*(.0045 + energy*.004));
       ctx.stroke();
     }
 
