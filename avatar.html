@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-<title>CLARITY Reactive Interview Avatar v2.0.2</title>
+<title>CLARITY Reactive Interview Avatar v2.0.3 Live Energy</title>
 <style>
   :root{
     --clarity-cyan:#3DE6F5;
@@ -21,6 +21,7 @@
     --state-glow:0.75;
     --state-speed:5.2s;
     --state-scale:1;
+    --state-energy:.22;
     --level:0.12;
   }
   *{box-sizing:border-box}
@@ -120,6 +121,85 @@
     opacity:calc(.38 + var(--level) * .22);
     animation:sheenMove 8.6s ease-in-out infinite;
   }
+
+  .energyLayer{
+    position:absolute;
+    inset:12%;
+    border-radius:50%;
+    pointer-events:none;
+    mix-blend-mode:screen;
+    opacity:calc(.18 + var(--state-energy) * .36 + var(--level) * .24);
+    filter:blur(1px) saturate(1.35);
+    background:
+      conic-gradient(from 90deg,
+        transparent 0 9%,
+        rgba(61,230,245,.55) 14%,
+        transparent 24%,
+        rgba(106,53,255,.46) 36%,
+        transparent 49%,
+        rgba(239,0,184,.52) 64%,
+        transparent 79%,
+        rgba(255,255,255,.36) 92%,
+        transparent 100%);
+    animation:energySpin calc(var(--state-speed) * .72) linear infinite;
+  }
+  .energyLayer.e2{
+    inset:20%;
+    opacity:calc(.14 + var(--state-energy) * .32 + var(--level) * .18);
+    filter:blur(7px) saturate(1.5);
+    background:
+      radial-gradient(circle at 32% 34%, rgba(61,230,245,.72), transparent 27%),
+      radial-gradient(circle at 69% 65%, rgba(239,0,184,.70), transparent 33%),
+      radial-gradient(circle at 50% 52%, rgba(106,53,255,.52), transparent 52%);
+    animation:energyBreathe calc(var(--state-speed) * .58) ease-in-out infinite;
+  }
+  .energyLayer.e3{
+    inset:27%;
+    opacity:calc(.10 + var(--state-energy) * .28 + var(--level) * .18);
+    border:1px solid rgba(255,255,255,.22);
+    background:transparent;
+    box-shadow:
+      inset 0 0 calc(10px + var(--level) * 26px) var(--state-c1),
+      0 0 calc(12px + var(--level) * 34px) var(--state-c3);
+    transform:rotateX(64deg) rotateZ(24deg) scale(calc(.86 + var(--level) * .24));
+    animation:energyTilt calc(var(--state-speed) * .9) linear infinite reverse;
+  }
+  .voiceBand{
+    position:absolute;
+    left:15%;right:15%;
+    height:2px;
+    border-radius:999px;
+    background:linear-gradient(90deg, transparent, rgba(255,255,255,.40), var(--state-c1), rgba(255,255,255,.58), transparent);
+    box-shadow:0 0 calc(7px + var(--level) * 22px) var(--state-c1);
+    opacity:calc(.12 + var(--state-energy) * .26 + var(--level) * .48);
+    transform-origin:center;
+    animation:voiceBandPulse 1.1s ease-in-out infinite;
+  }
+  .voiceBand.v1{top:37%;animation-delay:-.05s;transform:scaleX(calc(.46 + var(--level) * .70)) translateY(calc(var(--level) * -10px))}
+  .voiceBand.v2{top:44%;animation-delay:-.22s;transform:scaleX(calc(.62 + var(--level) * .54)) translateY(calc(var(--level) * -5px))}
+  .voiceBand.v3{top:51%;animation-delay:-.39s;transform:scaleX(calc(.74 + var(--level) * .42))}
+  .voiceBand.v4{top:58%;animation-delay:-.55s;transform:scaleX(calc(.56 + var(--level) * .62)) translateY(calc(var(--level) * 5px))}
+  .voiceBand.v5{top:65%;animation-delay:-.71s;transform:scaleX(calc(.42 + var(--level) * .78)) translateY(calc(var(--level) * 10px))}
+  .pulseShell{
+    position:absolute;
+    inset:0;
+    border-radius:50%;
+    border:1px solid color-mix(in srgb, var(--state-c1) 56%, white 22%);
+    opacity:0;
+    transform:scale(.90);
+    filter:drop-shadow(0 0 18px var(--state-c1));
+    animation:speechPulse 2.6s ease-out infinite;
+  }
+  .pulseShell.p2{animation-delay:.65s;border-color:color-mix(in srgb, var(--state-c3) 62%, white 14%)}
+  .pulseShell.p3{animation-delay:1.30s;border-color:rgba(255,255,255,.36)}
+  body[data-state="idle"] .voiceBand,
+  body[data-state="ready"] .voiceBand{opacity:calc(.06 + var(--level) * .20)}
+  body[data-state="user_speaking"] .voiceBand{animation-duration:.62s;opacity:calc(.34 + var(--level) * .58)}
+  body[data-state="ai_speaking"] .voiceBand{animation-duration:.46s;opacity:calc(.40 + var(--level) * .56);background:linear-gradient(90deg, transparent, rgba(255,255,255,.58), var(--state-c3), var(--state-c1), transparent)}
+  body[data-state="thinking"] .energyLayer{animation-duration:3.7s;opacity:calc(.24 + var(--level) * .28)}
+  body[data-state="processing"] .pulseShell{animation-duration:1.55s}
+  body[data-state="complete"] .pulseShell{animation-duration:1.25s}
+
   .wave{
     position:absolute;
     left:7%;right:7%;top:48%;height:2px;
@@ -227,6 +307,11 @@
   @keyframes waveFloat{0%,100%{top:48%;opacity:calc(.42 + var(--level) * .24)}50%{top:51.5%;opacity:calc(.62 + var(--level) * .36)}}
   @keyframes ringOrbit{from{rotate:0deg}to{rotate:360deg}}
   @keyframes sparkOrbit{from{transform:rotate(0deg) translateX(45%) rotate(0deg)}to{transform:rotate(360deg) translateX(45%) rotate(-360deg)}}
+  @keyframes energySpin{from{transform:rotate(0deg) scale(calc(.94 + var(--level) * .10))}to{transform:rotate(360deg) scale(calc(.94 + var(--level) * .10))}}
+  @keyframes energyBreathe{0%,100%{transform:scale(calc(.84 + var(--level) * .10)) rotate(-8deg)}50%{transform:scale(calc(1.08 + var(--level) * .18)) rotate(10deg)}}
+  @keyframes energyTilt{from{rotate:0deg}to{rotate:360deg}}
+  @keyframes voiceBandPulse{0%,100%{filter:blur(.1px);opacity:calc(.12 + var(--state-energy) * .18 + var(--level) * .32)}50%{filter:blur(1.3px);opacity:calc(.30 + var(--state-energy) * .25 + var(--level) * .55)}}
+  @keyframes speechPulse{0%{opacity:0;transform:scale(.86)}18%{opacity:calc(.10 + var(--state-energy) * .22 + var(--level) * .34)}100%{opacity:0;transform:scale(calc(1.30 + var(--level) * .30))}}
 </style>
 </head>
 <body>
@@ -238,7 +323,7 @@
     <div class="ring r2"></div>
     <div class="ring r3"></div>
     <span class="spark s1"></span><span class="spark s2"></span><span class="spark s3"></span>
-    <div class="orb"><div class="wave"></div></div>
+    <div class="orb"><div class="energyLayer e1"></div><div class="energyLayer e2"></div><div class="energyLayer e3"></div><span class="voiceBand v1"></span><span class="voiceBand v2"></span><span class="voiceBand v3"></span><span class="voiceBand v4"></span><span class="voiceBand v5"></span><div class="wave"></div></div><div class="pulseShell p1"></div><div class="pulseShell p2"></div><div class="pulseShell p3"></div>
   </div>
 </div>
 <div id="statusWrap" aria-hidden="true"><span id="dot"></span><span id="statusText">Bereit</span></div>
@@ -248,7 +333,7 @@
 (()=>{
   'use strict';
 
-  const VERSION = 'clarity_avatar_v2_0_2_REACTIVE_RENDER_FIX';
+  const VERSION = 'clarity_avatar_v2_0_3_LIVE_ENERGY_INTERACTIONS';
   const params = new URLSearchParams(location.search || '');
   const DEBUG = params.get('debug') === '1';
   const SHOW_LABEL_DEFAULT = params.get('label') === '1' || params.get('showLabel') === '1';
@@ -304,16 +389,16 @@
   }
 
   const STATE = {
-    idle:{c1:'#3DE6F5', c2:'#064E9B', c3:'#6A35FF', scale:1.00, speed:'5.6s', glow:.62, rot:.10, label:T.idle},
-    ready:{c1:'#3DE6F5', c2:'#064E9B', c3:'#6A35FF', scale:1.01, speed:'5.0s', glow:.72, rot:.13, label:T.ready},
-    listening:{c1:'#3DE6F5', c2:'#064E9B', c3:'#49F0C2', scale:1.03, speed:'3.8s', glow:.82, rot:.18, label:T.listening},
-    user_speaking:{c1:'#3DE6F5', c2:'#064E9B', c3:'#49F0C2', scale:1.055, speed:'2.55s', glow:1.00, rot:.26, label:T.user_speaking},
-    ai_speaking:{c1:'#EF00B8', c2:'#6A35FF', c3:'#3DE6F5', scale:1.075, speed:'2.25s', glow:1.06, rot:.31, label:T.ai_speaking},
-    thinking:{c1:'#6A35FF', c2:'#041D48', c3:'#3DE6F5', scale:1.025, speed:'4.0s', glow:.82, rot:.16, label:T.thinking},
-    processing:{c1:'#3DE6F5', c2:'#F7FBFF', c3:'#6A35FF', scale:1.04, speed:'1.95s', glow:1.02, rot:.34, label:T.processing},
-    complete:{c1:'#49F0C2', c2:'#F7FBFF', c3:'#3DE6F5', scale:1.065, speed:'2.7s', glow:1.08, rot:.22, label:T.complete},
-    error:{c1:'#FFB84D', c2:'#EF00B8', c3:'#064E9B', scale:1.025, speed:'3.2s', glow:.88, rot:.12, label:T.error},
-    stopped:{c1:'#F7FBFF', c2:'#064E9B', c3:'#041D48', scale:.985, speed:'6.2s', glow:.38, rot:.04, label:T.stopped}
+    idle:{c1:'#3DE6F5', c2:'#064E9B', c3:'#6A35FF', scale:1.00, speed:'5.6s', glow:.62, rot:.10, energy:.18, label:T.idle},
+    ready:{c1:'#3DE6F5', c2:'#064E9B', c3:'#6A35FF', scale:1.01, speed:'5.0s', glow:.72, rot:.13, energy:.26, label:T.ready},
+    listening:{c1:'#3DE6F5', c2:'#064E9B', c3:'#49F0C2', scale:1.03, speed:'3.8s', glow:.82, rot:.18, energy:.42, label:T.listening},
+    user_speaking:{c1:'#3DE6F5', c2:'#064E9B', c3:'#49F0C2', scale:1.075, speed:'1.95s', glow:1.08, rot:.34, energy:.86, label:T.user_speaking},
+    ai_speaking:{c1:'#EF00B8', c2:'#6A35FF', c3:'#3DE6F5', scale:1.095, speed:'1.70s', glow:1.16, rot:.42, energy:.94, label:T.ai_speaking},
+    thinking:{c1:'#6A35FF', c2:'#041D48', c3:'#3DE6F5', scale:1.035, speed:'3.2s', glow:.88, rot:.20, energy:.56, label:T.thinking},
+    processing:{c1:'#3DE6F5', c2:'#F7FBFF', c3:'#6A35FF', scale:1.055, speed:'1.35s', glow:1.10, rot:.48, energy:.88, label:T.processing},
+    complete:{c1:'#49F0C2', c2:'#F7FBFF', c3:'#3DE6F5', scale:1.075, speed:'2.2s', glow:1.13, rot:.26, energy:.72, label:T.complete},
+    error:{c1:'#FFB84D', c2:'#EF00B8', c3:'#064E9B', scale:1.03, speed:'2.6s', glow:.92, rot:.12, energy:.52, label:T.error},
+    stopped:{c1:'#F7FBFF', c2:'#064E9B', c3:'#041D48', scale:.985, speed:'6.2s', glow:.38, rot:.04, energy:.08, label:T.stopped}
   };
 
   function normalizeState(s){
@@ -348,6 +433,8 @@
     document.documentElement.style.setProperty('--state-glow', String(s.glow));
     document.documentElement.style.setProperty('--state-speed', s.speed);
     document.documentElement.style.setProperty('--state-scale', String(s.scale));
+    document.documentElement.style.setProperty('--state-energy', String(s.energy || .22));
+    document.body.dataset.state = name;
     statusText.textContent = s.label;
   }
   function setState(state){
@@ -378,6 +465,19 @@
   }
   function stopAvatar(){ userLevel=0; aiLevel=0; targetLevel=0; setState('stopped'); }
   function resetAvatar(){ userLevel=0; aiLevel=0; targetLevel=.16; setState('ready'); }
+
+  function syntheticEnergyForState(name){
+    const t = performance.now()/1000;
+    if (NO_BREATH) return 0;
+    if (name === 'ai_speaking') return .38 + .24*Math.pow(Math.sin(t*8.7)*.5+.5,1.65) + .12*Math.pow(Math.sin(t*15.1+1.2)*.5+.5,2.0);
+    if (name === 'user_speaking') return .32 + .22*Math.pow(Math.sin(t*6.2+0.5)*.5+.5,1.5) + .10*Math.pow(Math.sin(t*11.4)*.5+.5,2.0);
+    if (name === 'processing') return .34 + .20*Math.pow(Math.sin(t*4.4)*.5+.5,1.15);
+    if (name === 'thinking') return .18 + .12*Math.pow(Math.sin(t*2.3+0.4)*.5+.5,1.4);
+    if (name === 'listening') return .18 + .12*Math.pow(Math.sin(t*3.0)*.5+.5,1.3);
+    if (name === 'complete') return .24 + .18*Math.exp(-((t*1.2)%2.4));
+    if (name === 'error') return .18 + .14*Math.pow(Math.sin(t*3.7)*.5+.5,2.0);
+    return .07 + .08*(Math.sin(t*1.55)*.5+.5);
+  }
 
   function loadScript(src){
     return new Promise((resolve,reject)=>{
@@ -462,7 +562,9 @@
       transparent:true,
       opacity:.96
     });
-    const core = new THREE.Mesh(new THREE.SphereGeometry(.86, 96, 72), coreMat);
+    const coreGeom = new THREE.SphereGeometry(.86, 112, 84);
+    const coreBase = new Float32Array(coreGeom.attributes.position.array);
+    const core = new THREE.Mesh(coreGeom, coreMat);
     group.add(core);
 
     const glassMat = new THREE.MeshPhysicalMaterial({
@@ -492,6 +594,19 @@
     const ring1 = makeRing(1.11,.009,0x3DE6F5,.62); ring1.rotation.x = Math.PI*.58; ring1.rotation.z = -.16; group.add(ring1);
     const ring2 = makeRing(1.18,.007,0xEF00B8,.38); ring2.rotation.x = Math.PI*.80; ring2.rotation.y = .36; ring2.rotation.z = 1.18; group.add(ring2);
     const ring3 = makeRing(1.03,.006,0xffffff,.28); ring3.rotation.x = Math.PI*.28; ring3.rotation.y = 1.1; group.add(ring3);
+
+    const innerBands = [];
+    for (let i=0;i<5;i++) {
+      const band = new THREE.Mesh(
+        new THREE.TorusGeometry(.34 + i*.105, .0045 + i*.0008, 10, 128),
+        new THREE.MeshBasicMaterial({ color:i%2 ? 0xEF00B8 : 0x3DE6F5, transparent:true, opacity:.15, blending:THREE.AdditiveBlending, depthWrite:false })
+      );
+      band.rotation.x = Math.PI * (.50 + i*.035);
+      band.rotation.y = (i-.5) * .18;
+      band.rotation.z = i * .42;
+      group.add(band);
+      innerBands.push(band);
+    }
 
     const sparkGeo = new THREE.SphereGeometry(.025, 20, 14);
     const sparkMats = [0xffffff,0x3DE6F5,0xEF00B8,0x6A35FF].map((c)=> new THREE.MeshBasicMaterial({color:c,transparent:true,opacity:.92,blending:THREE.AdditiveBlending,depthWrite:false}));
@@ -535,7 +650,8 @@
       updateColors();
       const s = STATE[localState] || STATE.idle;
       const breath = NO_BREATH ? 0 : (Math.sin(time*1.55)*.5+.5)*.16;
-      const e = Math.max(currentLevel, localLevel*.7, breath*.6);
+      const statePulse = syntheticEnergyForState(localState);
+      const e = Math.max(currentLevel, localLevel*.7, statePulse*.92, breath*.6);
       localLevel *= .90;
 
       const scale = s.scale + e*.080 + (localState === 'ai_speaking' ? Math.sin(time*7.2)*.006*e : 0);
@@ -544,6 +660,20 @@
       group.rotation.x = Math.sin(time*.55) * .035;
       core.rotation.y += (.055 + e*.12) * dt;
       core.rotation.x += (.025 + e*.04) * dt;
+
+      const pos = coreGeom.attributes.position;
+      const arr = pos.array;
+      const amp = (localState === 'ai_speaking' ? .058 : localState === 'user_speaking' ? .044 : localState === 'processing' ? .038 : .022) * e;
+      const freq = localState === 'ai_speaking' ? 7.8 : localState === 'user_speaking' ? 5.7 : localState === 'processing' ? 4.8 : 2.6;
+      for (let i=0; i<arr.length; i+=3) {
+        const x = coreBase[i], y = coreBase[i+1], z = coreBase[i+2];
+        const n = Math.sin(x*5.6 + y*3.9 + z*4.5 + time*freq) * .55 + Math.sin(x*8.1 - y*2.7 + z*5.2 - time*(freq*.73)) * .45;
+        const d = amp * n;
+        arr[i] = x * (1 + d);
+        arr[i+1] = y * (1 + d*.92);
+        arr[i+2] = z * (1 + d);
+      }
+      pos.needsUpdate = true;
       glass.rotation.y -= (.035 + e*.08) * dt;
       aura.scale.setScalar(1.0 + e*.11 + Math.sin(time*2.4)*.015);
       auraMat.opacity = .11 + e*.18;
@@ -558,6 +688,14 @@
       ring1.material.opacity = .38 + e*.36;
       ring2.material.opacity = .25 + e*.38;
       ring3.material.opacity = .18 + e*.26;
+      innerBands.forEach((band, i)=>{
+        const k = (i+1)/innerBands.length;
+        band.rotation.z += ((i%2?-.7:.85) + e*1.4) * dt;
+        band.rotation.y += Math.sin(time*.7+i)*.006;
+        band.scale.setScalar(1 + e*(.14 + k*.08) + Math.sin(time*(3.2+i*.42)+i)*e*.035);
+        band.material.opacity = .10 + e*(localState === 'ai_speaking' ? .42 : localState === 'user_speaking' ? .34 : .24);
+        band.material.color.copy(i%2 ? colorB : colorA);
+      });
 
       sparks.forEach((sp, i)=>{
         const speed = [1.1,-.86,.62,-1.34][i];
@@ -585,9 +723,11 @@
   function decayLoop(){
     requestAnimationFrame(decayLoop);
     const age = nowMs() - lastLevelAt;
-    const fallback = (!NO_BREATH && age > 2400) ? (Math.sin(performance.now()/1000*1.55)*.5+.5)*.22 + .06 : targetLevel;
-    targetLevel = lerp(targetLevel, fallback, .03);
-    currentLevel = lerp(currentLevel, targetLevel, .16);
+    const statePulse = syntheticEnergyForState(stateName);
+    const fallbackBreath = (!NO_BREATH && age > 2400) ? (Math.sin(performance.now()/1000*1.55)*.5+.5)*.20 + .06 : 0;
+    const fallback = Math.max(targetLevel, statePulse, fallbackBreath);
+    targetLevel = lerp(targetLevel, fallback, .08);
+    currentLevel = lerp(currentLevel, Math.max(targetLevel, statePulse*.92), .18);
     userLevel *= .88;
     aiLevel *= .88;
     targetLevel *= .94;
@@ -618,6 +758,11 @@
 
   setState(params.get('state') || 'ready');
   if (params.get('state') === null && params.get('autolistening') === '1') setState('listening');
+  if (params.get('demo') === '1') {
+    const demoStates = ['listening','user_speaking','thinking','ai_speaking','processing','complete'];
+    let di = 0;
+    setInterval(()=>{ setState(demoStates[di++ % demoStates.length]); setLevel(.72, stateName === 'ai_speaking' ? 'ai' : 'user'); }, 2600);
+  }
   decayLoop();
 
   if (!FORCE_CSS) {
