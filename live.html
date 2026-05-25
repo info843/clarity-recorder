@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v3.11.8 MIX_ORAL_TARGET_LOCK: locks hybrid spoken target to the planned ~70% oral split before chat handoff; keeps v3.11.7 auto-handoff behavior -->
+  <!-- v3.11.8 AVATAR_BRIDGE_FULL_PATCHED: MIX_ORAL_TARGET_LOCK + live avatar bridge for ai/user audio levels; keeps stable v3.11.8 interview flow -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -1003,6 +1003,101 @@
     try {
       parent?.postMessage?.({ type, data }, '*');
     } catch(_) {}
+  }
+
+
+  /* ===== Avatar Bridge v1.0 — live.html -> Wix parent -> avatar iframe =====
+     Sends real live audio energy and interaction state to the Wix parent page.
+     The avatar iframe should receive these from the parent as:
+       { type:'avatar:set', state:'ai_speaking' | 'user_speaking' | ... }
+       { type:'avatar:level', source:'ai'|'user'|'system', value:0..1 }
+     Important: The avatar itself does not access microphone/camera. */
+  const AVATAR_LEVEL_MIN_INTERVAL_MS = 80;
+  let __avatarState = '';
+  let __lastAvatarStateAt = 0;
+  let __lastAvatarLevelAt = { ai: 0, user: 0, system: 0 };
+  let __lastAvatarLevelValue = { ai: -1, user: -1, system: -1 };
+  let __aiSpeakingUntil = 0;
+  let __userSpeakingUntil = 0;
+
+  function clamp01(v){
+    return Math.max(0, Math.min(1, Number(v) || 0));
+  }
+
+  function normalizeAvatarAudioDev(dev){
+    const raw = Math.max(0, Number(dev) || 0);
+    return clamp01((raw - 2) / 34);
+  }
+
+  function avatarBridgePost(type, data){
+    try { postToParent(type, data || {}); } catch(_) {}
+  }
+
+  function avatarSet(state, reason){
+    const now = Date.now();
+    const st = String(state || 'idle').trim() || 'idle';
+    if (st === __avatarState && now - __lastAvatarStateAt < 350) return;
+    __avatarState = st;
+    __lastAvatarStateAt = now;
+
+    // Existing parent bridge can already listen to clarity.avatar for state.
+    avatarBridgePost('clarity.avatar', { state: st, reason: reason || '', ts: now });
+
+    // Rich event for level/state forwarding and debugging.
+    avatarBridgePost('clarity.avatar.bridge', { action: 'set', state: st, reason: reason || '', ts: now });
+  }
+
+  function avatarLevel(source, value, reason){
+    const src = String(source || 'system').toLowerCase();
+    const v = clamp01(value);
+    const now = Date.now();
+    const lastAt = __lastAvatarLevelAt[src] || 0;
+    const lastVal = __lastAvatarLevelValue[src];
+
+    if (now - lastAt < AVATAR_LEVEL_MIN_INTERVAL_MS && Math.abs(v - lastVal) < 0.08) return;
+
+    __lastAvatarLevelAt[src] = now;
+    __lastAvatarLevelValue[src] = v;
+
+    avatarBridgePost('clarity.avatar.level', {
+      source: src,
+      value: v,
+      reason: reason || '',
+      ts: now
+    });
+
+    avatarBridgePost('clarity.avatar.bridge', {
+      action: 'level',
+      source: src,
+      value: v,
+      reason: reason || '',
+      ts: now
+    });
+  }
+
+  function avatarRemoteAudioDev(dev){
+    const v = normalizeAvatarAudioDev(dev);
+    avatarLevel('ai', v, 'remote_audio_analyser');
+
+    if (v > 0.045) {
+      __aiSpeakingUntil = Date.now() + 450;
+      avatarSet('ai_speaking', 'remote_audio_level');
+    } else if (__avatarState === 'ai_speaking' && Date.now() > __aiSpeakingUntil) {
+      avatarSet(END_CALLED || FINAL_HANGUP_TIMER ? 'processing' : 'listening', 'remote_audio_silence');
+    }
+  }
+
+  function avatarLocalAudioDev(dev){
+    const v = normalizeAvatarAudioDev(dev);
+    avatarLevel('user', v, 'mic_audio_analyser');
+
+    // Avoid assistant playback/echo flipping the avatar to user_speaking.
+    if (v > 0.075 && Date.now() > __aiSpeakingUntil) {
+      __userSpeakingUntil = Date.now() + 550;
+      avatarSet('user_speaking', 'mic_audio_level');
+    } else if (__avatarState === 'user_speaking' && Date.now() > __userSpeakingUntil) {
+      avatarSet('thinking', 'mic_audio_silence');
+    }
   }
 
   /* ===== Endpunkte ===== */
@@ -2042,6 +2137,7 @@
 
   applyStaticTexts();
   setStatus('info', t('init'));
+  avatarSet('ready', 'live_initialized');
 
   function transcriptKey(speaker, text, itemId) {
     return [
@@ -2674,6 +2770,10 @@
 
     setStatus('warn', t('processing'));
 
+    avatarSet('processing', 'final_hangup_scheduled');
+    avatarLevel('ai', 0, 'final_hangup_scheduled');
+    avatarLevel('user', 0, 'final_hangup_scheduled');
+
     postToParent('clarity.live.final_message_pending', {
       uid: UID,
       companyId: COMPANY_ID,
@@ -2911,6 +3011,7 @@
           }
 
           $sys.style.width = Math.min(100, dev * 2) + '%';
+          avatarRemoteAudioDev(dev);
 
           requestAnimationFrame(tick);
         })();
@@ -3039,7 +3140,7 @@
     }
 
     if (eventType === 'response.state' && data.state){
-      postToParent('clarity.avatar', { state:data.state });
+      avatarSet(data.state, 'response.state');
     }
 
     /* USER TRANSCRIPT — completed */
@@ -3064,6 +3165,9 @@
       });
 
       if (txtRaw) {
+        avatarSet('thinking', 'user_transcript_completed');
+        avatarLevel('user', 0.12, 'user_transcript_completed');
+
         userUtterances += 1;
         if (structuredCurrentQuestionIndex >= interviewMainQuestionTarget(CTX)) {
           scheduleTargetReachedAutoFinish('user_transcript_after_target', STRUCTURED_AUTOFINISH_IDLE_MS);
@@ -3108,6 +3212,11 @@
         hasPiece: !!piece,
         piecePreview: piece.slice(0, 160)
       });
+
+      if (piece) {
+        avatarSet('user_speaking', 'user_transcript_piece');
+        avatarLevel('user', Math.max(0.35, Math.min(0.85, piece.length / 70)), 'user_transcript_piece');
+      }
 
       return;
     }
@@ -3221,6 +3330,11 @@
           final: true
         });
 
+        avatarLevel('ai', 0.18, 'assistant_audio_done');
+        if (!FINAL_MESSAGE_SPOKEN && !FINAL_HANGUP_TIMER && !END_CALLED) {
+          avatarSet('listening', 'assistant_audio_done');
+        }
+
         if (finalClosingDetected(txt)) {
           if (shouldBlockEarlyInterviewClosing()) {
             requestMissingInterviewQuestion('early_final_audio_transcript_done');
@@ -3253,6 +3367,11 @@
     /* ASSISTANT TRANSCRIPT — delta diagnostics only */
     if (eventType === 'response.audio_transcript.delta') {
       const piece = String(data?.delta || '').trim();
+
+      if (piece) {
+        avatarSet('ai_speaking', 'assistant_audio_delta');
+        avatarLevel('ai', Math.max(0.42, Math.min(0.95, piece.length / 85)), 'assistant_audio_delta');
+      }
 
       if (piece && DEBUG_LOGS) {
         log('[ASSISTANT-TRANSCRIPT-DELTA]', {
@@ -3960,6 +4079,7 @@
         maybeStartRecorder();
 
         postToParent('clarity.live.prepared', {});
+        avatarSet('listening', 'live_prepared');
 
         const firstQuestionFallbackMs = isAssessmentContext(CTX) ? 4500 : 8000;
         setTimeout(() => {
@@ -4077,6 +4197,9 @@
       }
     });
 
+    avatarSet('ai_speaking', 'first_question_requested');
+    avatarLevel('ai', 0.55, 'first_question_requested');
+
     log('[QUESTION] first response requested');
   }
 
@@ -4136,6 +4259,7 @@
           }
 
           $mic.style.width = Math.min(100, dev * 2) + '%';
+          avatarLocalAudioDev(dev);
 
           requestAnimationFrame(tick);
         })();
@@ -5001,6 +5125,9 @@
     if ($btnStop.disabled) return;
     setStopButtonAvailable(false);
     setStatus('warn', t('fallbackEnd'));
+    avatarSet('processing', 'user_fallback_end');
+    avatarLevel('ai', 0, 'user_fallback_end');
+    avatarLevel('user', 0, 'user_fallback_end');
     hangup('user_fallback_end');
   });
 
