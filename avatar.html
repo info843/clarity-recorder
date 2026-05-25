@@ -3,86 +3,264 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-<title>CLARITY Reactive Avatar v2.0.1 Safe Render</title>
+<title>CLARITY Reactive Interview Avatar v2.0.2</title>
 <style>
   :root{
-    --cyan:#3DE6F5;
-    --blue:#064E9B;
-    --navy:#041D48;
-    --violet:#6A35FF;
-    --magenta:#EF00B8;
-    --white:#F7FBFF;
-    --amber:#FFB84D;
-    --success:#48F0C2;
-    --state-color:var(--cyan);
-    --state-color-2:var(--violet);
+    --clarity-cyan:#3DE6F5;
+    --clarity-blue:#064E9B;
+    --clarity-navy:#041D48;
+    --clarity-violet:#6A35FF;
+    --clarity-magenta:#EF00B8;
+    --clarity-white:#F7FBFF;
+    --clarity-success:#49F0C2;
+    --clarity-amber:#FFB84D;
+
+    --state-c1:#3DE6F5;
+    --state-c2:#064E9B;
+    --state-c3:#6A35FF;
+    --state-glow:0.75;
+    --state-speed:5.2s;
     --state-scale:1;
-    --state-speed:4.8s;
-    --state-glow:.55;
-    --level:.12;
+    --level:0.12;
   }
   *{box-sizing:border-box}
-  html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
-  body.bg{background:radial-gradient(circle at 50% 45%,rgba(6,78,155,.28),rgba(4,29,72,.92) 72%,#020816 100%)}
-  #root{position:fixed;inset:0;background:transparent;overflow:hidden}
-  canvas{display:block;position:absolute;inset:0;width:100%;height:100%}
-
-  /* Always-visible CSS fallback. It prevents a blank iframe if WebGL or the CDN fails. */
-  #fallbackOrb{position:fixed;inset:0;display:grid;place-items:center;pointer-events:none;opacity:1;transition:opacity .45s ease;filter:drop-shadow(0 22px 60px rgba(0,22,56,.22))}
-  #fallbackOrb.three-on{opacity:0}
-  .orbWrap{position:relative;width:min(62vw,62vh,360px);height:min(62vw,62vh,360px);transform:scale(calc(var(--state-scale) + var(--level) * .045));transition:transform .16s ease-out}
-  .orbCore{position:absolute;inset:9%;border-radius:50%;background:
-      radial-gradient(circle at 33% 25%,rgba(255,255,255,.88) 0 5%,rgba(255,255,255,.22) 6% 14%,transparent 15%),
-      radial-gradient(circle at 68% 70%,rgba(239,0,184,.78),transparent 38%),
-      radial-gradient(circle at 30% 25%,rgba(61,230,245,.9),transparent 42%),
-      linear-gradient(135deg,#041D48 6%,#064E9B 40%,#6A35FF 67%,#EF00B8 96%);
-    box-shadow:inset 0 0 32px rgba(255,255,255,.30),inset -24px -36px 70px rgba(4,29,72,.36),0 0 calc(36px + var(--level)*60px) color-mix(in srgb, var(--state-color) 70%, transparent),0 22px 80px rgba(0,25,67,.22);
-    animation:orbBreath var(--state-speed) ease-in-out infinite,orbHue 9s ease-in-out infinite;
+  html,body{
+    margin:0;
+    width:100%;
+    height:100%;
+    overflow:hidden;
+    background:transparent;
+    font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
   }
-  .orbCore::before{content:"";position:absolute;inset:5%;border-radius:50%;background:linear-gradient(148deg,rgba(255,255,255,.34),transparent 28%,rgba(255,255,255,.10) 58%,transparent 72%);transform:rotate(-18deg)}
-  .orbCore::after{content:"";position:absolute;inset:-1%;border-radius:50%;border:1px solid rgba(255,255,255,.34);box-shadow:inset 0 0 22px rgba(255,255,255,.18),0 0 38px rgba(61,230,245,.22)}
-  .ring{position:absolute;inset:0;border-radius:50%;border:2px solid color-mix(in srgb, var(--state-color) 76%, transparent);filter:drop-shadow(0 0 18px var(--state-color));opacity:calc(.25 + var(--level)*.55);animation:ringPulse 2.4s ease-in-out infinite}
-  .ring.r2{inset:-7%;border-color:color-mix(in srgb, var(--state-color-2) 66%, transparent);animation-duration:3.15s;animation-direction:reverse;opacity:calc(.16 + var(--level)*.42)}
-  .spark{position:absolute;width:5px;height:5px;border-radius:50%;background:var(--state-color);box-shadow:0 0 16px var(--state-color);opacity:calc(.22 + var(--level)*.55);animation:sparkOrbit 6s linear infinite}
-  .spark.s2{animation-duration:7.7s;animation-direction:reverse;background:var(--state-color-2);box-shadow:0 0 18px var(--state-color-2)}
-  .spark.s3{animation-duration:10s;transform-origin:110px 40px;background:#fff;box-shadow:0 0 14px #fff}
+  body.bg{
+    background:
+      radial-gradient(circle at 50% 45%, rgba(61,230,245,.18), transparent 34%),
+      radial-gradient(circle at 65% 62%, rgba(239,0,184,.18), transparent 38%),
+      linear-gradient(135deg, rgba(4,29,72,.92), rgba(2,8,26,.98));
+  }
+  #root{position:fixed;inset:0;overflow:hidden;background:transparent}
+  canvas{display:block;position:absolute;inset:0;width:100%;height:100%;z-index:2}
 
-  #statusWrap{position:fixed;left:50%;bottom:clamp(10px,4.5vh,26px);transform:translateX(-50%);pointer-events:none;display:none;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;color:rgba(247,251,255,.94);font-size:12px;font-weight:650;letter-spacing:.18px;background:linear-gradient(135deg,rgba(4,29,72,.52),rgba(4,78,155,.22));border:1px solid rgba(247,251,255,.16);box-shadow:0 14px 40px rgba(0,17,42,.22),inset 0 1px 0 rgba(255,255,255,.18);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);white-space:nowrap}
+  /* Always-on premium fallback/backdrop. It stays visible even if WebGL fails. */
+  #cssAvatar{
+    position:fixed;
+    inset:0;
+    display:grid;
+    place-items:center;
+    pointer-events:none;
+    z-index:1;
+    opacity:1;
+    transition:opacity .35s ease, filter .35s ease;
+    filter:drop-shadow(0 26px 70px rgba(0,27,70,.30));
+  }
+  #cssAvatar.three-ready{
+    opacity:.33;
+    filter:blur(.2px) drop-shadow(0 22px 64px rgba(0,27,70,.22));
+  }
+  .avatarWrap{
+    position:relative;
+    width:min(68vw,68vh,410px);
+    height:min(68vw,68vh,410px);
+    transform:scale(calc(var(--state-scale) + var(--level) * .055));
+    transition:transform .14s ease-out;
+    animation:wholeBreath var(--state-speed) ease-in-out infinite;
+  }
+  .aura{
+    position:absolute;
+    inset:-10%;
+    border-radius:50%;
+    background:
+      radial-gradient(circle at 35% 28%, rgba(61,230,245,.42), transparent 28%),
+      radial-gradient(circle at 70% 64%, rgba(239,0,184,.34), transparent 34%),
+      radial-gradient(circle at 50% 50%, rgba(106,53,255,.28), transparent 56%);
+    opacity:calc(.46 + var(--level) * .36);
+    filter:blur(18px) saturate(1.24);
+    animation:auraPulse calc(var(--state-speed) * .86) ease-in-out infinite;
+  }
+  .orb{
+    position:absolute;
+    inset:9%;
+    border-radius:50%;
+    overflow:hidden;
+    background:
+      radial-gradient(circle at 32% 25%, rgba(255,255,255,.96) 0 3.7%, rgba(255,255,255,.36) 4.1%, transparent 13%),
+      radial-gradient(circle at 39% 36%, rgba(61,230,245,.95), transparent 24%),
+      radial-gradient(circle at 67% 64%, rgba(239,0,184,.95), transparent 31%),
+      radial-gradient(circle at 54% 52%, rgba(106,53,255,.92), transparent 46%),
+      linear-gradient(135deg, var(--state-c1), var(--state-c2) 46%, var(--state-c3));
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.58),
+      inset -24px -28px 64px rgba(4,29,72,.50),
+      inset 24px 22px 64px rgba(61,230,245,.22),
+      0 0 calc(34px + var(--level) * 36px) rgba(61,230,245,.30),
+      0 0 calc(54px + var(--level) * 70px) rgba(239,0,184,.18);
+    opacity:.98;
+    animation:orbLiquid calc(var(--state-speed) * .92) ease-in-out infinite;
+  }
+  .orb:before{
+    content:"";
+    position:absolute;
+    inset:5% 4% auto 7%;
+    height:42%;
+    border-radius:50%;
+    background:linear-gradient(180deg, rgba(255,255,255,.50), rgba(255,255,255,.08) 58%, transparent);
+    transform:rotate(-13deg);
+    mix-blend-mode:screen;
+    opacity:.92;
+  }
+  .orb:after{
+    content:"";
+    position:absolute;
+    inset:0;
+    border-radius:50%;
+    background:
+      linear-gradient(102deg, transparent 0 22%, rgba(255,255,255,.24) 23%, transparent 32% 100%),
+      radial-gradient(circle at 72% 26%, rgba(255,255,255,.75) 0 1.4%, transparent 2.4%),
+      radial-gradient(circle at 28% 37%, rgba(255,255,255,.55) 0 1.1%, transparent 2.2%);
+    opacity:calc(.38 + var(--level) * .22);
+    animation:sheenMove 8.6s ease-in-out infinite;
+  }
+  .wave{
+    position:absolute;
+    left:7%;right:7%;top:48%;height:2px;
+    border-radius:999px;
+    background:linear-gradient(90deg, transparent, rgba(255,255,255,.82), var(--state-c1), rgba(255,255,255,.74), transparent);
+    box-shadow:0 0 calc(12px + var(--level) * 22px) var(--state-c1);
+    transform:scaleX(calc(.74 + var(--level) * .32));
+    opacity:calc(.48 + var(--level) * .45);
+    animation:waveFloat calc(var(--state-speed) * .55) ease-in-out infinite;
+  }
+  .ring{
+    position:absolute;
+    inset:4%;
+    border-radius:50%;
+    border:2px solid transparent;
+    border-top-color:var(--state-c1);
+    border-left-color:rgba(61,230,245,.18);
+    border-bottom-color:rgba(255,255,255,.16);
+    opacity:calc(.50 + var(--level) * .28);
+    filter:drop-shadow(0 0 calc(12px + var(--level) * 18px) var(--state-c1));
+    transform:rotateX(63deg) rotateZ(-10deg) scale(calc(.96 + var(--level) * .10));
+    animation:ringOrbit calc(var(--state-speed) * .82) linear infinite;
+  }
+  .ring.r2{
+    inset:1%;
+    border-top-color:var(--state-c3);
+    border-right-color:rgba(239,0,184,.24);
+    border-left-color:transparent;
+    transform:rotateX(78deg) rotateY(18deg) rotateZ(82deg) scale(calc(.92 + var(--level) * .13));
+    animation-duration:calc(var(--state-speed) * 1.16);
+    animation-direction:reverse;
+    opacity:calc(.34 + var(--level) * .30);
+  }
+  .ring.r3{
+    inset:11%;
+    border-top-color:rgba(255,255,255,.62);
+    border-right-color:rgba(255,255,255,.10);
+    transform:rotateX(28deg) rotateY(66deg) rotateZ(14deg) scale(calc(.90 + var(--level) * .08));
+    animation-duration:calc(var(--state-speed) * 1.34);
+    opacity:calc(.30 + var(--level) * .22);
+  }
+  .spark{
+    position:absolute;
+    left:50%;top:50%;
+    width:7px;height:7px;
+    margin:-3.5px 0 0 -3.5px;
+    border-radius:999px;
+    background:#fff;
+    box-shadow:0 0 14px #fff,0 0 26px var(--state-c1);
+    opacity:calc(.52 + var(--level) * .38);
+    animation:sparkOrbit 8.8s linear infinite;
+  }
+  .spark.s2{background:var(--state-c1);box-shadow:0 0 18px var(--state-c1);animation-duration:6.4s;animation-direction:reverse;transform-origin:118px 40px}
+  .spark.s3{background:var(--state-c3);box-shadow:0 0 18px var(--state-c3);animation-duration:10.6s;transform-origin:96px -56px}
+
+  #statusWrap{
+    position:fixed;
+    left:50%;
+    bottom:clamp(10px,4.5vh,28px);
+    transform:translateX(-50%);
+    display:none;
+    align-items:center;
+    gap:8px;
+    padding:8px 15px;
+    border-radius:999px;
+    z-index:4;
+    pointer-events:none;
+    color:rgba(247,251,255,.95);
+    font-size:12px;
+    font-weight:720;
+    letter-spacing:.15px;
+    background:linear-gradient(135deg, rgba(4,29,72,.58), rgba(4,78,155,.20));
+    border:1px solid rgba(247,251,255,.18);
+    box-shadow:0 14px 42px rgba(0,17,42,.22), inset 0 1px 0 rgba(255,255,255,.20);
+    backdrop-filter:blur(16px);
+    -webkit-backdrop-filter:blur(16px);
+    white-space:nowrap;
+  }
   #statusWrap.on{display:flex}
-  #dot{width:7px;height:7px;border-radius:999px;background:var(--state-color);box-shadow:0 0 14px var(--state-color),0 0 24px color-mix(in srgb, var(--state-color) 55%, transparent)}
-  #debug{position:fixed;left:8px;top:8px;z-index:5;display:none;color:rgba(247,251,255,.86);background:rgba(4,29,72,.58);border:1px solid rgba(247,251,255,.12);border-radius:10px;padding:7px 9px;font:11px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;pointer-events:none;max-width:calc(100vw - 24px);white-space:pre-wrap}
+  #dot{
+    width:7px;height:7px;border-radius:50%;
+    background:var(--state-c1);
+    box-shadow:0 0 14px var(--state-c1),0 0 28px var(--state-c1);
+  }
+  #debug{
+    position:fixed;
+    left:8px;top:8px;z-index:6;
+    display:none;
+    color:rgba(247,251,255,.90);
+    background:rgba(4,29,72,.72);
+    border:1px solid rgba(247,251,255,.14);
+    border-radius:10px;
+    padding:7px 9px;
+    font:11px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    pointer-events:none;
+    max-width:calc(100vw - 24px);
+    white-space:pre-wrap;
+  }
   #debug.on{display:block}
-  @keyframes orbBreath{0%,100%{transform:scale(1) rotate(0deg)}50%{transform:scale(calc(1.015 + var(--level)*.05)) rotate(1.2deg)}}
-  @keyframes orbHue{0%,100%{filter:saturate(1.04)}50%{filter:saturate(1.22)}}
-  @keyframes ringPulse{0%,100%{transform:scale(.94);opacity:.24}50%{transform:scale(calc(1.02 + var(--level)*.14));opacity:.68}}
-  @keyframes sparkOrbit{from{transform:rotate(0deg) translateX(48%) rotate(0deg)}to{transform:rotate(360deg) translateX(48%) rotate(-360deg)}}
+
+  @keyframes wholeBreath{0%,100%{transform:scale(calc(var(--state-scale) + var(--level) * .048)) rotate(-.4deg)}50%{transform:scale(calc(var(--state-scale) + .018 + var(--level) * .075)) rotate(.6deg)}}
+  @keyframes auraPulse{0%,100%{opacity:calc(.38 + var(--level) * .24);transform:scale(.95)}50%{opacity:calc(.58 + var(--level) * .38);transform:scale(1.04)}}
+  @keyframes orbLiquid{0%,100%{filter:saturate(1.10) brightness(1.02)}50%{filter:saturate(1.38) brightness(1.08)}}
+  @keyframes sheenMove{0%,100%{transform:translateX(-2%) rotate(0deg);opacity:.36}50%{transform:translateX(4%) rotate(1deg);opacity:.62}}
+  @keyframes waveFloat{0%,100%{top:48%;opacity:calc(.42 + var(--level) * .24)}50%{top:51.5%;opacity:calc(.62 + var(--level) * .36)}}
+  @keyframes ringOrbit{from{rotate:0deg}to{rotate:360deg}}
+  @keyframes sparkOrbit{from{transform:rotate(0deg) translateX(45%) rotate(0deg)}to{transform:rotate(360deg) translateX(45%) rotate(-360deg)}}
 </style>
 </head>
 <body>
 <div id="root"></div>
-<div id="fallbackOrb" aria-hidden="true">
-  <div class="orbWrap">
-    <div class="ring"></div><div class="ring r2"></div>
+<div id="cssAvatar" aria-hidden="true">
+  <div class="avatarWrap">
+    <div class="aura"></div>
+    <div class="ring"></div>
+    <div class="ring r2"></div>
+    <div class="ring r3"></div>
     <span class="spark s1"></span><span class="spark s2"></span><span class="spark s3"></span>
-    <div class="orbCore"></div>
+    <div class="orb"><div class="wave"></div></div>
   </div>
 </div>
-<div id="statusWrap" aria-hidden="true"><span id="dot"></span><span id="statusText">Ready</span></div>
+<div id="statusWrap" aria-hidden="true"><span id="dot"></span><span id="statusText">Bereit</span></div>
 <div id="debug"></div>
+
 <script>
 (()=>{
   'use strict';
-  const VERSION = 'clarity_avatar_v2_0_1_SAFE_RENDER_READY';
+
+  const VERSION = 'clarity_avatar_v2_0_2_REACTIVE_RENDER_FIX';
   const params = new URLSearchParams(location.search || '');
   const DEBUG = params.get('debug') === '1';
   const SHOW_LABEL_DEFAULT = params.get('label') === '1' || params.get('showLabel') === '1';
-  const LOW_MOTION = params.get('motion') === 'low' || params.get('reducedMotion') === '1';
-  const NO_BREATH = params.get('nobreath') === '1';
   const FORCE_CSS = params.get('css') === '1' || params.get('no3d') === '1';
-  if (params.get('bg') === '1' || DEBUG) document.body.classList.add('bg');
+  const NO_BREATH = params.get('nobreath') === '1';
+  const LOW_MOTION = params.get('motion') === 'low' || params.get('reducedMotion') === '1';
+  const LANG = normalizeLang(params.get('lang') || params.get('language') || 'de');
+
+  if (DEBUG || params.get('bg') === '1') document.body.classList.add('bg');
 
   const root = document.getElementById('root');
-  const fallbackOrb = document.getElementById('fallbackOrb');
+  const cssAvatar = document.getElementById('cssAvatar');
   const statusWrap = document.getElementById('statusWrap');
   const statusText = document.getElementById('statusText');
   const debugEl = document.getElementById('debug');
@@ -92,13 +270,33 @@
   const lerp = (a,b,t)=> a + (b-a)*t;
   const safe = (fn, fallback)=>{ try { return fn(); } catch(e){ return fallback; } };
   const nowMs = ()=> performance.now();
+
+  function normalizeLang(v){
+    const s = String(v || '').toLowerCase();
+    if (s.startsWith('de')) return 'de';
+    if (s.startsWith('es')) return 'es';
+    if (s.startsWith('fr')) return 'fr';
+    if (s.startsWith('it')) return 'it';
+    return 'en';
+  }
+  const LABELS = {
+    de:{idle:'Bereit',ready:'Bereit',listening:'Zuhören',user_speaking:'Kandidat spricht',ai_speaking:'KI spricht',thinking:'KI denkt',processing:'Verarbeitung läuft',complete:'Abgeschlossen',error:'Bitte warten',stopped:'Gestoppt'},
+    en:{idle:'Ready',ready:'Ready',listening:'Listening',user_speaking:'User speaking',ai_speaking:'AI speaking',thinking:'Thinking',processing:'Processing',complete:'Complete',error:'Please wait',stopped:'Stopped'},
+    es:{idle:'Listo',ready:'Listo',listening:'Escuchando',user_speaking:'Usuario hablando',ai_speaking:'IA hablando',thinking:'Pensando',processing:'Procesando',complete:'Completado',error:'Espere, por favor',stopped:'Detenido'},
+    fr:{idle:'Prêt',ready:'Prêt',listening:'Écoute',user_speaking:'Utilisateur parle',ai_speaking:'IA parle',thinking:'Réflexion',processing:'Traitement',complete:'Terminé',error:'Veuillez patienter',stopped:'Arrêté'},
+    it:{idle:'Pronto',ready:'Pronto',listening:'In ascolto',user_speaking:'Utente parla',ai_speaking:'IA parla',thinking:'Elaborazione',processing:'Elaborazione',complete:'Completato',error:'Attendere',stopped:'Fermato'}
+  };
+  const T = LABELS[LANG] || LABELS.en;
+
   function log(msg, extra){
     if (!DEBUG) return;
-    const text = `[${VERSION}] ${msg}${extra ? '\n' + JSON.stringify(extra).slice(0,520) : ''}`;
+    const text = `[${VERSION}] ${msg}${extra ? '\n' + JSON.stringify(extra).slice(0,700) : ''}`;
     console.log(text);
     debugEl.textContent = text;
   }
-  function postParent(msg){ safe(()=> parent && parent.postMessage && parent.postMessage({ ...msg, from:'clarity-avatar', version:VERSION }, '*')); }
+  function postParent(msg){
+    safe(()=> parent && parent.postMessage && parent.postMessage(Object.assign({ from:'clarity-avatar', version:VERSION }, msg), '*'));
+  }
   function parseMessage(data){
     if (!data) return {};
     if (typeof data === 'string') { try { return JSON.parse(data); } catch(_){ return { type:data }; } }
@@ -106,66 +304,71 @@
   }
 
   const STATE = {
-    idle:{label:'Ready', c1:'#3DE6F5', c2:'#6A35FF', scale:1, speed:'5.2s'},
-    ready:{label:'Ready', c1:'#3DE6F5', c2:'#064E9B', scale:1.01, speed:'4.8s'},
-    listening:{label:'Listening', c1:'#3DE6F5', c2:'#064E9B', scale:1.025, speed:'3.8s'},
-    user_speaking:{label:'User speaking', c1:'#3DE6F5', c2:'#064E9B', scale:1.045, speed:'2.8s'},
-    ai_speaking:{label:'AI speaking', c1:'#EF00B8', c2:'#6A35FF', scale:1.065, speed:'2.45s'},
-    thinking:{label:'Thinking', c1:'#6A35FF', c2:'#3DE6F5', scale:1.025, speed:'4.2s'},
-    processing:{label:'Processing', c1:'#3DE6F5', c2:'#F7FBFF', scale:1.035, speed:'2.2s'},
-    complete:{label:'Complete', c1:'#48F0C2', c2:'#F7FBFF', scale:1.055, speed:'2.6s'},
-    error:{label:'Please wait', c1:'#FFB84D', c2:'#EF00B8', scale:1.025, speed:'3.3s'},
-    stopped:{label:'Stopped', c1:'#F7FBFF', c2:'#064E9B', scale:.985, speed:'6s'}
+    idle:{c1:'#3DE6F5', c2:'#064E9B', c3:'#6A35FF', scale:1.00, speed:'5.6s', glow:.62, rot:.10, label:T.idle},
+    ready:{c1:'#3DE6F5', c2:'#064E9B', c3:'#6A35FF', scale:1.01, speed:'5.0s', glow:.72, rot:.13, label:T.ready},
+    listening:{c1:'#3DE6F5', c2:'#064E9B', c3:'#49F0C2', scale:1.03, speed:'3.8s', glow:.82, rot:.18, label:T.listening},
+    user_speaking:{c1:'#3DE6F5', c2:'#064E9B', c3:'#49F0C2', scale:1.055, speed:'2.55s', glow:1.00, rot:.26, label:T.user_speaking},
+    ai_speaking:{c1:'#EF00B8', c2:'#6A35FF', c3:'#3DE6F5', scale:1.075, speed:'2.25s', glow:1.06, rot:.31, label:T.ai_speaking},
+    thinking:{c1:'#6A35FF', c2:'#041D48', c3:'#3DE6F5', scale:1.025, speed:'4.0s', glow:.82, rot:.16, label:T.thinking},
+    processing:{c1:'#3DE6F5', c2:'#F7FBFF', c3:'#6A35FF', scale:1.04, speed:'1.95s', glow:1.02, rot:.34, label:T.processing},
+    complete:{c1:'#49F0C2', c2:'#F7FBFF', c3:'#3DE6F5', scale:1.065, speed:'2.7s', glow:1.08, rot:.22, label:T.complete},
+    error:{c1:'#FFB84D', c2:'#EF00B8', c3:'#064E9B', scale:1.025, speed:'3.2s', glow:.88, rot:.12, label:T.error},
+    stopped:{c1:'#F7FBFF', c2:'#064E9B', c3:'#041D48', scale:.985, speed:'6.2s', glow:.38, rot:.04, label:T.stopped}
   };
+
   function normalizeState(s){
     const x = String(s || '').trim().toLowerCase().replace(/[\s-]+/g,'_');
-    const a = {
-      wait:'idle', waiting:'idle', standby:'idle', awake:'ready', start:'ready', active:'ready',
-      listen:'listening', hearing:'listening', recording:'listening',
-      user:'user_speaking', user_speech:'user_speaking', user_talking:'user_speaking', candidate_speaking:'user_speaking', speech_started:'user_speaking',
-      speaking:'ai_speaking', ai:'ai_speaking', assistant:'ai_speaking', assistant_speaking:'ai_speaking', ai_talking:'ai_speaking', talking:'ai_speaking', speak:'ai_speaking',
-      think:'thinking', analyzing:'thinking', analysing:'thinking', preparing:'thinking',
-      process:'processing', uploading:'processing', exporting:'processing', report:'processing', building_report:'processing',
-      done:'complete', success:'complete', finished:'complete', ready_done:'complete', report_ready:'complete',
-      warn:'error', warning:'error', failed:'error', failure:'error', stopped:'stopped', stop:'stopped'
+    const aliases = {
+      wait:'idle', waiting:'idle', standby:'idle', awake:'ready', start:'ready', active:'ready', initialized:'ready',
+      listen:'listening', hearing:'listening', recording:'listening', mic_on:'listening',
+      user:'user_speaking', user_speech:'user_speaking', user_talking:'user_speaking', candidate_speaking:'user_speaking', speech_started:'user_speaking', candidate:'user_speaking',
+      speaking:'ai_speaking', speak:'ai_speaking', ai:'ai_speaking', assistant:'ai_speaking', assistant_speaking:'ai_speaking', ai_talking:'ai_speaking', talking:'ai_speaking', response_audio:'ai_speaking',
+      think:'thinking', analyzing:'thinking', analysing:'thinking', preparing:'thinking', deliberating:'thinking',
+      process:'processing', upload:'processing', uploading:'processing', exporting:'processing', report:'processing', building_report:'processing', pdf:'processing',
+      done:'complete', success:'complete', finished:'complete', report_ready:'complete', completed:'complete',
+      warn:'error', warning:'error', failed:'error', failure:'error', problem:'error',
+      stop:'stopped', stopped:'stopped', hangup:'stopped'
     };
-    return STATE[x] ? x : (a[x] || 'idle');
+    return STATE[x] ? x : (aliases[x] || 'idle');
   }
 
   let stateName = 'idle';
-  let currentLevel = .10, targetLevel = .10, userLevel = 0, aiLevel = 0;
+  let targetLevel = .12, currentLevel = .12, userLevel = 0, aiLevel = 0;
   let lastLevelAt = nowMs();
   let threeAPI = null;
-  let threeReady = false;
 
   function setLabelVisibility(on){ statusWrap.classList.toggle('on', !!on); }
   setLabelVisibility(SHOW_LABEL_DEFAULT);
 
   function applyCssState(name){
     const s = STATE[name] || STATE.idle;
-    document.documentElement.style.setProperty('--state-color', s.c1);
-    document.documentElement.style.setProperty('--state-color-2', s.c2);
-    document.documentElement.style.setProperty('--state-scale', s.scale);
+    document.documentElement.style.setProperty('--state-c1', s.c1);
+    document.documentElement.style.setProperty('--state-c2', s.c2);
+    document.documentElement.style.setProperty('--state-c3', s.c3);
+    document.documentElement.style.setProperty('--state-glow', String(s.glow));
     document.documentElement.style.setProperty('--state-speed', s.speed);
+    document.documentElement.style.setProperty('--state-scale', String(s.scale));
     statusText.textContent = s.label;
   }
-  function setState(name){
-    stateName = normalizeState(name);
+  function setState(state){
+    stateName = normalizeState(state);
     applyCssState(stateName);
     if (threeAPI) threeAPI.setState(stateName);
     postParent({ type:'avatar:state', state:stateName, label:(STATE[stateName] || STATE.idle).label });
-    log('state', { state:stateName, threeReady });
+    log('state', {state:stateName, level:currentLevel, three:!!threeAPI});
   }
   function setLevel(value, source){
     const v = clamp01(value);
     const src = String(source || '').toLowerCase();
     lastLevelAt = nowMs();
-    if (src === 'user' || src === 'mic' || src === 'candidate') {
-      userLevel = v; targetLevel = Math.max(targetLevel, v);
-      if (v > .08 && ['idle','ready','listening'].includes(stateName)) setState('user_speaking');
+    if (src === 'user' || src === 'mic' || src === 'candidate' || src === 'input') {
+      userLevel = v;
+      targetLevel = Math.max(targetLevel, v);
+      if (v > .07 && ['idle','ready','listening'].includes(stateName)) setState('user_speaking');
     } else if (src === 'ai' || src === 'assistant' || src === 'tts' || src === 'output') {
-      aiLevel = v; targetLevel = Math.max(targetLevel, v);
-      if (v > .08 && ['idle','ready','thinking'].includes(stateName)) setState('ai_speaking');
+      aiLevel = v;
+      targetLevel = Math.max(targetLevel, v);
+      if (v > .07 && ['idle','ready','thinking'].includes(stateName)) setState('ai_speaking');
     } else {
       targetLevel = v;
       if (stateName === 'ai_speaking') aiLevel = Math.max(aiLevel, v);
@@ -174,7 +377,7 @@
     if (threeAPI) threeAPI.setLevel(v, src);
   }
   function stopAvatar(){ userLevel=0; aiLevel=0; targetLevel=0; setState('stopped'); }
-  function resetAvatar(){ userLevel=0; aiLevel=0; targetLevel=.18; setState('ready'); }
+  function resetAvatar(){ userLevel=0; aiLevel=0; targetLevel=.16; setState('ready'); }
 
   function loadScript(src){
     return new Promise((resolve,reject)=>{
@@ -199,163 +402,233 @@
       try { log('loading three', {src}); await loadScript(src); if (window.THREE) return window.THREE; }
       catch(e){ lastErr = e; log('three load failed', {src, error:String(e && e.message || e)}); }
     }
-    throw lastErr || new Error('THREE not available');
+    throw lastErr || new Error('THREE unavailable');
+  }
+
+  function makeCanvasTexture(){
+    const c = document.createElement('canvas');
+    c.width = 512; c.height = 512;
+    const g = c.getContext('2d');
+    const grad = g.createRadialGradient(170,130,20,260,270,300);
+    grad.addColorStop(0, 'rgba(255,255,255,.90)');
+    grad.addColorStop(.18, 'rgba(61,230,245,.90)');
+    grad.addColorStop(.48, 'rgba(6,78,155,.96)');
+    grad.addColorStop(.72, 'rgba(106,53,255,.92)');
+    grad.addColorStop(1, 'rgba(239,0,184,.92)');
+    g.fillStyle = grad; g.fillRect(0,0,512,512);
+    g.globalCompositeOperation='screen';
+    g.fillStyle='rgba(255,255,255,.20)';
+    g.beginPath(); g.ellipse(210,150,185,58,-0.18,0,Math.PI*2); g.fill();
+    g.globalCompositeOperation='source-over';
+    return c;
   }
 
   function createThreeAvatar(THREE){
-    const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true, powerPreference:'high-performance' });
+    let renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true, powerPreference:'high-performance' });
+    } catch(e) {
+      throw new Error('webgl_renderer_failed: ' + String(e && e.message || e));
+    }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, LOW_MOTION ? 1.25 : 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    if ('outputColorSpace' in renderer) renderer.outputColorSpace = THREE.SRGBColorSpace;
     root.appendChild(renderer.domElement);
+    cssAvatar.classList.add('three-ready');
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(42, window.innerWidth/window.innerHeight, .1, 60);
-    camera.position.set(0,0,3.45);
-    const group = new THREE.Group(); scene.add(group);
-    scene.add(new THREE.AmbientLight(0xffffff, .92));
-    const key = new THREE.DirectionalLight(0xffffff, .42); key.position.set(3,2.5,3); scene.add(key);
-    const cyanLight = new THREE.PointLight(0x3DE6F5, 1.25, 7); cyanLight.position.set(-2,1.3,2.4); scene.add(cyanLight);
-    const magLight = new THREE.PointLight(0xEF00B8, .85, 7); magLight.position.set(2,-1.5,2.2); scene.add(magLight);
+    camera.position.set(0,0,3.7);
 
-    const coreMat = new THREE.MeshStandardMaterial({
-      color:0x064E9B, emissive:0x3DE6F5, emissiveIntensity:.42, roughness:.28, metalness:.03, transparent:true, opacity:.96
+    const group = new THREE.Group();
+    scene.add(group);
+    scene.add(new THREE.AmbientLight(0xffffff, .78));
+    const key = new THREE.DirectionalLight(0xffffff, .58); key.position.set(2.8,2.4,3.4); scene.add(key);
+    const cyanLight = new THREE.PointLight(0x3DE6F5, 1.35, 7.0); cyanLight.position.set(-2.2,1.3,2.4); scene.add(cyanLight);
+    const magLight = new THREE.PointLight(0xEF00B8, 1.05, 7.0); magLight.position.set(2.3,-1.45,2.2); scene.add(magLight);
+
+    const texture = new THREE.CanvasTexture(makeCanvasTexture());
+    if ('colorSpace' in texture) texture.colorSpace = THREE.SRGBColorSpace;
+
+    const coreMat = new THREE.MeshPhysicalMaterial({
+      map:texture,
+      color:0xffffff,
+      emissive:0x063a86,
+      emissiveIntensity:.24,
+      roughness:.26,
+      metalness:.04,
+      clearcoat:1,
+      clearcoatRoughness:.13,
+      transparent:true,
+      opacity:.96
     });
-    const core = new THREE.Mesh(new THREE.SphereGeometry(.86, LOW_MOTION ? 96 : 160, LOW_MOTION ? 64 : 112), coreMat);
+    const core = new THREE.Mesh(new THREE.SphereGeometry(.86, 96, 72), coreMat);
     group.add(core);
 
-    const shellMat = new THREE.MeshPhysicalMaterial({
-      color:0xF7FBFF, transparent:true, opacity:.22, roughness:.08, metalness:0, transmission:.38, thickness:.45, clearcoat:1, clearcoatRoughness:.08, side:THREE.FrontSide
+    const glassMat = new THREE.MeshPhysicalMaterial({
+      color:0xf7fbff,
+      emissive:0x3DE6F5,
+      emissiveIntensity:.06,
+      roughness:.08,
+      metalness:0,
+      transparent:true,
+      opacity:.22,
+      clearcoat:1,
+      clearcoatRoughness:.04,
+      side:THREE.DoubleSide,
+      depthWrite:false
     });
-    const shell = new THREE.Mesh(new THREE.SphereGeometry(1.0, LOW_MOTION ? 80 : 128, LOW_MOTION ? 56 : 88), shellMat);
-    group.add(shell);
+    const glass = new THREE.Mesh(new THREE.SphereGeometry(1.005, 96, 72), glassMat);
+    group.add(glass);
 
-    function ring(color, radius, tube){
-      const mat = new THREE.MeshBasicMaterial({ color, transparent:true, opacity:.32, blending:THREE.AdditiveBlending, depthWrite:false });
-      const mesh = new THREE.Mesh(new THREE.TorusGeometry(radius, tube, 16, 180), mat);
-      group.add(mesh);
-      return mesh;
-    }
-    const rUser = ring(0x3DE6F5, 1.08, .008);
-    const rAi = ring(0xEF00B8, 1.18, .009);
-    const rProcess = ring(0xF7FBFF, 1.30, .007);
-    rUser.rotation.x = Math.PI/2.2; rAi.rotation.y = Math.PI/2.5; rProcess.rotation.x = Math.PI/2;
+    const auraMat = new THREE.MeshBasicMaterial({ color:0x3DE6F5, transparent:true, opacity:.13, blending:THREE.AdditiveBlending, depthWrite:false });
+    const aura = new THREE.Mesh(new THREE.SphereGeometry(1.12, 64, 48), auraMat);
+    group.add(aura);
 
-    const pCount = LOW_MOTION ? 70 : 120;
-    const pGeo = new THREE.BufferGeometry();
-    const pPos = new Float32Array(pCount*3);
-    for(let i=0;i<pCount;i++){
-      const a = Math.random()*Math.PI*2, r=1.13+Math.random()*.58, z=(Math.random()*2-1)*.52;
-      pPos[i*3]=Math.cos(a)*r; pPos[i*3+1]=Math.sin(a)*r; pPos[i*3+2]=z;
-    }
-    pGeo.setAttribute('position', new THREE.BufferAttribute(pPos,3));
-    const pMat = new THREE.PointsMaterial({ color:0x3DE6F5, size:.018, transparent:true, opacity:.30, blending:THREE.AdditiveBlending, depthWrite:false });
-    const particles = new THREE.Points(pGeo,pMat); group.add(particles);
+    const makeRing = (r, tube, color, opacity)=> new THREE.Mesh(
+      new THREE.TorusGeometry(r, tube, 16, 192),
+      new THREE.MeshBasicMaterial({ color, transparent:true, opacity, blending:THREE.AdditiveBlending, depthWrite:false })
+    );
+    const ring1 = makeRing(1.11,.009,0x3DE6F5,.62); ring1.rotation.x = Math.PI*.58; ring1.rotation.z = -.16; group.add(ring1);
+    const ring2 = makeRing(1.18,.007,0xEF00B8,.38); ring2.rotation.x = Math.PI*.80; ring2.rotation.y = .36; ring2.rotation.z = 1.18; group.add(ring2);
+    const ring3 = makeRing(1.03,.006,0xffffff,.28); ring3.rotation.x = Math.PI*.28; ring3.rotation.y = 1.1; group.add(ring3);
 
-    let visualState = stateName;
+    const sparkGeo = new THREE.SphereGeometry(.025, 20, 14);
+    const sparkMats = [0xffffff,0x3DE6F5,0xEF00B8,0x6A35FF].map((c)=> new THREE.MeshBasicMaterial({color:c,transparent:true,opacity:.92,blending:THREE.AdditiveBlending,depthWrite:false}));
+    const sparks = sparkMats.map((m)=>{ const s = new THREE.Mesh(sparkGeo, m); group.add(s); return s; });
+
+    let localState = stateName;
     let localLevel = currentLevel;
-    let tPrev = performance.now()/1000;
-    function applyVisualState(){
-      const s = visualState;
-      const ai = s === 'ai_speaking';
-      const user = s === 'user_speaking' || s === 'listening';
-      const processing = s === 'processing';
-      const complete = s === 'complete';
-      const err = s === 'error';
-      coreMat.color.setHex(ai ? 0x6A35FF : user ? 0x064E9B : processing ? 0x041D48 : complete ? 0x067C68 : err ? 0x8F5512 : 0x064E9B);
-      coreMat.emissive.setHex(ai ? 0xEF00B8 : user ? 0x3DE6F5 : processing ? 0x3DE6F5 : complete ? 0x48F0C2 : err ? 0xFFB84D : 0x3DE6F5);
-      rUser.material.opacity = (user ? .42 : .16) + Math.max(userLevel,localLevel*.25)*.42;
-      rAi.material.opacity = (ai ? .48 : .10) + Math.max(aiLevel,localLevel*.22)*.42;
-      rProcess.material.opacity = processing ? .62 : complete ? .38 : .08;
-      pMat.color.setHex(ai ? 0xEF00B8 : user ? 0x3DE6F5 : complete ? 0x48F0C2 : err ? 0xFFB84D : 0x3DE6F5);
+    let targetColorA = new THREE.Color(STATE[stateName].c1);
+    let targetColorB = new THREE.Color(STATE[stateName].c3);
+    let colorA = targetColorA.clone();
+    let colorB = targetColorB.clone();
+    let disposed = false;
+    let last = performance.now()/1000;
+    let time = 0;
+
+    function setState3(name){
+      localState = normalizeState(name);
+      const s = STATE[localState] || STATE.idle;
+      targetColorA.set(s.c1);
+      targetColorB.set(s.c3);
     }
-    function frame(){
-      requestAnimationFrame(frame);
-      const tNow = performance.now()/1000;
-      const dt = Math.min(tNow - tPrev, .05); tPrev = tNow;
-      if (nowMs() - lastLevelAt > 240) { userLevel*=.88; aiLevel*=.88; targetLevel*=.90; }
-      const breath = (!NO_BREATH && nowMs()-lastLevelAt>3000) ? (Math.sin(tNow*1.45)*.5+.5)*.18 : 0;
-      localLevel = lerp(localLevel, Math.max(targetLevel,userLevel,aiLevel,breath), .14);
-      applyVisualState();
-      const scaleBase = (STATE[visualState] || STATE.idle).scale || 1;
-      group.scale.setScalar(scaleBase * (1 + localLevel*.055 + aiLevel*.025));
-      core.rotation.y += dt*(.15 + localLevel*.25);
-      core.rotation.x += dt*(.05 + aiLevel*.08);
-      shell.rotation.y -= dt*.035;
-      rUser.rotation.z += dt*(.40 + userLevel*1.8);
-      rAi.rotation.z -= dt*(.55 + aiLevel*1.8);
-      rProcess.rotation.z += dt*(visualState === 'processing' ? 1.6 : .35);
-      particles.rotation.z += dt*(.045 + localLevel*.10);
-      coreMat.emissiveIntensity = .35 + localLevel*.75 + aiLevel*.35;
-      pMat.opacity = .18 + localLevel*.45;
-      cyanLight.intensity = 1.0 + userLevel*1.4 + localLevel*.35;
-      magLight.intensity = .55 + aiLevel*1.7;
+    function setLevel3(v){ localLevel = Math.max(localLevel, clamp01(v)); }
+
+    function updateColors(){
+      colorA.lerp(targetColorA,.055);
+      colorB.lerp(targetColorB,.055);
+      coreMat.emissive.copy(colorA).multiplyScalar(.38 + currentLevel*.34);
+      auraMat.color.copy(colorA);
+      ring1.material.color.copy(colorA);
+      ring2.material.color.copy(colorB);
+      glassMat.emissive.copy(colorA);
+      magLight.color.copy(colorB);
+      cyanLight.color.copy(colorA);
+    }
+    function animate(){
+      if (disposed) return;
+      requestAnimationFrame(animate);
+      const t = performance.now()/1000;
+      const dt = Math.min(.05, t-last); last = t; time += dt;
+
+      updateColors();
+      const s = STATE[localState] || STATE.idle;
+      const breath = NO_BREATH ? 0 : (Math.sin(time*1.55)*.5+.5)*.16;
+      const e = Math.max(currentLevel, localLevel*.7, breath*.6);
+      localLevel *= .90;
+
+      const scale = s.scale + e*.080 + (localState === 'ai_speaking' ? Math.sin(time*7.2)*.006*e : 0);
+      group.scale.setScalar(scale);
+      group.rotation.y += (s.rot + e*.22) * dt;
+      group.rotation.x = Math.sin(time*.55) * .035;
+      core.rotation.y += (.055 + e*.12) * dt;
+      core.rotation.x += (.025 + e*.04) * dt;
+      glass.rotation.y -= (.035 + e*.08) * dt;
+      aura.scale.setScalar(1.0 + e*.11 + Math.sin(time*2.4)*.015);
+      auraMat.opacity = .11 + e*.18;
+      coreMat.emissiveIntensity = .18 + e*.36;
+      glassMat.opacity = .18 + e*.09;
+      ring1.rotation.z += (1.05 + e*1.35) * dt;
+      ring2.rotation.z -= (.82 + e*1.18) * dt;
+      ring3.rotation.y += (.58 + e*.76) * dt;
+      ring1.scale.setScalar(1 + e*.055);
+      ring2.scale.setScalar(1 + e*.070);
+      ring3.scale.setScalar(1 + e*.035);
+      ring1.material.opacity = .38 + e*.36;
+      ring2.material.opacity = .25 + e*.38;
+      ring3.material.opacity = .18 + e*.26;
+
+      sparks.forEach((sp, i)=>{
+        const speed = [1.1,-.86,.62,-1.34][i];
+        const radius = [.98,1.10,1.18,1.02][i] + e*.055;
+        const phase = time*speed + i*1.72;
+        const y = Math.sin(phase*.72 + i) * [.18,.28,.22,.32][i];
+        sp.position.set(Math.cos(phase)*radius, y, Math.sin(phase)*radius*.42);
+        sp.scale.setScalar(1 + e*2.2);
+        sp.material.opacity = .46 + e*.48;
+      });
+
       renderer.render(scene,camera);
     }
-    window.addEventListener('resize',()=>{
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, LOW_MOTION ? 1.25 : 2));
+
+    window.addEventListener('resize', ()=>{
       renderer.setSize(window.innerWidth, window.innerHeight);
-      camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix();
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
     });
-    frame();
-    return {
-      setState(s){ visualState = normalizeState(s); applyVisualState(); },
-      setLevel(v){ targetLevel = Math.max(targetLevel, clamp01(v)); }
-    };
+
+    animate();
+    return { setState:setState3, setLevel:setLevel3, dispose:()=>{ disposed=true; safe(()=>renderer.dispose()); } };
   }
 
-  function cssFrame(){
-    if (nowMs() - lastLevelAt > 240) { userLevel*=.88; aiLevel*=.88; targetLevel*=.90; }
-    const breath = (!NO_BREATH && nowMs()-lastLevelAt>3000) ? (Math.sin(performance.now()/1000*1.45)*.5+.5)*.18 : 0;
-    currentLevel = lerp(currentLevel, Math.max(targetLevel,userLevel,aiLevel,breath), .16);
-    document.documentElement.style.setProperty('--level', String(currentLevel.toFixed(3)));
-    requestAnimationFrame(cssFrame);
+  function decayLoop(){
+    requestAnimationFrame(decayLoop);
+    const age = nowMs() - lastLevelAt;
+    const fallback = (!NO_BREATH && age > 2400) ? (Math.sin(performance.now()/1000*1.55)*.5+.5)*.22 + .06 : targetLevel;
+    targetLevel = lerp(targetLevel, fallback, .03);
+    currentLevel = lerp(currentLevel, targetLevel, .16);
+    userLevel *= .88;
+    aiLevel *= .88;
+    targetLevel *= .94;
+    document.documentElement.style.setProperty('--level', String(Math.max(.05, currentLevel).toFixed(3)));
+    if (threeAPI) threeAPI.setLevel(currentLevel, stateName === 'ai_speaking' ? 'ai' : (stateName === 'user_speaking' ? 'user' : ''));
   }
-  cssFrame();
 
-  window.addEventListener('message',(ev)=>{
+  window.addEventListener('message', (ev)=>{
     const d = parseMessage(ev && ev.data);
     if (!d || !d.type) return;
-    const type = String(d.type).trim().toLowerCase();
-    if (type === 'ping' || type === 'avatar:ping') { ev.source && ev.source.postMessage && ev.source.postMessage({ type:'avatar:ready', version:VERSION }, '*'); postParent({ type:'avatar:ready' }); return; }
-    if (type === 'avatar:set' || type === 'avatar:state') { setState(d.state || d.value || 'idle'); return; }
-    if (type === 'avatar:level') { setLevel(d.value ?? d.level ?? 0, d.source || d.channel || d.role || ''); return; }
-    if (type === 'avatar:userlevel' || type === 'avatar:user-level') { setLevel(d.value ?? d.level ?? 0, 'user'); return; }
-    if (type === 'avatar:ailevel' || type === 'avatar:ai-level') { setLevel(d.value ?? d.level ?? 0, 'ai'); return; }
-    if (type === 'avatar:config') { if ('showLabel' in d) setLabelVisibility(!!d.showLabel); if ('label' in d) setLabelVisibility(!!d.label); if (d.state) setState(d.state); return; }
-    if (type === 'avatar:stop') { stopAvatar(); return; }
-    if (type === 'avatar:reset') { resetAvatar(); return; }
-    if (type === 'avatar:complete') { setState('complete'); targetLevel=.8; return; }
-    if (type === 'avatar:error') { setState('error'); targetLevel=.55; return; }
-    if (type === 'clarity.live.ready' || type === 'recorder:ready') setState('ready');
-    else if (type === 'input_audio_buffer.speech_started' || type === 'speech_started') setState('user_speaking');
-    else if (type === 'input_audio_buffer.speech_stopped' || type === 'speech_stopped') setState('listening');
-    else if (type === 'response.audio.delta' || type === 'response.audio_transcript.delta' || type === 'assistant_audio_delta') setLevel(d.value ?? .55, 'ai');
-    else if (type === 'response.done' || type === 'assistant_done') { aiLevel = 0; setState('listening'); }
-    else if (type === 'recorder:finished' || type === 'processing:start') setState('processing');
-    else if (type === 'processing:done' || type === 'report:ready') setState('complete');
+    const type = String(d.type || '');
+    if (type === 'ping') { postParent({type:'avatar:ready'}); return; }
+    if (type === 'avatar:set' || type === 'avatar:state') setState(d.state || d.value || 'idle');
+    else if (type === 'avatar:level') setLevel(d.value, d.source || d.kind);
+    else if (type === 'avatar:config') {
+      if (typeof d.showLabel === 'boolean') setLabelVisibility(d.showLabel);
+      if (d.state) setState(d.state);
+      postParent({ type:'avatar:config:ok' });
+    }
+    else if (type === 'avatar:complete') setState('complete');
+    else if (type === 'avatar:error') setState('error');
+    else if (type === 'avatar:stop') stopAvatar();
+    else if (type === 'avatar:reset') resetAvatar();
+    else if (type === 'avatar:showLabel') setLabelVisibility(true);
+    else if (type === 'avatar:hideLabel') setLabelVisibility(false);
+    log('message', d);
   });
 
-  setState(params.get('state') || 'idle');
-  setTimeout(()=> postParent({ type:'avatar:ready' }), 80);
+  setState(params.get('state') || 'ready');
+  if (params.get('state') === null && params.get('autolistening') === '1') setState('listening');
+  decayLoop();
 
-  (async()=>{
-    if (FORCE_CSS) { log('CSS fallback forced'); postParent({ type:'avatar:ready', renderer:'css' }); return; }
-    try {
-      if (!safe(()=> !!document.createElement('canvas').getContext('webgl2')) && !safe(()=> !!document.createElement('canvas').getContext('webgl'))) throw new Error('webgl_unavailable');
-      const THREE = await ensureThree();
-      threeAPI = createThreeAvatar(THREE);
-      threeReady = true;
-      fallbackOrb.classList.add('three-on');
-      postParent({ type:'avatar:ready', renderer:'three' });
-      log('three ready');
-    } catch(e) {
-      threeReady = false;
-      fallbackOrb.classList.remove('three-on');
-      postParent({ type:'avatar:error', code:'THREE_OR_WEBGL_FALLBACK', message:String(e && e.message || e), renderer:'css' });
-      log('fallback css active', { error:String(e && e.message || e) });
-    }
-  })();
+  if (!FORCE_CSS) {
+    ensureThree()
+      .then((THREE)=>{ threeAPI = createThreeAvatar(THREE); threeAPI.setState(stateName); threeAPI.setLevel(currentLevel); log('three ready'); postParent({type:'avatar:ready', render:'three'}); })
+      .catch((e)=>{ log('three unavailable, css fallback active', {error:String(e && e.message || e)}); postParent({type:'avatar:ready', render:'css', warning:'three_unavailable'}); });
+  } else {
+    log('forced css mode');
+    postParent({type:'avatar:ready', render:'css'});
+  }
+  setTimeout(()=> postParent({type:'avatar:ready'}), 80);
 })();
 </script>
 </body>
