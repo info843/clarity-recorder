@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v3.11.8 MIX_ORAL_TARGET_LOCK: locks hybrid spoken target to the planned ~70% oral split before chat handoff; keeps v3.11.7 auto-handoff behavior -->
+  <!-- v3.12.0 MODE_SPLIT_DRIVER: based on stable v3.11.8 MIX_ORAL_TARGET_LOCK; keeps Avatar Bridge; adds separate Audio/Video/Mix driver helpers and deterministic Video-only question control -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -252,7 +252,7 @@
   // bevor Audio, Mikrofon, Kamera und Recorder gestoppt werden.
   const FINAL_HANGUP_BUFFER_MS = Math.max(
     2500,
-    Math.min(26000, Number(Q.get('finalHangupBufferMs') || 8500) || 8500)
+    Math.min(65000, Number(Q.get('finalHangupBufferMs') || 55000) || 55000)
   );
 
   if (DEBUG_UI) document.body.classList.add('debug-ui');
@@ -1005,6 +1005,101 @@
     } catch(_) {}
   }
 
+
+  /* ===== Avatar Bridge v1.0 — live.html -> Wix parent -> avatar iframe =====
+     Sends real live audio energy and interaction state to the Wix parent page.
+     The avatar iframe should receive these from the parent as:
+       { type:'avatar:set', state:'ai_speaking' | 'user_speaking' | ... }
+       { type:'avatar:level', source:'ai'|'user'|'system', value:0..1 }
+     Important: The avatar itself does not access microphone/camera. */
+  const AVATAR_LEVEL_MIN_INTERVAL_MS = 80;
+  let __avatarState = '';
+  let __lastAvatarStateAt = 0;
+  let __lastAvatarLevelAt = { ai: 0, user: 0, system: 0 };
+  let __lastAvatarLevelValue = { ai: -1, user: -1, system: -1 };
+  let __aiSpeakingUntil = 0;
+  let __userSpeakingUntil = 0;
+
+  function clamp01(v){
+    return Math.max(0, Math.min(1, Number(v) || 0));
+  }
+
+  function normalizeAvatarAudioDev(dev){
+    const raw = Math.max(0, Number(dev) || 0);
+    return clamp01((raw - 2) / 34);
+  }
+
+  function avatarBridgePost(type, data){
+    try { postToParent(type, data || {}); } catch(_) {}
+  }
+
+  function avatarSet(state, reason){
+    const now = Date.now();
+    const st = String(state || 'idle').trim() || 'idle';
+    if (st === __avatarState && now - __lastAvatarStateAt < 350) return;
+    __avatarState = st;
+    __lastAvatarStateAt = now;
+
+    // Existing parent bridge can already listen to clarity.avatar for state.
+    avatarBridgePost('clarity.avatar', { state: st, reason: reason || '', ts: now });
+
+    // Rich event for level/state forwarding and debugging.
+    avatarBridgePost('clarity.avatar.bridge', { action: 'set', state: st, reason: reason || '', ts: now });
+  }
+
+  function avatarLevel(source, value, reason){
+    const src = String(source || 'system').toLowerCase();
+    const v = clamp01(value);
+    const now = Date.now();
+    const lastAt = __lastAvatarLevelAt[src] || 0;
+    const lastVal = __lastAvatarLevelValue[src];
+
+    if (now - lastAt < AVATAR_LEVEL_MIN_INTERVAL_MS && Math.abs(v - lastVal) < 0.08) return;
+
+    __lastAvatarLevelAt[src] = now;
+    __lastAvatarLevelValue[src] = v;
+
+    avatarBridgePost('clarity.avatar.level', {
+      source: src,
+      value: v,
+      reason: reason || '',
+      ts: now
+    });
+
+    avatarBridgePost('clarity.avatar.bridge', {
+      action: 'level',
+      source: src,
+      value: v,
+      reason: reason || '',
+      ts: now
+    });
+  }
+
+  function avatarRemoteAudioDev(dev){
+    const v = normalizeAvatarAudioDev(dev);
+    avatarLevel('ai', v, 'remote_audio_analyser');
+
+    if (v > 0.045) {
+      __aiSpeakingUntil = Date.now() + 450;
+      avatarSet('ai_speaking', 'remote_audio_level');
+    } else if (__avatarState === 'ai_speaking' && Date.now() > __aiSpeakingUntil) {
+      avatarSet(END_CALLED || FINAL_HANGUP_TIMER ? 'processing' : 'listening', 'remote_audio_silence');
+    }
+  }
+
+  function avatarLocalAudioDev(dev){
+    const v = normalizeAvatarAudioDev(dev);
+    avatarLevel('user', v, 'mic_audio_analyser');
+
+    // Avoid assistant playback/echo flipping the avatar to user_speaking.
+    if (v > 0.075 && Date.now() > __aiSpeakingUntil) {
+      __userSpeakingUntil = Date.now() + 550;
+      avatarSet('user_speaking', 'mic_audio_level');
+    } else if (__avatarState === 'user_speaking' && Date.now() > __userSpeakingUntil) {
+      avatarSet('thinking', 'mic_audio_silence');
+    }
+  }
+
   /* ===== Endpunkte ===== */
   const TOKEN_URL = 'https://www.clarity-nvl.com/_functions/realtimeToken';
   const MUX_UPLOAD_URL = `${API_BASE}/api/mux-upload`;
@@ -1137,6 +1232,14 @@
   let structuredEarlyClosingRecoveryTimer = null;
   let structuredAutoFinishTimer = null;
   let structuredAutoFinishRequested = false;
+
+  // v3.12.0 MODE_SPLIT_DRIVER: keep mode-specific driver state separate so
+  // Video-only recovery/finalization cannot accidentally alter Audio-only or Mix.
+  let VIDEO_DRIVER_TIMER = null;
+  let VIDEO_DRIVER_LAST_KEY = '';
+  let VIDEO_DRIVER_LAST_AT = 0;
+  let VIDEO_DRIVER_FINAL_LOCK = false;
+
   const STRUCTURED_AUTOFINISH_IDLE_MS = Math.max(12000, Math.min(45000, Number(Q.get('autoFinishIdleMs') || 22000) || 22000));
   const STRUCTURED_AUTOFINISH_FORCE_MS = Math.max(8000, Math.min(30000, Number(Q.get('autoFinishForceMs') || 16000) || 16000));
 
@@ -1595,6 +1698,25 @@
     return !looksAssessmentContext(ctx) && !(typeof isAssessmentContext === 'function' && isAssessmentContext(ctx));
   }
 
+  function liveInterviewDriverMode(ctx = CTX){
+    if (!isInterviewLiveContext(ctx)) return 'assessment';
+    if (isInterviewHybrid(ctx)) return 'mix';
+    if (AUDIO_ONLY || String(ctx?.mode || '').toLowerCase() === 'audio') return 'audio';
+    return 'video';
+  }
+
+  function isVideoOnlyInterview(ctx = CTX){
+    return liveInterviewDriverMode(ctx) === 'video';
+  }
+
+  function isAudioOnlyInterview(ctx = CTX){
+    return liveInterviewDriverMode(ctx) === 'audio';
+  }
+
+  function isMixInterview(ctx = CTX){
+    return liveInterviewDriverMode(ctx) === 'mix';
+  }
+
   function interviewMainQuestionTarget(ctx = CTX){
     return Math.max(1, Math.min(30, interviewMaxQuestions(ctx)));
   }
@@ -1740,21 +1862,9 @@
       attempts: structuredEarlyClosingContinueRequests
     });
 
-    // Use a user-style instruction here. In practice Realtime follows this more reliably
-    // as an immediate next spoken action than a late system item after an early closing sentence.
-    dcSend({
-      type: 'conversation.item.create',
-      item: {
-        type: 'message',
-        role: 'user',
-        content: [{ type: 'input_text', text: instruction }]
-      }
-    });
-
-    dcSend({
-      type: 'response.create',
-      response: { conversation: 'default', modalities: ['audio'] }
-    });
+    // v3.12.0: route through the mode-specific driver. Video-only uses
+    // response.instructions; Audio-only/Mix keep the older stable message path.
+    createAssistantAudioResponseFromInstruction(instruction, source || 'missing_interview_question');
 
     try { if (structuredEarlyClosingRecoveryTimer) clearTimeout(structuredEarlyClosingRecoveryTimer); } catch(_) {}
     const requestedQuestionIndex = structuredCurrentQuestionIndex;
@@ -1871,6 +1981,31 @@
     if (textHasQuestion(clean)) {
       const target = interviewLiveQuestionTarget(CTX);
 
+      // v3.12.0 Video-only driver: if the assistant asks a question that is neither
+      // the next planned main question nor the allowed follow-up, keep it out of
+      // the report and immediately steer back to the fixed slot plan. This prevents
+      // Q8/Q9 drift into normal GPT chat.
+      if (isVideoOnlyInterview(CTX) && structuredCurrentQuestionIndex < target) {
+        structuredLastAssistantTurnType = 'system';
+        structuredAwaitingFollowUpQuestion = false;
+        scheduleVideoOnlyDriver('unplanned_video_question_detected', 900);
+        log('[DRIVER:video] unplanned assistant question suppressed', {
+          currentQuestion: structuredCurrentQuestionIndex,
+          targetQuestions: target,
+          textPreview: clean.slice(0, 180)
+        });
+        return {
+          role: 'assistant',
+          turnType: 'system',
+          questionIndex: structuredCurrentQuestionIndex || 0,
+          subTurnIndex: structuredCurrentSubTurnIndex || 0,
+          isMainQuestion: false,
+          isFollowUp: false,
+          isIncludedInReport: false,
+          isTechnical: true
+        };
+      }
+
       if (nearCompleteVideoOnlyByRuntime(CTX)) {
         try {
           if (targetExtraQuestionAutoFinishTimer) clearTimeout(targetExtraQuestionAutoFinishTimer);
@@ -1960,9 +2095,13 @@
 
     if (isInterviewLiveContext(CTX) && !isInterviewHybrid(CTX) && q > 0 && q < target) {
       if (isMainAnswer) {
-        scheduleSlotStallRecovery('followup', q, SLOT_FOLLOWUP_STALL_MS, 'candidate_main_answer_completed');
+        const d = isVideoOnlyInterview(CTX) ? Math.min(SLOT_FOLLOWUP_STALL_MS, 6500) : SLOT_FOLLOWUP_STALL_MS;
+        scheduleSlotStallRecovery('followup', q, d, 'candidate_main_answer_completed');
+        if (isVideoOnlyInterview(CTX)) scheduleVideoOnlyDriver('candidate_main_answer_completed', d + 600);
       } else if (isAnswerAddition) {
-        scheduleSlotStallRecovery('next_main', q, SLOT_NEXT_MAIN_STALL_MS, 'candidate_followup_answer_completed');
+        const d = isVideoOnlyInterview(CTX) ? Math.min(SLOT_NEXT_MAIN_STALL_MS, 3200) : SLOT_NEXT_MAIN_STALL_MS;
+        scheduleSlotStallRecovery('next_main', q, d, 'candidate_followup_answer_completed');
+        if (isVideoOnlyInterview(CTX)) scheduleVideoOnlyDriver('candidate_followup_answer_completed', d + 500);
       }
     }
 
@@ -2042,6 +2181,7 @@
 
   applyStaticTexts();
   setStatus('info', t('init'));
+  avatarSet('ready', 'live_initialized');
 
   function transcriptKey(speaker, text, itemId) {
     return [
@@ -2305,11 +2445,22 @@
         : `The interview is now definitively complete. Do not ask another question. Now say exactly this closing message without additional explanation: “${finalClose}” Then call end_interview.`;
 
       try {
-        dcSend({
-          type: 'conversation.item.create',
-          item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: instruction }] }
-        });
-        dcSend({ type: 'response.create', response: { conversation: 'default', modalities: ['audio'] } });
+        if (isVideoOnlyInterview(CTX)) {
+          dcSend({
+            type: 'response.create',
+            response: {
+              conversation: 'default',
+              modalities: ['audio'],
+              instructions: instruction
+            }
+          });
+        } else {
+          dcSend({
+            type: 'conversation.item.create',
+            item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: instruction }] }
+          });
+          dcSend({ type: 'response.create', response: { conversation: 'default', modalities: ['audio'] } });
+        }
       } catch (e) {
         log('[HARD-END] final instruction failed', errMsg(e));
       }
@@ -2415,11 +2566,22 @@
     });
 
     try {
-      dcSend({
-        type: 'conversation.item.create',
-        item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: instruction }] }
-      });
-      dcSend({ type: 'response.create', response: { conversation: 'default', modalities: ['audio'] } });
+      if (isVideoOnlyInterview(CTX)) {
+        dcSend({
+          type: 'response.create',
+          response: {
+            conversation: 'default',
+            modalities: ['audio'],
+            instructions: instruction
+          }
+        });
+      } else {
+        dcSend({
+          type: 'conversation.item.create',
+          item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: instruction }] }
+        });
+        dcSend({ type: 'response.create', response: { conversation: 'default', modalities: ['audio'] } });
+      }
     } catch (e) {
       log('[END] autofinish instruction failed', errMsg(e));
     }
@@ -2448,8 +2610,30 @@
   }
 
   function createAssistantAudioResponseFromInstruction(instruction, source){
-    if (!instruction || !dcSend || END_CALLED || FINAL_HANGUP_TIMER) return false;
+    if (!instruction || !dcSend || END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK) return false;
     try {
+      // v3.12.0: Video-only control must not be injected as fake user messages.
+      // Those messages polluted the conversation and made the assistant drift into normal GPT chat.
+      // Audio-only and Mix keep the older path because they were stable in testing.
+      if (isVideoOnlyInterview(CTX)) {
+        try { dcSend({ type: 'response.cancel' }); } catch(_) {}
+        dcSend({
+          type: 'response.create',
+          response: {
+            conversation: 'default',
+            modalities: ['audio'],
+            instructions: String(instruction)
+          }
+        });
+        log('[DRIVER:video] response.instructions sent', {
+          source: source || '',
+          current: structuredCurrentQuestionIndex,
+          target: interviewMainQuestionTarget(CTX),
+          instructionPreview: String(instruction).slice(0, 180)
+        });
+        return true;
+      }
+
       dcSend({
         type: 'conversation.item.create',
         item: {
@@ -2465,6 +2649,54 @@
       log('[SLOT] recovery instruction failed', { source: source || '', message: errMsg(e) });
       return false;
     }
+  }
+
+  function clearVideoDriverTimer(){
+    try { if (VIDEO_DRIVER_TIMER) clearTimeout(VIDEO_DRIVER_TIMER); } catch(_) {}
+    VIDEO_DRIVER_TIMER = null;
+  }
+
+  function scheduleVideoOnlyDriver(source, delayMs = 1800){
+    if (!isVideoOnlyInterview(CTX)) return false;
+    if (END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK || VIDEO_DRIVER_FINAL_LOCK) return false;
+
+    const target = interviewMainQuestionTarget(CTX);
+    const current = structuredCurrentQuestionIndex || 0;
+    const key = `${source || 'video_driver'}|${current}|${target}|${structuredLastAssistantTurnType}|${structuredLastCandidateTurnType}`;
+    const now = Date.now();
+    if (VIDEO_DRIVER_LAST_KEY === key && now - VIDEO_DRIVER_LAST_AT < 2500) return false;
+    VIDEO_DRIVER_LAST_KEY = key;
+    VIDEO_DRIVER_LAST_AT = now;
+
+    clearVideoDriverTimer();
+    VIDEO_DRIVER_TIMER = setTimeout(() => {
+      if (!isVideoOnlyInterview(CTX)) return;
+      if (END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK || VIDEO_DRIVER_FINAL_LOCK) return;
+
+      const q = structuredCurrentQuestionIndex || 0;
+      const t = interviewMainQuestionTarget(CTX);
+
+      if (q >= t) {
+        VIDEO_DRIVER_FINAL_LOCK = true;
+        log('[DRIVER:video] target complete -> hard finalization', { source: source || '', q, target: t });
+        requestHardEnd(source || 'video_driver_target_complete', { speakFinal: true, cancelActive: true });
+        return;
+      }
+
+      // If a main answer was captured and no follow-up has been accepted, allow exactly one follow-up.
+      if (q > 0 && structuredLastAssistantTurnType === 'main_question' && !structuredFollowUpAskedForQuestion[q]) {
+        log('[DRIVER:video] requesting one controlled follow-up', { source: source || '', q, target: t });
+        requestSlotFollowUp(source || 'video_driver_followup');
+        return;
+      }
+
+      // Otherwise progress to the next fixed main question from the snapshot/slot plan.
+      log('[DRIVER:video] requesting next fixed main question', { source: source || '', current: q, next: Math.min(t, q + 1), target: t });
+      requestNextPlannedMainQuestion(source || 'video_driver_next_main');
+    }, Math.max(500, Number(delayMs) || 1800));
+
+    log('[DRIVER:video] scheduled', { source: source || '', delayMs: Math.max(500, Number(delayMs) || 1800), current, target });
+    return true;
   }
 
   function requestSlotFollowUp(source){
@@ -2604,8 +2836,10 @@
       const q = structuredCurrentQuestionIndex || 0;
       const delay = structuredFollowUpAskedForQuestion[q] ? TARGET_FINALIZE_AFTER_ANSWER_MS : TARGET_FOLLOWUP_WAIT_MS;
       scheduleStrictTargetFinalization('candidate_audio_after_target', delay);
+      if (isVideoOnlyInterview(CTX)) scheduleVideoOnlyDriver('candidate_audio_after_target', delay + 500);
     } else {
       scheduleInterviewAutoFinishCheck('candidate_audio_item');
+      if (isVideoOnlyInterview(CTX)) scheduleVideoOnlyDriver('candidate_audio_item', 7000);
     }
   }
 
@@ -2651,10 +2885,11 @@
   }
 
   function effectiveFinalHangupBufferMs(){
-    const base = Math.max(2500, Number(FINAL_HANGUP_BUFFER_MS) || 8500);
+    const base = Math.max(2500, Number(FINAL_HANGUP_BUFFER_MS) || 55000);
     // Interview closing text is intentionally long and candidate-facing. Keep assessment on its
     // established value, but give interviews enough time so the final sentence is not cut off.
-    if (isInterviewLiveContext(CTX)) return Math.max(30000, Math.min(46000, base));
+    // Video/Audio/Mix share this buffer only after the driver has already reached its final state.
+    if (isInterviewLiveContext(CTX)) return Math.max(52000, Math.min(65000, base));
     return Math.max(2500, Math.min(36000, base));
   }
 
@@ -2673,6 +2908,10 @@
     });
 
     setStatus('warn', t('processing'));
+
+    avatarSet('processing', 'final_hangup_scheduled');
+    avatarLevel('ai', 0, 'final_hangup_scheduled');
+    avatarLevel('user', 0, 'final_hangup_scheduled');
 
     postToParent('clarity.live.final_message_pending', {
       uid: UID,
@@ -2911,6 +3150,7 @@
           }
 
           $sys.style.width = Math.min(100, dev * 2) + '%';
+          avatarRemoteAudioDev(dev);
 
           requestAnimationFrame(tick);
         })();
@@ -3039,7 +3279,7 @@
     }
 
     if (eventType === 'response.state' && data.state){
-      postToParent('clarity.avatar', { state:data.state });
+      avatarSet(data.state, 'response.state');
     }
 
     /* USER TRANSCRIPT — completed */
@@ -3064,6 +3304,9 @@
       });
 
       if (txtRaw) {
+        avatarSet('thinking', 'user_transcript_completed');
+        avatarLevel('user', 0.12, 'user_transcript_completed');
+
         userUtterances += 1;
         if (structuredCurrentQuestionIndex >= interviewMainQuestionTarget(CTX)) {
           scheduleTargetReachedAutoFinish('user_transcript_after_target', STRUCTURED_AUTOFINISH_IDLE_MS);
@@ -3108,6 +3351,11 @@
         hasPiece: !!piece,
         piecePreview: piece.slice(0, 160)
       });
+
+      if (piece) {
+        avatarSet('user_speaking', 'user_transcript_piece');
+        avatarLevel('user', Math.max(0.35, Math.min(0.85, piece.length / 70)), 'user_transcript_piece');
+      }
 
       return;
     }
@@ -3221,6 +3469,11 @@
           final: true
         });
 
+        avatarLevel('ai', 0.18, 'assistant_audio_done');
+        if (!FINAL_MESSAGE_SPOKEN && !FINAL_HANGUP_TIMER && !END_CALLED) {
+          avatarSet('listening', 'assistant_audio_done');
+        }
+
         if (finalClosingDetected(txt)) {
           if (shouldBlockEarlyInterviewClosing()) {
             requestMissingInterviewQuestion('early_final_audio_transcript_done');
@@ -3253,6 +3506,11 @@
     /* ASSISTANT TRANSCRIPT — delta diagnostics only */
     if (eventType === 'response.audio_transcript.delta') {
       const piece = String(data?.delta || '').trim();
+
+      if (piece) {
+        avatarSet('ai_speaking', 'assistant_audio_delta');
+        avatarLevel('ai', Math.max(0.42, Math.min(0.95, piece.length / 85)), 'assistant_audio_delta');
+      }
 
       if (piece && DEBUG_LOGS) {
         log('[ASSISTANT-TRANSCRIPT-DELTA]', {
@@ -3960,6 +4218,7 @@
         maybeStartRecorder();
 
         postToParent('clarity.live.prepared', {});
+        avatarSet('listening', 'live_prepared');
 
         const firstQuestionFallbackMs = isAssessmentContext(CTX) ? 4500 : 8000;
         setTimeout(() => {
@@ -4046,21 +4305,43 @@
     const plan = currentStructuredQuestionPlan(CTX);
     const first = plan[0] || fallbackFirstQuestion(lk);
 
-    dcSend({
-      type: 'conversation.item.create',
-      item: {
-        type: 'message',
-        role: 'user',
-        content: [{
-          type: 'input_text',
-          text: firstQuestionInstruction(first, lk)
-        }]
-      }
-    });
+    const firstInstruction = firstQuestionInstruction(first, lk);
 
-    log('[QUESTION] first item created', {
+    if (isVideoOnlyInterview(CTX)) {
+      dcSend({
+        type: 'response.create',
+        response: {
+          conversation: 'default',
+          modalities: ['audio'],
+          instructions: firstInstruction
+        }
+      });
+    } else {
+      dcSend({
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'user',
+          content: [{
+            type: 'input_text',
+            text: firstInstruction
+          }]
+        }
+      });
+
+      dcSend({
+        type: 'response.create',
+        response: {
+          conversation: 'default',
+          modalities: ['audio']
+        }
+      });
+    }
+
+    log('[QUESTION] first item/response created', {
       lang: lk,
       assessment: isAssessmentContext(CTX),
+      driverMode: liveInterviewDriverMode(CTX),
       productType: CTX.productType || '',
       moduleArea: CTX.moduleArea || '',
       questionCount: interviewMaxQuestions(CTX),
@@ -4069,13 +4350,8 @@
       question: first
     });
 
-    dcSend({
-      type: 'response.create',
-      response: {
-        conversation: 'default',
-        modalities: ['audio']
-      }
-    });
+    avatarSet('ai_speaking', 'first_question_requested');
+    avatarLevel('ai', 0.55, 'first_question_requested');
 
     log('[QUESTION] first response requested');
   }
@@ -4136,6 +4412,7 @@
           }
 
           $mic.style.width = Math.min(100, dev * 2) + '%';
+          avatarLocalAudioDev(dev);
 
           requestAnimationFrame(tick);
         })();
@@ -5001,6 +5278,9 @@
     if ($btnStop.disabled) return;
     setStopButtonAvailable(false);
     setStatus('warn', t('fallbackEnd'));
+    avatarSet('processing', 'user_fallback_end');
+    avatarLevel('ai', 0, 'user_fallback_end');
+    avatarLevel('user', 0, 'user_fallback_end');
     hangup('user_fallback_end');
   });
 
