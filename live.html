@@ -1763,14 +1763,34 @@
   function nearCompleteVideoOnlyByRuntime(ctx = CTX){
     if (!STARTED || !interviewStartedAt) return false;
     if (!isInterviewLiveContext(ctx) || isInterviewHybrid(ctx) || AUDIO_ONLY) return false;
+
     const target = interviewLiveQuestionTarget(ctx);
     const elapsedMs = Date.now() - interviewStartedAt;
     const answerCount = effectiveCandidateResponseCount();
     const q = structuredCurrentQuestionIndex || 0;
-    const enoughSlotProgress = q >= Math.max(1, target - 3);
-    const enoughAnswerProgress = answerCount >= Math.max(4, target - 4);
-    const longEnough = elapsedMs >= Math.max(420000, target * 42000);
-    return enoughSlotProgress && enoughAnswerProgress && longEnough;
+
+    // v3.11.9 VIDEO_ONLY_END_GUARD:
+    // In video-only runs Realtime can miss or misclassify one spoken main question,
+    // especially when the assistant starts giving supportive/non-question text after the last answer.
+    // Do not let the interview continue like a private GPT conversation when the evidence shows
+    // the Q-set is effectively complete. The extra +1 response normally covers the initial "ready".
+    const qCapReached = q >= target;
+    const oneSlotMissingButEnoughAnswers =
+      q >= Math.max(1, target - 1) &&
+      answerCount >= Math.max(target, target + 1) &&
+      elapsedMs >= Math.max(180000, target * 16000);
+
+    const twoSlotsMissingButStrongEvidence =
+      q >= Math.max(1, target - 2) &&
+      answerCount >= Math.max(target + 1, target + 2) &&
+      elapsedMs >= Math.max(300000, target * 25000);
+
+    const oldLongRunFallback =
+      q >= Math.max(1, target - 3) &&
+      answerCount >= Math.max(4, target - 4) &&
+      elapsedMs >= Math.max(420000, target * 42000);
+
+    return qCapReached || oneSlotMissingButEnoughAnswers || twoSlotsMissingButStrongEvidence || oldLongRunFallback;
   }
 
   function interviewMainQuestionsComplete(ctx = CTX){
@@ -2015,6 +2035,28 @@
       }
 
       return registerAssistantMainQuestionMeta((structuredCurrentQuestionIndex || 0) + 1, 'unplanned_detected_question');
+    }
+
+    // v3.11.9 VIDEO_ONLY_END_GUARD:
+    // If the Q-set is already complete/effectively complete and the assistant produces
+    // generic supportive text instead of the final closing, force the technical finalizer.
+    // This directly addresses video-only drifting into private-GPT style conversation.
+    if (
+      isInterviewLiveContext(CTX) &&
+      !isInterviewHybrid(CTX) &&
+      (structuredCurrentQuestionIndex >= interviewLiveQuestionTarget(CTX) || nearCompleteVideoOnlyByRuntime(CTX)) &&
+      !END_CALLED &&
+      !FINAL_HANGUP_TIMER &&
+      !HARD_END_LOCK
+    ) {
+      log('[END] assistant system text after target -> force finalization', {
+        mainQuestions: structuredCurrentQuestionIndex,
+        targetQuestions: interviewMainQuestionTarget(CTX),
+        userUtterances,
+        userAudioItems,
+        textPreview: clean.slice(0, 180)
+      });
+      requestHardEnd('assistant_system_after_target', { speakFinal: true, cancelActive: true });
     }
 
     structuredLastAssistantTurnType = 'system';
@@ -2350,15 +2392,23 @@
   function requestHardEnd(source, opts = {}){
     if (END_CALLED || FINAL_HANGUP_TIMER) return;
 
-    if (isInterviewLiveContext(CTX) && structuredCurrentQuestionIndex < interviewMainQuestionTarget(CTX)) {
-      log('[HARD-END] blocked before media target complete', {
-        source: source || '',
-        current: structuredCurrentQuestionIndex,
-        target: interviewMainQuestionTarget(CTX),
-        hybrid: isInterviewHybrid(CTX),
-        audioOnly: AUDIO_ONLY
-      });
-      return;
+    if (isInterviewLiveContext(CTX)) {
+      const requiredTarget = isInterviewHybrid(CTX) ? interviewLiveQuestionTarget(CTX) : interviewMainQuestionTarget(CTX);
+      const targetComplete = structuredCurrentQuestionIndex >= requiredTarget;
+      const evidenceComplete = nearCompleteVideoOnlyByRuntime(CTX);
+
+      if (!targetComplete && !evidenceComplete) {
+        log('[HARD-END] blocked before media target complete', {
+          source: source || '',
+          current: structuredCurrentQuestionIndex,
+          target: requiredTarget,
+          fullTarget: interviewMainQuestionTarget(CTX),
+          hybrid: isInterviewHybrid(CTX),
+          audioOnly: AUDIO_ONLY,
+          evidenceComplete
+        });
+        return;
+      }
     }
 
     if (!isInterviewLiveContext(CTX)) {
