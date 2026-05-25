@@ -3,843 +3,359 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-<title>CLARITY Reactive Interview Avatar v2.0</title>
+<title>CLARITY Reactive Avatar v2.0.1 Safe Render</title>
 <style>
   :root{
-    --clarity-cyan:#3DE6F5;
-    --clarity-blue:#064E9B;
-    --clarity-navy:#041D48;
-    --clarity-violet:#6A35FF;
-    --clarity-magenta:#EF00B8;
-    --clarity-white:#F7FBFF;
+    --cyan:#3DE6F5;
+    --blue:#064E9B;
+    --navy:#041D48;
+    --violet:#6A35FF;
+    --magenta:#EF00B8;
+    --white:#F7FBFF;
+    --amber:#FFB84D;
+    --success:#48F0C2;
+    --state-color:var(--cyan);
+    --state-color-2:var(--violet);
+    --state-scale:1;
+    --state-speed:4.8s;
+    --state-glow:.55;
+    --level:.12;
   }
-  html,body{
-    margin:0;
-    width:100%;
-    height:100%;
-    background:transparent;
-    overflow:hidden;
-    font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
-  }
+  *{box-sizing:border-box}
+  html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+  body.bg{background:radial-gradient(circle at 50% 45%,rgba(6,78,155,.28),rgba(4,29,72,.92) 72%,#020816 100%)}
   #root{position:fixed;inset:0;background:transparent;overflow:hidden}
-  #statusWrap{
-    position:fixed;
-    left:50%;
-    bottom:clamp(10px,4.5vh,26px);
-    transform:translateX(-50%);
-    pointer-events:none;
-    display:none;
-    align-items:center;
-    justify-content:center;
-    gap:8px;
-    padding:8px 14px;
-    border-radius:999px;
-    color:rgba(247,251,255,.92);
-    font-size:12px;
-    font-weight:650;
-    letter-spacing:.18px;
-    background:linear-gradient(135deg,rgba(4,29,72,.40),rgba(4,78,155,.18));
-    border:1px solid rgba(247,251,255,.16);
-    box-shadow:0 12px 34px rgba(0,17,42,.18), inset 0 1px 0 rgba(255,255,255,.18);
-    backdrop-filter:blur(14px);
-    -webkit-backdrop-filter:blur(14px);
-    white-space:nowrap;
+  canvas{display:block;position:absolute;inset:0;width:100%;height:100%}
+
+  /* Always-visible CSS fallback. It prevents a blank iframe if WebGL or the CDN fails. */
+  #fallbackOrb{position:fixed;inset:0;display:grid;place-items:center;pointer-events:none;opacity:1;transition:opacity .45s ease;filter:drop-shadow(0 22px 60px rgba(0,22,56,.22))}
+  #fallbackOrb.three-on{opacity:0}
+  .orbWrap{position:relative;width:min(62vw,62vh,360px);height:min(62vw,62vh,360px);transform:scale(calc(var(--state-scale) + var(--level) * .045));transition:transform .16s ease-out}
+  .orbCore{position:absolute;inset:9%;border-radius:50%;background:
+      radial-gradient(circle at 33% 25%,rgba(255,255,255,.88) 0 5%,rgba(255,255,255,.22) 6% 14%,transparent 15%),
+      radial-gradient(circle at 68% 70%,rgba(239,0,184,.78),transparent 38%),
+      radial-gradient(circle at 30% 25%,rgba(61,230,245,.9),transparent 42%),
+      linear-gradient(135deg,#041D48 6%,#064E9B 40%,#6A35FF 67%,#EF00B8 96%);
+    box-shadow:inset 0 0 32px rgba(255,255,255,.30),inset -24px -36px 70px rgba(4,29,72,.36),0 0 calc(36px + var(--level)*60px) color-mix(in srgb, var(--state-color) 70%, transparent),0 22px 80px rgba(0,25,67,.22);
+    animation:orbBreath var(--state-speed) ease-in-out infinite,orbHue 9s ease-in-out infinite;
   }
+  .orbCore::before{content:"";position:absolute;inset:5%;border-radius:50%;background:linear-gradient(148deg,rgba(255,255,255,.34),transparent 28%,rgba(255,255,255,.10) 58%,transparent 72%);transform:rotate(-18deg)}
+  .orbCore::after{content:"";position:absolute;inset:-1%;border-radius:50%;border:1px solid rgba(255,255,255,.34);box-shadow:inset 0 0 22px rgba(255,255,255,.18),0 0 38px rgba(61,230,245,.22)}
+  .ring{position:absolute;inset:0;border-radius:50%;border:2px solid color-mix(in srgb, var(--state-color) 76%, transparent);filter:drop-shadow(0 0 18px var(--state-color));opacity:calc(.25 + var(--level)*.55);animation:ringPulse 2.4s ease-in-out infinite}
+  .ring.r2{inset:-7%;border-color:color-mix(in srgb, var(--state-color-2) 66%, transparent);animation-duration:3.15s;animation-direction:reverse;opacity:calc(.16 + var(--level)*.42)}
+  .spark{position:absolute;width:5px;height:5px;border-radius:50%;background:var(--state-color);box-shadow:0 0 16px var(--state-color);opacity:calc(.22 + var(--level)*.55);animation:sparkOrbit 6s linear infinite}
+  .spark.s2{animation-duration:7.7s;animation-direction:reverse;background:var(--state-color-2);box-shadow:0 0 18px var(--state-color-2)}
+  .spark.s3{animation-duration:10s;transform-origin:110px 40px;background:#fff;box-shadow:0 0 14px #fff}
+
+  #statusWrap{position:fixed;left:50%;bottom:clamp(10px,4.5vh,26px);transform:translateX(-50%);pointer-events:none;display:none;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;color:rgba(247,251,255,.94);font-size:12px;font-weight:650;letter-spacing:.18px;background:linear-gradient(135deg,rgba(4,29,72,.52),rgba(4,78,155,.22));border:1px solid rgba(247,251,255,.16);box-shadow:0 14px 40px rgba(0,17,42,.22),inset 0 1px 0 rgba(255,255,255,.18);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);white-space:nowrap}
   #statusWrap.on{display:flex}
-  #dot{
-    width:7px;
-    height:7px;
-    border-radius:999px;
-    background:var(--clarity-cyan);
-    box-shadow:0 0 14px var(--clarity-cyan),0 0 24px rgba(61,230,245,.45);
-  }
-  #debug{
-    position:fixed;
-    left:8px;
-    top:8px;
-    display:none;
-    color:rgba(247,251,255,.72);
-    background:rgba(4,29,72,.34);
-    border:1px solid rgba(247,251,255,.12);
-    border-radius:10px;
-    padding:6px 8px;
-    font:11px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-    pointer-events:none;
-    max-width:calc(100vw - 24px);
-  }
+  #dot{width:7px;height:7px;border-radius:999px;background:var(--state-color);box-shadow:0 0 14px var(--state-color),0 0 24px color-mix(in srgb, var(--state-color) 55%, transparent)}
+  #debug{position:fixed;left:8px;top:8px;z-index:5;display:none;color:rgba(247,251,255,.86);background:rgba(4,29,72,.58);border:1px solid rgba(247,251,255,.12);border-radius:10px;padding:7px 9px;font:11px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;pointer-events:none;max-width:calc(100vw - 24px);white-space:pre-wrap}
   #debug.on{display:block}
-  canvas{display:block}
+  @keyframes orbBreath{0%,100%{transform:scale(1) rotate(0deg)}50%{transform:scale(calc(1.015 + var(--level)*.05)) rotate(1.2deg)}}
+  @keyframes orbHue{0%,100%{filter:saturate(1.04)}50%{filter:saturate(1.22)}}
+  @keyframes ringPulse{0%,100%{transform:scale(.94);opacity:.24}50%{transform:scale(calc(1.02 + var(--level)*.14));opacity:.68}}
+  @keyframes sparkOrbit{from{transform:rotate(0deg) translateX(48%) rotate(0deg)}to{transform:rotate(360deg) translateX(48%) rotate(-360deg)}}
 </style>
 </head>
 <body>
 <div id="root"></div>
+<div id="fallbackOrb" aria-hidden="true">
+  <div class="orbWrap">
+    <div class="ring"></div><div class="ring r2"></div>
+    <span class="spark s1"></span><span class="spark s2"></span><span class="spark s3"></span>
+    <div class="orbCore"></div>
+  </div>
+</div>
 <div id="statusWrap" aria-hidden="true"><span id="dot"></span><span id="statusText">Ready</span></div>
 <div id="debug"></div>
-
-<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
 <script>
 (()=>{
   'use strict';
-
-  const VERSION = 'clarity_avatar_v2_0_REACTIVE_INTERVIEW_READY';
+  const VERSION = 'clarity_avatar_v2_0_1_SAFE_RENDER_READY';
   const params = new URLSearchParams(location.search || '');
   const DEBUG = params.get('debug') === '1';
   const SHOW_LABEL_DEFAULT = params.get('label') === '1' || params.get('showLabel') === '1';
-  const NO_BREATH = params.get('nobreath') === '1';
   const LOW_MOTION = params.get('motion') === 'low' || params.get('reducedMotion') === '1';
-  const ALLOW_TTS_DEFAULT = params.get('tts') === '1' || params.get('allowTts') === '1';
+  const NO_BREATH = params.get('nobreath') === '1';
+  const FORCE_CSS = params.get('css') === '1' || params.get('no3d') === '1';
+  if (params.get('bg') === '1' || DEBUG) document.body.classList.add('bg');
 
   const root = document.getElementById('root');
+  const fallbackOrb = document.getElementById('fallbackOrb');
   const statusWrap = document.getElementById('statusWrap');
   const statusText = document.getElementById('statusText');
-  const dot = document.getElementById('dot');
   const debugEl = document.getElementById('debug');
   if (DEBUG) debugEl.classList.add('on');
 
   const clamp01 = (v)=> Math.max(0, Math.min(1, Number(v) || 0));
   const lerp = (a,b,t)=> a + (b-a)*t;
-  const safe = (fn)=>{ try{return fn();}catch(_){ return undefined; } };
+  const safe = (fn, fallback)=>{ try { return fn(); } catch(e){ return fallback; } };
   const nowMs = ()=> performance.now();
-
-  function parseMessage(data){
-    if (!data) return {};
-    if (typeof data === 'string') {
-      try { return JSON.parse(data); } catch(_){ return { type:data }; }
-    }
-    return data;
-  }
-  function postParent(msg){
-    safe(()=> parent && parent.postMessage && parent.postMessage({ ...msg, from:'clarity-avatar', version:VERSION }, '*'));
-  }
   function log(msg, extra){
     if (!DEBUG) return;
-    const line = `[${VERSION}] ${msg}${extra ? ' ' + JSON.stringify(extra).slice(0,260) : ''}`;
-    safe(()=> console.log(line));
-    debugEl.textContent = line;
+    const text = `[${VERSION}] ${msg}${extra ? '\n' + JSON.stringify(extra).slice(0,520) : ''}`;
+    console.log(text);
+    debugEl.textContent = text;
+  }
+  function postParent(msg){ safe(()=> parent && parent.postMessage && parent.postMessage({ ...msg, from:'clarity-avatar', version:VERSION }, '*')); }
+  function parseMessage(data){
+    if (!data) return {};
+    if (typeof data === 'string') { try { return JSON.parse(data); } catch(_){ return { type:data }; } }
+    return data;
   }
 
-  // ----------------------------- Renderer / Scene -----------------------------
-  const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true, powerPreference:'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, LOW_MOTION ? 1.4 : 2));
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  root.appendChild(renderer.domElement);
-
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(42, window.innerWidth/window.innerHeight, 0.1, 60);
-  camera.position.set(0, 0, 3.45);
-
-  const ambient = new THREE.AmbientLight(0xffffff, 0.92);
-  scene.add(ambient);
-  const key = new THREE.DirectionalLight(0xffffff, 0.42);
-  key.position.set(3.0, 2.4, 3.2);
-  scene.add(key);
-  const rim = new THREE.PointLight(0x3de6f5, 1.25, 6.5);
-  rim.position.set(-2.2, 1.5, 2.5);
-  scene.add(rim);
-  const magentaLight = new THREE.PointLight(0xef00b8, 0.72, 6.2);
-  magentaLight.position.set(2.2, -1.35, 2.1);
-  scene.add(magentaLight);
-
-  const group = new THREE.Group();
-  scene.add(group);
-
-  // ----------------------------- Color Helpers -----------------------------
-  const HSL = {
-    cyan:    new THREE.Vector3(188/360, .94, .58),
-    blue:    new THREE.Vector3(211/360, .94, .38),
-    navy:    new THREE.Vector3(222/360, .88, .22),
-    violet:  new THREE.Vector3(257/360, .92, .62),
-    magenta: new THREE.Vector3(315/360, .95, .56),
-    success: new THREE.Vector3(166/360, .88, .58),
-    amber:   new THREE.Vector3( 34/360, .96, .58),
-    white:   new THREE.Vector3(205/360, .18, .94)
+  const STATE = {
+    idle:{label:'Ready', c1:'#3DE6F5', c2:'#6A35FF', scale:1, speed:'5.2s'},
+    ready:{label:'Ready', c1:'#3DE6F5', c2:'#064E9B', scale:1.01, speed:'4.8s'},
+    listening:{label:'Listening', c1:'#3DE6F5', c2:'#064E9B', scale:1.025, speed:'3.8s'},
+    user_speaking:{label:'User speaking', c1:'#3DE6F5', c2:'#064E9B', scale:1.045, speed:'2.8s'},
+    ai_speaking:{label:'AI speaking', c1:'#EF00B8', c2:'#6A35FF', scale:1.065, speed:'2.45s'},
+    thinking:{label:'Thinking', c1:'#6A35FF', c2:'#3DE6F5', scale:1.025, speed:'4.2s'},
+    processing:{label:'Processing', c1:'#3DE6F5', c2:'#F7FBFF', scale:1.035, speed:'2.2s'},
+    complete:{label:'Complete', c1:'#48F0C2', c2:'#F7FBFF', scale:1.055, speed:'2.6s'},
+    error:{label:'Please wait', c1:'#FFB84D', c2:'#EF00B8', scale:1.025, speed:'3.3s'},
+    stopped:{label:'Stopped', c1:'#F7FBFF', c2:'#064E9B', scale:.985, speed:'6s'}
   };
-
-  // ----------------------------- Inner Organic Sphere -----------------------------
-  const R_INNER = 0.84;
-  const geoInner = new THREE.SphereGeometry(R_INNER, LOW_MOTION ? 128 : 192, LOW_MOTION ? 96 : 128);
-
-  const uniforms = {
-    uTime:      { value:0 },
-    uBaseAmp:   { value:0.055 },
-    uAudioAmp:  { value:0.22 },
-    uLevel:     { value:0.0 },
-    uUserLevel: { value:0.0 },
-    uAiLevel:   { value:0.0 },
-    uEnergy:    { value:0.0 },
-    uGlow:      { value:0.84 },
-    uMode:      { value:0.0 },
-    uColorA:    { value:HSL.cyan.clone() },
-    uColorB:    { value:HSL.violet.clone() },
-    uColorC:    { value:HSL.magenta.clone() },
-    uAccent:    { value:HSL.cyan.clone() },
-    uAspect:    { value:window.innerWidth/window.innerHeight }
-  };
-
-  const simplex = `
-  vec3 mod289(vec3 x){return x - floor(x * (1.0/289.0)) * 289.0;}
-  vec4 mod289(vec4 x){return x - floor(x * (1.0/289.0)) * 289.0;}
-  vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
-  vec4 taylorInvSqrt(vec4 r){return 1.79284291400159 - 0.85373472095314 * r;}
-  float snoise(vec3 v){
-    const vec2 C = vec2(1.0/6.0, 1.0/3.0);
-    const vec4 D = vec4(0.0,0.5,1.0,2.0);
-    vec3 i=floor(v+dot(v,C.yyy));
-    vec3 x0=v-i+dot(i,C.xxx);
-    vec3 g=step(x0.yzx,x0.xyz); vec3 l=1.0-g;
-    vec3 i1=min(g.xyz,l.zxy), i2=max(g.xyz,l.zxy);
-    vec3 x1=x0-i1+C.xxx, x2=x0-i2+C.yyy, x3=x0-D.yyy;
-    i=mod289(i);
-    vec4 p=permute(permute(permute(i.z+vec4(0.0,i1.z,i2.z,1.0))+i.y+vec4(0.0,i1.y,i2.y,1.0))+i.x+vec4(0.0,i1.x,i2.x,1.0));
-    float n_=0.142857142857; vec3 ns=n_*D.wyz-D.xzx;
-    vec4 j=p-49.0*floor(p*ns.z*ns.z); vec4 x_=floor(j*ns.z); vec4 y_=floor(j-7.0*x_);
-    vec4 x=x_*ns.x+ns.yyyy, y=y_*ns.x+ns.yyyy, h=1.0-abs(x)-abs(y);
-    vec4 b0=vec4(x.xy,y.xy), b1=vec4(x.zw,y.zw);
-    vec4 s0=floor(b0)*2.0+1.0, s1=floor(b1)*2.0+1.0; vec4 sh=-step(h,vec4(0.0));
-    vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy, a1=b1.xzyw+s1.xzyw*sh.zzww;
-    vec3 p0=vec3(a0.xy,h.x), p1=vec3(a1.xy,h.y), p2=vec3(a0.zw,h.z), p3=vec3(a1.zw,h.w);
-    vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
-    p0*=norm.x; p1*=norm.y; p2*=norm.z; p3*=norm.w;
-    vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0); m*=m;
-    return 42.0*dot(m*m, vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
-  }`;
-
-  const vInner = `
-    uniform float uTime,uBaseAmp,uAudioAmp,uLevel,uUserLevel,uAiLevel,uEnergy,uMode;
-    varying vec3 vPos;
-    varying float vDef;
-    varying float vWave;
-    ${simplex}
-    void main(){
-      vec3 p=position;
-      vec3 n=normalize(position);
-      float t=uTime;
-      float organic=snoise(n*1.45+vec3(t*.28,t*.21,t*.33));
-      float fine=snoise(position*2.65+vec3(-t*.92,t*.52,-t*.41));
-      float speakingWave=sin((n.y*6.5+n.x*2.0)+t*(3.2+4.0*uAiLevel))*0.5+0.5;
-      float listeningWave=sin((n.x*5.7-n.z*2.3)+t*(2.2+2.6*uUserLevel))*0.5+0.5;
-      float active = max(uUserLevel, uAiLevel);
-      float modePush = mix(listeningWave, speakingWave, smoothstep(0.35,1.0,uMode));
-      float d = uBaseAmp*organic + uAudioAmp*(0.55*uLevel+0.45*uEnergy)*(0.55*fine+0.45*modePush);
-      d += 0.018*uAiLevel*sin(t*6.0+n.y*10.0);
-      d += 0.010*uUserLevel*sin(t*8.0+n.x*12.0);
-      d = clamp(d, -0.16, 0.22);
-      vDef=d;
-      vWave=modePush;
-      vec3 q=normalize(p)*(1.0+d);
-      vPos=q;
-      gl_Position=projectionMatrix*modelViewMatrix*vec4(q,1.0);
-    }`;
-
-  const fInner = `
-    precision highp float;
-    varying vec3 vPos;
-    varying float vDef;
-    varying float vWave;
-    uniform float uTime,uLevel,uUserLevel,uAiLevel,uEnergy,uGlow,uMode;
-    uniform vec3 uColorA,uColorB,uColorC,uAccent;
-    vec3 hsl2rgb(vec3 hsl){
-      float h=hsl.x,s=hsl.y,l=hsl.z;
-      float c=(1.0-abs(2.0*l-1.0))*s;
-      float x=c*(1.0-abs(mod(h*6.0,2.0)-1.0));
-      float m=l-0.5*c; vec3 rgb;
-      if(h<1.0/6.0) rgb=vec3(c,x,0.0);
-      else if(h<2.0/6.0) rgb=vec3(x,c,0.0);
-      else if(h<3.0/6.0) rgb=vec3(0.0,c,x);
-      else if(h<4.0/6.0) rgb=vec3(0.0,x,c);
-      else if(h<5.0/6.0) rgb=vec3(x,0.0,c);
-      else rgb=vec3(c,0.0,x);
-      return rgb+m;
-    }
-    void main(){
-      vec3 n=normalize(vPos);
-      float a=atan(n.y,n.x);
-      vec3 colA=hsl2rgb(uColorA);
-      vec3 colB=hsl2rgb(uColorB);
-      vec3 colC=hsl2rgb(uColorC);
-      vec3 accent=hsl2rgb(uAccent);
-      float swirl=sin(a*2.2+uTime*.72+n.z*2.0)*0.5+0.5;
-      vec3 base=mix(colA,colB,swirl);
-      float aiPull=clamp(0.18+0.82*uAiLevel,0.0,1.0);
-      float userPull=clamp(uUserLevel,0.0,1.0);
-      vec3 color=mix(base,colC,aiPull*.54);
-      color=mix(color,accent,userPull*.42);
-      float sheen=smoothstep(-0.02,0.18,vDef+0.08);
-      color=mix(color,vec3(1.0),sheen*(0.14+0.16*uEnergy));
-      float fres=pow(1.0-abs(n.z),2.25);
-      float core=pow(max(0.0,n.z*0.5+0.5),2.0);
-      vec3 glow=color*uGlow*(0.48+0.52*fres);
-      vec3 finalColor=color+glow*(0.28+0.36*uEnergy)+vec3(1.0)*core*.04;
-      float alpha=0.92+0.06*smoothstep(0.0,1.0,uEnergy);
-      gl_FragColor=vec4(finalColor,alpha);
-    }`;
-
-  const innerMat = new THREE.ShaderMaterial({
-    uniforms,
-    vertexShader:vInner,
-    fragmentShader:fInner,
-    transparent:true,
-    depthWrite:true
-  });
-  const innerSphere = new THREE.Mesh(geoInner, innerMat);
-  group.add(innerSphere);
-
-  // ----------------------------- Glass Shell -----------------------------
-  const geoGlass = new THREE.SphereGeometry(1.0, LOW_MOTION ? 96 : 144, LOW_MOTION ? 72 : 104);
-  const glassMat = new THREE.ShaderMaterial({
-    transparent:true,
-    depthWrite:false,
-    blending:THREE.AdditiveBlending,
-    uniforms:{
-      uTime:{ value:0 },
-      uLevel:{ value:0 },
-      uUserLevel:{ value:0 },
-      uAiLevel:{ value:0 },
-      uTint:{ value:new THREE.Color(0xEAF7FF) },
-      uCyan:{ value:new THREE.Color(0x3DE6F5) },
-      uMagenta:{ value:new THREE.Color(0xEF00B8) },
-      uStrength:{ value:0.26 }
-    },
-    vertexShader:`
-      varying vec3 vN;
-      varying vec3 vV;
-      varying vec3 vP;
-      void main(){
-        vec4 mv=modelViewMatrix*vec4(position,1.0);
-        vV=-mv.xyz;
-        vN=normalize(normalMatrix*normal);
-        vP=position;
-        gl_Position=projectionMatrix*mv;
-      }`,
-    fragmentShader:`
-      precision highp float;
-      varying vec3 vN;
-      varying vec3 vV;
-      varying vec3 vP;
-      uniform float uTime,uLevel,uUserLevel,uAiLevel,uStrength;
-      uniform vec3 uTint,uCyan,uMagenta;
-      void main(){
-        float fres=pow(1.0-max(0.0,dot(normalize(vN),normalize(vV))),2.05);
-        float sweep=sin(atan(vP.y,vP.x)*2.0+uTime*1.25)*0.5+0.5;
-        vec3 accent=mix(uCyan,uMagenta,clamp(uAiLevel*0.92 + sweep*0.18,0.0,1.0));
-        vec3 col=mix(uTint,accent,0.24+0.36*max(uUserLevel,uAiLevel));
-        float a=0.055+fres*(uStrength+0.18*uLevel);
-        gl_FragColor=vec4(col*(0.55+0.75*fres),a);
-      }`
-  });
-  const glass = new THREE.Mesh(geoGlass, glassMat);
-  group.add(glass);
-
-  // ----------------------------- Rings / Orbits -----------------------------
-  function makeRingMat(kind){
-    const base = kind === 'user' ? new THREE.Color(0x3DE6F5) : kind === 'ai' ? new THREE.Color(0xEF00B8) : new THREE.Color(0xF7FBFF);
-    const alt  = kind === 'user' ? new THREE.Color(0x064E9B) : kind === 'ai' ? new THREE.Color(0x6A35FF) : new THREE.Color(0x3DE6F5);
-    return new THREE.ShaderMaterial({
-      transparent:true,
-      depthWrite:false,
-      blending:THREE.AdditiveBlending,
-      uniforms:{
-        uTime:{ value:0 },
-        uLevel:{ value:0 },
-        uAlpha:{ value:0.0 },
-        uKind:{ value:kind === 'user' ? 0.0 : kind === 'ai' ? 1.0 : 2.0 },
-        uColorA:{ value:base },
-        uColorB:{ value:alt }
-      },
-      vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-      fragmentShader:`
-        precision highp float;
-        varying vec2 vUv;
-        uniform float uTime,uLevel,uAlpha,uKind;
-        uniform vec3 uColorA,uColorB;
-        void main(){
-          vec2 p=vUv*2.0-1.0;
-          float d=length(p);
-          float ang=atan(p.y,p.x);
-          float baseR = uKind < 0.5 ? 0.725 : (uKind < 1.5 ? 0.79 : 0.86);
-          float R=baseR+0.012*sin(uTime*(2.1+uKind)+uKind*1.7)+0.034*uLevel;
-          float width=0.030+0.026*uLevel;
-          float ring=1.0-smoothstep(width,width+0.035,abs(d-R));
-          float arc=0.55+0.45*sin(ang*3.0 + uTime*(uKind < 0.5 ? -2.3 : 2.8));
-          float dash=smoothstep(0.18,0.82,arc);
-          float fade=smoothstep(1.12,0.72,d);
-          vec3 col=mix(uColorA,uColorB,arc);
-          float a=ring*fade*(0.22+0.78*dash)*uAlpha*(0.35+0.75*uLevel);
-          gl_FragColor=vec4(col,a);
-        }`
-    });
-  }
-
-  const ringGeo = new THREE.PlaneGeometry(6,6,1,1);
-  const userRingMat = makeRingMat('user');
-  const aiRingMat = makeRingMat('ai');
-  const processRingMat = makeRingMat('process');
-
-  const userRing = new THREE.Mesh(ringGeo, userRingMat);
-  userRing.position.z = -0.62;
-  userRing.scale.setScalar(1.12);
-  group.add(userRing);
-
-  const aiRing = new THREE.Mesh(ringGeo, aiRingMat);
-  aiRing.position.z = -0.64;
-  aiRing.scale.setScalar(1.18);
-  group.add(aiRing);
-
-  const processRing = new THREE.Mesh(ringGeo, processRingMat);
-  processRing.position.z = -0.66;
-  processRing.scale.setScalar(1.26);
-  group.add(processRing);
-
-  // ----------------------------- Soft Aura Particles -----------------------------
-  const particleCount = LOW_MOTION ? 72 : 128;
-  const pGeo = new THREE.BufferGeometry();
-  const pPos = new Float32Array(particleCount * 3);
-  const pSeed = new Float32Array(particleCount);
-  for (let i=0;i<particleCount;i++){
-    const a = Math.random()*Math.PI*2;
-    const r = 1.12 + Math.random()*0.55;
-    const z = (Math.random()*2-1)*0.52;
-    pPos[i*3+0] = Math.cos(a)*r;
-    pPos[i*3+1] = Math.sin(a)*r;
-    pPos[i*3+2] = z;
-    pSeed[i] = Math.random();
-  }
-  pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
-  pGeo.setAttribute('aSeed', new THREE.BufferAttribute(pSeed, 1));
-  const pMat = new THREE.ShaderMaterial({
-    transparent:true,
-    depthWrite:false,
-    blending:THREE.AdditiveBlending,
-    uniforms:{
-      uTime:{ value:0 },
-      uAlpha:{ value:0.22 },
-      uLevel:{ value:0 },
-      uAiLevel:{ value:0 },
-      uUserLevel:{ value:0 }
-    },
-    vertexShader:`
-      attribute float aSeed;
-      uniform float uTime,uLevel,uAiLevel,uUserLevel;
-      varying float vSeed;
-      void main(){
-        vSeed=aSeed;
-        vec3 p=position;
-        float t=uTime*(0.18+0.12*aSeed);
-        float rot=t*(aSeed<0.5?-1.0:1.0);
-        mat2 m=mat2(cos(rot),-sin(rot),sin(rot),cos(rot));
-        p.xy=m*p.xy*(1.0+0.025*uLevel*sin(uTime*2.0+aSeed*9.0));
-        vec4 mv=modelViewMatrix*vec4(p,1.0);
-        gl_PointSize=(2.0+4.5*(uAiLevel+uUserLevel))*((1.0+aSeed)*0.55);
-        gl_Position=projectionMatrix*mv;
-      }`,
-    fragmentShader:`
-      precision highp float;
-      varying float vSeed;
-      uniform float uAlpha,uLevel,uAiLevel,uUserLevel;
-      void main(){
-        vec2 uv=gl_PointCoord*2.0-1.0;
-        float d=dot(uv,uv);
-        float a=smoothstep(1.0,0.0,d);
-        vec3 cyan=vec3(0.24,0.90,0.96);
-        vec3 mag=vec3(0.94,0.00,0.72);
-        vec3 col=mix(cyan,mag,clamp(uAiLevel+vSeed*.18,0.0,1.0));
-        gl_FragColor=vec4(col,a*uAlpha*(0.45+0.95*uLevel));
-      }`
-  });
-  const particles = new THREE.Points(pGeo, pMat);
-  group.add(particles);
-
-  // ----------------------------- State Machine -----------------------------
-  const STATES = {
-    idle: {
-      label:'Ready', dot:'#3DE6F5', mode:.20,
-      glow:.82, base:.052, audio:.18, scale:1.00, rotX:.035, rotY:.080,
-      colorA:HSL.cyan, colorB:HSL.blue, colorC:HSL.violet, accent:HSL.cyan,
-      userRing:.12, aiRing:.07, process:.00, aura:.16
-    },
-    ready: {
-      label:'Ready', dot:'#3DE6F5', mode:.18,
-      glow:.86, base:.058, audio:.20, scale:1.01, rotX:.04, rotY:.095,
-      colorA:HSL.cyan, colorB:HSL.blue, colorC:HSL.violet, accent:HSL.cyan,
-      userRing:.18, aiRing:.09, process:.00, aura:.18
-    },
-    listening: {
-      label:'Listening', dot:'#3DE6F5', mode:.12,
-      glow:.94, base:.072, audio:.28, scale:1.025, rotX:.045, rotY:.135,
-      colorA:HSL.cyan, colorB:HSL.blue, colorC:HSL.violet, accent:HSL.cyan,
-      userRing:.55, aiRing:.08, process:.00, aura:.24
-    },
-    user_speaking: {
-      label:'User speaking', dot:'#3DE6F5', mode:.05,
-      glow:1.02, base:.082, audio:.34, scale:1.045, rotX:.052, rotY:.165,
-      colorA:HSL.cyan, colorB:HSL.blue, colorC:HSL.violet, accent:HSL.cyan,
-      userRing:.92, aiRing:.06, process:.00, aura:.32
-    },
-    speaking: {
-      label:'AI speaking', dot:'#EF00B8', mode:.95,
-      glow:1.04, base:.086, audio:.36, scale:1.055, rotX:.058, rotY:.195,
-      colorA:HSL.cyan, colorB:HSL.violet, colorC:HSL.magenta, accent:HSL.magenta,
-      userRing:.08, aiRing:.92, process:.00, aura:.34
-    },
-    ai_speaking: {
-      label:'AI speaking', dot:'#EF00B8', mode:1.00,
-      glow:1.06, base:.090, audio:.39, scale:1.065, rotX:.060, rotY:.205,
-      colorA:HSL.cyan, colorB:HSL.violet, colorC:HSL.magenta, accent:HSL.magenta,
-      userRing:.08, aiRing:1.00, process:.00, aura:.38
-    },
-    thinking: {
-      label:'Thinking', dot:'#6A35FF', mode:.62,
-      glow:.97, base:.068, audio:.20, scale:1.025, rotX:.032, rotY:.120,
-      colorA:HSL.blue, colorB:HSL.violet, colorC:HSL.magenta, accent:HSL.violet,
-      userRing:.10, aiRing:.24, process:.22, aura:.25
-    },
-    processing: {
-      label:'Processing', dot:'#F7FBFF', mode:.70,
-      glow:1.00, base:.060, audio:.18, scale:1.015, rotX:.026, rotY:.105,
-      colorA:HSL.cyan, colorB:HSL.violet, colorC:HSL.white, accent:HSL.white,
-      userRing:.10, aiRing:.14, process:.95, aura:.34
-    },
-    complete: {
-      label:'Complete', dot:'#36F0B5', mode:.30,
-      glow:1.06, base:.066, audio:.22, scale:1.04, rotX:.035, rotY:.125,
-      colorA:HSL.success, colorB:HSL.cyan, colorC:HSL.white, accent:HSL.success,
-      userRing:.48, aiRing:.16, process:.32, aura:.36
-    },
-    error: {
-      label:'Check required', dot:'#FFB545', mode:.44,
-      glow:.94, base:.060, audio:.18, scale:1.01, rotX:.025, rotY:.075,
-      colorA:HSL.amber, colorB:HSL.violet, colorC:HSL.magenta, accent:HSL.amber,
-      userRing:.08, aiRing:.08, process:.55, aura:.25
-    },
-    stopped: {
-      label:'Stopped', dot:'#AAB7C8', mode:.18,
-      glow:.72, base:.034, audio:.08, scale:.985, rotX:.018, rotY:.045,
-      colorA:HSL.navy, colorB:HSL.blue, colorC:HSL.violet, accent:HSL.white,
-      userRing:.02, aiRing:.02, process:.00, aura:.08
-    }
-  };
-
-  let stateName = 'idle';
-  let state = { ...STATES.idle };
-  let target = { ...STATES.idle };
-  let showLabel = SHOW_LABEL_DEFAULT;
-  let allowTts = ALLOW_TTS_DEFAULT;
-  let productMode = params.get('mode') || 'interview';
-  let currentUserLevel = 0;
-  let targetUserLevel = 0;
-  let currentAiLevel = 0;
-  let targetAiLevel = 0;
-  let targetGenericLevel = 0;
-  let currentGenericLevel = 0;
-  let lastLevelAt = nowMs();
-  let lastExplicitStateAt = nowMs();
-  let pulseBoost = 0;
-  let hidden = false;
-
-  function setLabelVisibility(on){
-    showLabel = !!on;
-    statusWrap.classList.toggle('on', showLabel);
-  }
-  setLabelVisibility(showLabel);
-
-  function applyTargetStyle(name){
-    const normalized = normalizeState(name);
-    stateName = normalized;
-    const next = STATES[normalized] || STATES.idle;
-    target = { ...next };
-    statusText.textContent = next.label;
-    dot.style.background = next.dot;
-    dot.style.boxShadow = `0 0 14px ${next.dot},0 0 24px ${next.dot}55`;
-    lastExplicitStateAt = nowMs();
-    postParent({ type:'avatar:state', state:normalized, label:next.label });
-    log('state', { state:normalized });
-  }
-
   function normalizeState(s){
     const x = String(s || '').trim().toLowerCase().replace(/[\s-]+/g,'_');
-    const aliases = {
+    const a = {
       wait:'idle', waiting:'idle', standby:'idle', awake:'ready', start:'ready', active:'ready',
-      listen:'listening', hearing:'listening', recording:'listening', user:'user_speaking', user_speech:'user_speaking', user_talking:'user_speaking', candidate_speaking:'user_speaking',
-      ai:'ai_speaking', assistant:'ai_speaking', assistant_speaking:'ai_speaking', ai_talking:'ai_speaking', talking:'ai_speaking', speak:'ai_speaking',
+      listen:'listening', hearing:'listening', recording:'listening',
+      user:'user_speaking', user_speech:'user_speaking', user_talking:'user_speaking', candidate_speaking:'user_speaking', speech_started:'user_speaking',
+      speaking:'ai_speaking', ai:'ai_speaking', assistant:'ai_speaking', assistant_speaking:'ai_speaking', ai_talking:'ai_speaking', talking:'ai_speaking', speak:'ai_speaking',
       think:'thinking', analyzing:'thinking', analysing:'thinking', preparing:'thinking',
       process:'processing', uploading:'processing', exporting:'processing', report:'processing', building_report:'processing',
-      done:'complete', success:'complete', finished:'complete', ready_done:'complete',
+      done:'complete', success:'complete', finished:'complete', ready_done:'complete', report_ready:'complete',
       warn:'error', warning:'error', failed:'error', failure:'error', stopped:'stopped', stop:'stopped'
     };
-    return STATES[x] ? x : (aliases[x] || 'idle');
+    return STATE[x] ? x : (a[x] || 'idle');
   }
 
+  let stateName = 'idle';
+  let currentLevel = .10, targetLevel = .10, userLevel = 0, aiLevel = 0;
+  let lastLevelAt = nowMs();
+  let threeAPI = null;
+  let threeReady = false;
+
+  function setLabelVisibility(on){ statusWrap.classList.toggle('on', !!on); }
+  setLabelVisibility(SHOW_LABEL_DEFAULT);
+
+  function applyCssState(name){
+    const s = STATE[name] || STATE.idle;
+    document.documentElement.style.setProperty('--state-color', s.c1);
+    document.documentElement.style.setProperty('--state-color-2', s.c2);
+    document.documentElement.style.setProperty('--state-scale', s.scale);
+    document.documentElement.style.setProperty('--state-speed', s.speed);
+    statusText.textContent = s.label;
+  }
+  function setState(name){
+    stateName = normalizeState(name);
+    applyCssState(stateName);
+    if (threeAPI) threeAPI.setState(stateName);
+    postParent({ type:'avatar:state', state:stateName, label:(STATE[stateName] || STATE.idle).label });
+    log('state', { state:stateName, threeReady });
+  }
   function setLevel(value, source){
     const v = clamp01(value);
     const src = String(source || '').toLowerCase();
     lastLevelAt = nowMs();
     if (src === 'user' || src === 'mic' || src === 'candidate') {
-      targetUserLevel = v;
-      targetGenericLevel = Math.max(targetGenericLevel, v*.75);
-      if (v > .08 && (stateName === 'idle' || stateName === 'ready' || stateName === 'listening')) applyTargetStyle('user_speaking');
+      userLevel = v; targetLevel = Math.max(targetLevel, v);
+      if (v > .08 && ['idle','ready','listening'].includes(stateName)) setState('user_speaking');
     } else if (src === 'ai' || src === 'assistant' || src === 'tts' || src === 'output') {
-      targetAiLevel = v;
-      targetGenericLevel = Math.max(targetGenericLevel, v*.75);
-      if (v > .08 && (stateName === 'idle' || stateName === 'ready' || stateName === 'thinking' || stateName === 'speaking')) applyTargetStyle('ai_speaking');
+      aiLevel = v; targetLevel = Math.max(targetLevel, v);
+      if (v > .08 && ['idle','ready','thinking'].includes(stateName)) setState('ai_speaking');
     } else {
-      targetGenericLevel = v;
-      if (stateName === 'ai_speaking' || stateName === 'speaking') targetAiLevel = Math.max(targetAiLevel, v);
-      else if (stateName === 'user_speaking' || stateName === 'listening') targetUserLevel = Math.max(targetUserLevel, v);
+      targetLevel = v;
+      if (stateName === 'ai_speaking') aiLevel = Math.max(aiLevel, v);
+      if (stateName === 'user_speaking' || stateName === 'listening') userLevel = Math.max(userLevel, v);
     }
+    if (threeAPI) threeAPI.setLevel(v, src);
   }
+  function stopAvatar(){ userLevel=0; aiLevel=0; targetLevel=0; setState('stopped'); }
+  function resetAvatar(){ userLevel=0; aiLevel=0; targetLevel=.18; setState('ready'); }
 
-  function setConfig(cfg={}){
-    if (Object.prototype.hasOwnProperty.call(cfg,'showLabel')) setLabelVisibility(!!cfg.showLabel);
-    if (Object.prototype.hasOwnProperty.call(cfg,'label')) setLabelVisibility(!!cfg.label);
-    if (Object.prototype.hasOwnProperty.call(cfg,'tts')) allowTts = !!cfg.tts;
-    if (Object.prototype.hasOwnProperty.call(cfg,'allowTts')) allowTts = !!cfg.allowTts;
-    if (cfg.mode) productMode = String(cfg.mode || productMode);
-    if (cfg.state) applyTargetStyle(cfg.state);
-    log('config', { showLabel, allowTts, productMode });
+  function loadScript(src){
+    return new Promise((resolve,reject)=>{
+      const s = document.createElement('script');
+      s.src = src;
+      s.async = true;
+      s.crossOrigin = 'anonymous';
+      s.onload = resolve;
+      s.onerror = ()=> reject(new Error('script_load_failed: '+src));
+      document.head.appendChild(s);
+    });
   }
-
-  function stopAvatar(){
-    targetUserLevel = 0;
-    targetAiLevel = 0;
-    targetGenericLevel = 0;
-    currentUserLevel = 0;
-    currentAiLevel = 0;
-    currentGenericLevel = 0;
-    safe(()=> speechSynthesis && speechSynthesis.cancel && speechSynthesis.cancel());
-    applyTargetStyle('stopped');
-  }
-
-  function resetAvatar(){
-    targetUserLevel = 0;
-    targetAiLevel = 0;
-    targetGenericLevel = 0;
-    pulseBoost = .20;
-    applyTargetStyle('ready');
-  }
-
-  // ----------------------------- Optional TTS Compatibility -----------------------------
-  function speakText(text, lang){
-    const clean = String(text || '').trim();
-    if (!clean) return;
-    if (!allowTts || !('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) {
-      applyTargetStyle('ai_speaking');
-      targetAiLevel = .62;
-      setTimeout(()=>{ targetAiLevel = 0; if (stateName === 'ai_speaking') applyTargetStyle('ready'); }, Math.min(6000, 1100 + clean.length * 28));
-      return;
+  async function ensureThree(){
+    if (window.THREE) return window.THREE;
+    const cdns = [
+      'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js',
+      'https://unpkg.com/three@0.160.0/build/three.min.js',
+      'https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js'
+    ];
+    let lastErr = null;
+    for (const src of cdns) {
+      try { log('loading three', {src}); await loadScript(src); if (window.THREE) return window.THREE; }
+      catch(e){ lastErr = e; log('three load failed', {src, error:String(e && e.message || e)}); }
     }
-    safe(()=> speechSynthesis.cancel());
-    const u = new SpeechSynthesisUtterance(clean);
-    u.lang = lang || params.get('lang') || document.documentElement.lang || 'de-DE';
-    u.rate = 1.0;
-    u.pitch = 1.0;
-    u.volume = 1.0;
-    u.onstart = ()=>{ applyTargetStyle('ai_speaking'); targetAiLevel = .72; };
-    u.onend = ()=>{ targetAiLevel = 0; if (stateName === 'ai_speaking') applyTargetStyle('ready'); };
-    u.onerror = ()=>{ targetAiLevel = 0; applyTargetStyle('ready'); };
-    safe(()=> speechSynthesis.speak(u));
+    throw lastErr || new Error('THREE not available');
   }
 
-  // ----------------------------- Animation Loop -----------------------------
-  let tPrev = performance.now()/1000;
-  function frame(){
-    requestAnimationFrame(frame);
-    if (hidden && LOW_MOTION) return;
-
-    const tNow = performance.now()/1000;
-    const dt = Math.min(tNow - tPrev, .05);
-    tPrev = tNow;
-    const ms = nowMs();
-    const slow = LOW_MOTION ? .45 : 1.0;
-
-    // If live input stops, levels decay naturally while state remains explicit.
-    if (ms - lastLevelAt > 240) {
-      targetUserLevel *= 0.88;
-      targetAiLevel *= 0.88;
-      targetGenericLevel *= 0.90;
-    }
-    if (ms - lastLevelAt > 2100 && (stateName === 'user_speaking' || stateName === 'ai_speaking' || stateName === 'speaking')) {
-      applyTargetStyle(stateName === 'user_speaking' ? 'listening' : 'ready');
-    }
-
-    const breath = (!NO_BREATH && ms-lastLevelAt>3000) ? (Math.sin(tNow*1.45)*.5+.5)*.20 : 0;
-    const stateEnergy = (stateName === 'thinking') ? (Math.sin(tNow*2.0)*.5+.5)*.16 :
-                        (stateName === 'processing') ? (Math.sin(tNow*2.9)*.5+.5)*.28 :
-                        (stateName === 'complete') ? (Math.sin(tNow*3.3)*.5+.5)*.22 : 0;
-
-    currentUserLevel = lerp(currentUserLevel, targetUserLevel, .18*slow);
-    currentAiLevel = lerp(currentAiLevel, targetAiLevel, .18*slow);
-    currentGenericLevel = lerp(currentGenericLevel, targetGenericLevel, .14*slow);
-    pulseBoost = Math.max(0, pulseBoost - dt*.58);
-
-    const activeLevel = Math.max(currentGenericLevel, currentUserLevel, currentAiLevel, breath, stateEnergy, pulseBoost);
-    const energy = Math.min(1, activeLevel + (stateName === 'processing' ? .16 : 0) + (stateName === 'thinking' ? .08 : 0));
-
-    state.glow = lerp(state.glow, target.glow, .08*slow);
-    state.base = lerp(state.base, target.base, .08*slow);
-    state.audio = lerp(state.audio, target.audio, .08*slow);
-    state.scale = lerp(state.scale, target.scale, .08*slow);
-    state.rotX = lerp(state.rotX, target.rotX, .06*slow);
-    state.rotY = lerp(state.rotY, target.rotY, .06*slow);
-    state.mode = lerp(state.mode, target.mode, .09*slow);
-    state.userRing = lerp(state.userRing || 0, target.userRing || 0, .12*slow);
-    state.aiRing = lerp(state.aiRing || 0, target.aiRing || 0, .12*slow);
-    state.process = lerp(state.process || 0, target.process || 0, .12*slow);
-    state.aura = lerp(state.aura || 0, target.aura || 0, .10*slow);
-
-    // Color interpolation in HSL-vector space.
-    uniforms.uColorA.value.lerp(target.colorA || HSL.cyan, .05*slow);
-    uniforms.uColorB.value.lerp(target.colorB || HSL.violet, .05*slow);
-    uniforms.uColorC.value.lerp(target.colorC || HSL.magenta, .05*slow);
-    uniforms.uAccent.value.lerp(target.accent || HSL.cyan, .05*slow);
-
-    uniforms.uTime.value += dt;
-    uniforms.uBaseAmp.value = state.base;
-    uniforms.uAudioAmp.value = state.audio;
-    uniforms.uGlow.value = state.glow;
-    uniforms.uLevel.value = activeLevel;
-    uniforms.uUserLevel.value = currentUserLevel;
-    uniforms.uAiLevel.value = currentAiLevel;
-    uniforms.uEnergy.value = energy;
-    uniforms.uMode.value = state.mode;
-
-    glassMat.uniforms.uTime.value += dt;
-    glassMat.uniforms.uLevel.value = activeLevel;
-    glassMat.uniforms.uUserLevel.value = currentUserLevel;
-    glassMat.uniforms.uAiLevel.value = currentAiLevel;
-
-    const pulseScale = 1 + 0.045*activeLevel + 0.030*currentAiLevel + 0.018*currentUserLevel;
-    const completePop = stateName === 'complete' ? 1 + Math.max(0, Math.sin((ms-lastExplicitStateAt)/190))*0.012 : 1;
-    group.scale.setScalar(state.scale * pulseScale * completePop);
-
-    innerSphere.rotation.y += state.rotY * dt * (LOW_MOTION ? .65 : 1.0);
-    innerSphere.rotation.x += state.rotX * dt * (LOW_MOTION ? .65 : 1.0);
-    glass.rotation.y -= state.rotY * dt * .20;
-    particles.rotation.z += dt * (0.045 + activeLevel*.07) * (stateName === 'processing' ? 1.65 : 1);
-
-    userRing.lookAt(camera.position);
-    aiRing.lookAt(camera.position);
-    processRing.lookAt(camera.position);
-    userRing.rotation.z += tNow*.0;
-    aiRing.rotation.z -= tNow*.0;
-    processRing.rotation.z += dt*(stateName === 'processing' ? 1.0 : .32);
-
-    userRingMat.uniforms.uTime.value += dt;
-    userRingMat.uniforms.uLevel.value = Math.max(currentUserLevel, activeLevel*.25);
-    userRingMat.uniforms.uAlpha.value = (state.userRing || 0) * (0.55 + 0.70*currentUserLevel);
-
-    aiRingMat.uniforms.uTime.value += dt;
-    aiRingMat.uniforms.uLevel.value = Math.max(currentAiLevel, activeLevel*.22);
-    aiRingMat.uniforms.uAlpha.value = (state.aiRing || 0) * (0.55 + 0.70*currentAiLevel);
-
-    processRingMat.uniforms.uTime.value += dt*(stateName === 'processing' ? 1.9 : .7);
-    processRingMat.uniforms.uLevel.value = Math.max(activeLevel*.55, stateName === 'processing' ? .48 : .08);
-    processRingMat.uniforms.uAlpha.value = (state.process || 0) * (stateName === 'processing' ? .96 : .55);
-
-    pMat.uniforms.uTime.value += dt;
-    pMat.uniforms.uAlpha.value = state.aura;
-    pMat.uniforms.uLevel.value = activeLevel;
-    pMat.uniforms.uAiLevel.value = currentAiLevel;
-    pMat.uniforms.uUserLevel.value = currentUserLevel;
-
-    rim.intensity = 1.10 + currentUserLevel*1.25 + energy*.30;
-    magentaLight.intensity = 0.58 + currentAiLevel*1.55 + (stateName==='thinking' ? .40 : 0);
-
-    renderer.render(scene, camera);
-  }
-  frame();
-
-  // ----------------------------- Events -----------------------------
-  window.addEventListener('resize', ()=>{
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, LOW_MOTION ? 1.4 : 2));
+  function createThreeAvatar(THREE){
+    const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true, powerPreference:'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, LOW_MOTION ? 1.25 : 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    uniforms.uAspect.value = camera.aspect;
-  });
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    root.appendChild(renderer.domElement);
 
-  document.addEventListener('visibilitychange', ()=>{
-    hidden = document.hidden;
-  });
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(42, window.innerWidth/window.innerHeight, .1, 60);
+    camera.position.set(0,0,3.45);
+    const group = new THREE.Group(); scene.add(group);
+    scene.add(new THREE.AmbientLight(0xffffff, .92));
+    const key = new THREE.DirectionalLight(0xffffff, .42); key.position.set(3,2.5,3); scene.add(key);
+    const cyanLight = new THREE.PointLight(0x3DE6F5, 1.25, 7); cyanLight.position.set(-2,1.3,2.4); scene.add(cyanLight);
+    const magLight = new THREE.PointLight(0xEF00B8, .85, 7); magLight.position.set(2,-1.5,2.2); scene.add(magLight);
 
-  window.addEventListener('message', (ev)=>{
+    const coreMat = new THREE.MeshStandardMaterial({
+      color:0x064E9B, emissive:0x3DE6F5, emissiveIntensity:.42, roughness:.28, metalness:.03, transparent:true, opacity:.96
+    });
+    const core = new THREE.Mesh(new THREE.SphereGeometry(.86, LOW_MOTION ? 96 : 160, LOW_MOTION ? 64 : 112), coreMat);
+    group.add(core);
+
+    const shellMat = new THREE.MeshPhysicalMaterial({
+      color:0xF7FBFF, transparent:true, opacity:.22, roughness:.08, metalness:0, transmission:.38, thickness:.45, clearcoat:1, clearcoatRoughness:.08, side:THREE.FrontSide
+    });
+    const shell = new THREE.Mesh(new THREE.SphereGeometry(1.0, LOW_MOTION ? 80 : 128, LOW_MOTION ? 56 : 88), shellMat);
+    group.add(shell);
+
+    function ring(color, radius, tube){
+      const mat = new THREE.MeshBasicMaterial({ color, transparent:true, opacity:.32, blending:THREE.AdditiveBlending, depthWrite:false });
+      const mesh = new THREE.Mesh(new THREE.TorusGeometry(radius, tube, 16, 180), mat);
+      group.add(mesh);
+      return mesh;
+    }
+    const rUser = ring(0x3DE6F5, 1.08, .008);
+    const rAi = ring(0xEF00B8, 1.18, .009);
+    const rProcess = ring(0xF7FBFF, 1.30, .007);
+    rUser.rotation.x = Math.PI/2.2; rAi.rotation.y = Math.PI/2.5; rProcess.rotation.x = Math.PI/2;
+
+    const pCount = LOW_MOTION ? 70 : 120;
+    const pGeo = new THREE.BufferGeometry();
+    const pPos = new Float32Array(pCount*3);
+    for(let i=0;i<pCount;i++){
+      const a = Math.random()*Math.PI*2, r=1.13+Math.random()*.58, z=(Math.random()*2-1)*.52;
+      pPos[i*3]=Math.cos(a)*r; pPos[i*3+1]=Math.sin(a)*r; pPos[i*3+2]=z;
+    }
+    pGeo.setAttribute('position', new THREE.BufferAttribute(pPos,3));
+    const pMat = new THREE.PointsMaterial({ color:0x3DE6F5, size:.018, transparent:true, opacity:.30, blending:THREE.AdditiveBlending, depthWrite:false });
+    const particles = new THREE.Points(pGeo,pMat); group.add(particles);
+
+    let visualState = stateName;
+    let localLevel = currentLevel;
+    let tPrev = performance.now()/1000;
+    function applyVisualState(){
+      const s = visualState;
+      const ai = s === 'ai_speaking';
+      const user = s === 'user_speaking' || s === 'listening';
+      const processing = s === 'processing';
+      const complete = s === 'complete';
+      const err = s === 'error';
+      coreMat.color.setHex(ai ? 0x6A35FF : user ? 0x064E9B : processing ? 0x041D48 : complete ? 0x067C68 : err ? 0x8F5512 : 0x064E9B);
+      coreMat.emissive.setHex(ai ? 0xEF00B8 : user ? 0x3DE6F5 : processing ? 0x3DE6F5 : complete ? 0x48F0C2 : err ? 0xFFB84D : 0x3DE6F5);
+      rUser.material.opacity = (user ? .42 : .16) + Math.max(userLevel,localLevel*.25)*.42;
+      rAi.material.opacity = (ai ? .48 : .10) + Math.max(aiLevel,localLevel*.22)*.42;
+      rProcess.material.opacity = processing ? .62 : complete ? .38 : .08;
+      pMat.color.setHex(ai ? 0xEF00B8 : user ? 0x3DE6F5 : complete ? 0x48F0C2 : err ? 0xFFB84D : 0x3DE6F5);
+    }
+    function frame(){
+      requestAnimationFrame(frame);
+      const tNow = performance.now()/1000;
+      const dt = Math.min(tNow - tPrev, .05); tPrev = tNow;
+      if (nowMs() - lastLevelAt > 240) { userLevel*=.88; aiLevel*=.88; targetLevel*=.90; }
+      const breath = (!NO_BREATH && nowMs()-lastLevelAt>3000) ? (Math.sin(tNow*1.45)*.5+.5)*.18 : 0;
+      localLevel = lerp(localLevel, Math.max(targetLevel,userLevel,aiLevel,breath), .14);
+      applyVisualState();
+      const scaleBase = (STATE[visualState] || STATE.idle).scale || 1;
+      group.scale.setScalar(scaleBase * (1 + localLevel*.055 + aiLevel*.025));
+      core.rotation.y += dt*(.15 + localLevel*.25);
+      core.rotation.x += dt*(.05 + aiLevel*.08);
+      shell.rotation.y -= dt*.035;
+      rUser.rotation.z += dt*(.40 + userLevel*1.8);
+      rAi.rotation.z -= dt*(.55 + aiLevel*1.8);
+      rProcess.rotation.z += dt*(visualState === 'processing' ? 1.6 : .35);
+      particles.rotation.z += dt*(.045 + localLevel*.10);
+      coreMat.emissiveIntensity = .35 + localLevel*.75 + aiLevel*.35;
+      pMat.opacity = .18 + localLevel*.45;
+      cyanLight.intensity = 1.0 + userLevel*1.4 + localLevel*.35;
+      magLight.intensity = .55 + aiLevel*1.7;
+      renderer.render(scene,camera);
+    }
+    window.addEventListener('resize',()=>{
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, LOW_MOTION ? 1.25 : 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix();
+    });
+    frame();
+    return {
+      setState(s){ visualState = normalizeState(s); applyVisualState(); },
+      setLevel(v){ targetLevel = Math.max(targetLevel, clamp01(v)); }
+    };
+  }
+
+  function cssFrame(){
+    if (nowMs() - lastLevelAt > 240) { userLevel*=.88; aiLevel*=.88; targetLevel*=.90; }
+    const breath = (!NO_BREATH && nowMs()-lastLevelAt>3000) ? (Math.sin(performance.now()/1000*1.45)*.5+.5)*.18 : 0;
+    currentLevel = lerp(currentLevel, Math.max(targetLevel,userLevel,aiLevel,breath), .16);
+    document.documentElement.style.setProperty('--level', String(currentLevel.toFixed(3)));
+    requestAnimationFrame(cssFrame);
+  }
+  cssFrame();
+
+  window.addEventListener('message',(ev)=>{
     const d = parseMessage(ev && ev.data);
     if (!d || !d.type) return;
-    const type = String(d.type || '').trim();
-    const lower = type.toLowerCase();
-
-    if (lower === 'ping' || lower === 'avatar:ping') {
-      ev.source && ev.source.postMessage && ev.source.postMessage({ type:'avatar:ready', version:VERSION }, '*');
-      postParent({ type:'avatar:ready' });
-      return;
-    }
-
-    if (lower === 'avatar:set' || lower === 'avatar:state') {
-      applyTargetStyle(d.state || d.value || 'idle');
-      return;
-    }
-
-    if (lower === 'avatar:level') {
-      setLevel(d.value ?? d.level ?? 0, d.source || d.channel || d.role || '');
-      return;
-    }
-
-    if (lower === 'avatar:userlevel' || lower === 'avatar:user-level') {
-      setLevel(d.value ?? d.level ?? 0, 'user');
-      return;
-    }
-
-    if (lower === 'avatar:ailevel' || lower === 'avatar:ai-level') {
-      setLevel(d.value ?? d.level ?? 0, 'ai');
-      return;
-    }
-
-    if (lower === 'avatar:config') {
-      setConfig(d);
-      return;
-    }
-
-    if (lower === 'avatar:stop') {
-      stopAvatar();
-      return;
-    }
-
-    if (lower === 'avatar:reset') {
-      resetAvatar();
-      return;
-    }
-
-    if (lower === 'avatar:complete') {
-      pulseBoost = .42;
-      applyTargetStyle('complete');
-      return;
-    }
-
-    if (lower === 'avatar:error') {
-      pulseBoost = .20;
-      applyTargetStyle('error');
-      return;
-    }
-
-    if (lower === 'avatar:say') {
-      speakText(d.text || d.message || '', d.lang || d.language || params.get('lang') || 'de-DE');
-      return;
-    }
-
-    // Compatibility with live.html / recorder event names, if forwarded directly.
-    if (lower === 'clarity.live.ready' || lower === 'recorder:ready') applyTargetStyle('ready');
-    else if (lower === 'input_audio_buffer.speech_started' || lower === 'speech_started') applyTargetStyle('user_speaking');
-    else if (lower === 'input_audio_buffer.speech_stopped' || lower === 'speech_stopped') applyTargetStyle('listening');
-    else if (lower === 'response.audio.delta' || lower === 'response.audio_transcript.delta' || lower === 'assistant_audio_delta') setLevel(d.value ?? .55, 'ai');
-    else if (lower === 'response.done' || lower === 'assistant_done') { targetAiLevel = 0; applyTargetStyle('listening'); }
-    else if (lower === 'recorder:finished' || lower === 'processing:start') applyTargetStyle('processing');
-    else if (lower === 'processing:done' || lower === 'report:ready') applyTargetStyle('complete');
+    const type = String(d.type).trim().toLowerCase();
+    if (type === 'ping' || type === 'avatar:ping') { ev.source && ev.source.postMessage && ev.source.postMessage({ type:'avatar:ready', version:VERSION }, '*'); postParent({ type:'avatar:ready' }); return; }
+    if (type === 'avatar:set' || type === 'avatar:state') { setState(d.state || d.value || 'idle'); return; }
+    if (type === 'avatar:level') { setLevel(d.value ?? d.level ?? 0, d.source || d.channel || d.role || ''); return; }
+    if (type === 'avatar:userlevel' || type === 'avatar:user-level') { setLevel(d.value ?? d.level ?? 0, 'user'); return; }
+    if (type === 'avatar:ailevel' || type === 'avatar:ai-level') { setLevel(d.value ?? d.level ?? 0, 'ai'); return; }
+    if (type === 'avatar:config') { if ('showLabel' in d) setLabelVisibility(!!d.showLabel); if ('label' in d) setLabelVisibility(!!d.label); if (d.state) setState(d.state); return; }
+    if (type === 'avatar:stop') { stopAvatar(); return; }
+    if (type === 'avatar:reset') { resetAvatar(); return; }
+    if (type === 'avatar:complete') { setState('complete'); targetLevel=.8; return; }
+    if (type === 'avatar:error') { setState('error'); targetLevel=.55; return; }
+    if (type === 'clarity.live.ready' || type === 'recorder:ready') setState('ready');
+    else if (type === 'input_audio_buffer.speech_started' || type === 'speech_started') setState('user_speaking');
+    else if (type === 'input_audio_buffer.speech_stopped' || type === 'speech_stopped') setState('listening');
+    else if (type === 'response.audio.delta' || type === 'response.audio_transcript.delta' || type === 'assistant_audio_delta') setLevel(d.value ?? .55, 'ai');
+    else if (type === 'response.done' || type === 'assistant_done') { aiLevel = 0; setState('listening'); }
+    else if (type === 'recorder:finished' || type === 'processing:start') setState('processing');
+    else if (type === 'processing:done' || type === 'report:ready') setState('complete');
   });
 
-  // ----------------------------- Init -----------------------------
-  applyTargetStyle(params.get('state') || 'idle');
-  if (params.get('label') === '0') setLabelVisibility(false);
-  setTimeout(()=> postParent({ type:'avatar:ready' }), 60);
+  setState(params.get('state') || 'idle');
+  setTimeout(()=> postParent({ type:'avatar:ready' }), 80);
+
+  (async()=>{
+    if (FORCE_CSS) { log('CSS fallback forced'); postParent({ type:'avatar:ready', renderer:'css' }); return; }
+    try {
+      if (!safe(()=> !!document.createElement('canvas').getContext('webgl2')) && !safe(()=> !!document.createElement('canvas').getContext('webgl'))) throw new Error('webgl_unavailable');
+      const THREE = await ensureThree();
+      threeAPI = createThreeAvatar(THREE);
+      threeReady = true;
+      fallbackOrb.classList.add('three-on');
+      postParent({ type:'avatar:ready', renderer:'three' });
+      log('three ready');
+    } catch(e) {
+      threeReady = false;
+      fallbackOrb.classList.remove('three-on');
+      postParent({ type:'avatar:error', code:'THREE_OR_WEBGL_FALLBACK', message:String(e && e.message || e), renderer:'css' });
+      log('fallback css active', { error:String(e && e.message || e) });
+    }
+  })();
 })();
 </script>
 </body>
