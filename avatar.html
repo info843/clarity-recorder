@@ -1,781 +1,358 @@
 <!doctype html>
 <html lang="de">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-<title>CLARITY Avatar v2.1.1 Clean Reactive Orb</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>CLARITY Avatar — Original Base Reactive Dark</title>
 <style>
-  :root{
-    --c-cyan:#3DE6F5;
-    --c-blue:#064E9B;
-    --c-navy:#041D48;
-    --c-violet:#6A35FF;
-    --c-magenta:#EF00B8;
-    --c-white:#F7FBFF;
-    --c-success:#49F0C2;
-    --c-amber:#FFB84D;
-
-    --state-c1:#3DE6F5;
-    --state-c2:#064E9B;
-    --state-c3:#6A35FF;
-    --state-c4:#EF00B8;
-
-    --level:.12;
-    --visual-level:.12;
-    --core-scale:1;
-    --halo-scale:1;
-    --orb-scale:1;
-    --shell-opacity:.42;
-    --inner-opacity:.86;
-    --glow:.75;
-    --speed:4.8s;
-    --orbit-speed:7.5s;
-    --wave-opacity:.28;
-    --ring-spread:1;
-  }
-
-  *{box-sizing:border-box}
-  html,body{
-    margin:0;
-    width:100%;
-    height:100%;
-    overflow:hidden;
-    background:transparent;
-    font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
-    -webkit-font-smoothing:antialiased;
-    text-rendering:geometricPrecision;
-  }
-  body.bg{
-    background:
-      radial-gradient(circle at 50% 42%, rgba(61,230,245,.16), transparent 32%),
-      radial-gradient(circle at 70% 64%, rgba(239,0,184,.15), transparent 38%),
-      linear-gradient(135deg, rgba(248,250,252,.95), rgba(232,240,255,.93));
-  }
-
-  #root{
-    position:fixed;
-    inset:0;
-    display:grid;
-    place-items:center;
-    overflow:hidden;
-    pointer-events:none;
-    background:transparent;
-  }
-
-  .stage{
-    position:relative;
-    width:min(78vw,72vh,470px);
-    height:min(78vw,72vh,470px);
-    display:grid;
-    place-items:center;
-    transform:scale(var(--orb-scale));
-    transition:transform .12s ease-out;
-    filter:drop-shadow(0 28px 70px rgba(4,29,72,.22));
-  }
-
-  .outerGlow{
-    position:absolute;
-    inset:2%;
-    border-radius:50%;
-    background:
-      radial-gradient(circle at 38% 28%, rgba(61,230,245,.48), transparent 30%),
-      radial-gradient(circle at 72% 62%, rgba(239,0,184,.40), transparent 35%),
-      radial-gradient(circle at 52% 52%, rgba(106,53,255,.35), transparent 58%);
-    opacity:calc(.28 + var(--visual-level) * .48);
-    filter:blur(calc(18px + var(--visual-level) * 16px)) saturate(1.32);
-    transform:scale(calc(.95 + var(--visual-level) * .16));
-    animation:outerGlowBreath var(--speed) ease-in-out infinite;
-  }
-
-  .reactiveHalo,
-  .reactiveHalo2,
-  .reactiveHalo3{
-    position:absolute;
-    inset:9%;
-    border-radius:50%;
-    opacity:calc(.28 + var(--visual-level) * .60);
-    transform:scale(calc(var(--halo-scale) + var(--visual-level) * .22));
-    border:2px solid rgba(61,230,245,.34);
-    box-shadow:
-      0 0 calc(16px + var(--visual-level) * 56px) rgba(61,230,245,.34),
-      0 0 calc(38px + var(--visual-level) * 92px) rgba(106,53,255,.16),
-      inset 0 0 calc(16px + var(--visual-level) * 32px) rgba(255,255,255,.16);
-    transition:border-color .28s ease, box-shadow .28s ease;
-    animation:haloPulse calc(var(--speed) * .72) ease-in-out infinite;
-  }
-  .reactiveHalo2{
-    inset:5%;
-    opacity:calc(.12 + var(--visual-level) * .32);
-    border-color:rgba(239,0,184,.22);
-    transform:scale(calc(var(--halo-scale) + var(--visual-level) * .30));
-    animation-delay:.32s;
-    animation-duration:calc(var(--speed) * .92);
-  }
-  .reactiveHalo3{
-    inset:14%;
-    opacity:calc(.14 + var(--visual-level) * .38);
-    border-color:rgba(255,255,255,.30);
-    transform:scale(calc(.97 + var(--visual-level) * .18));
-    filter:blur(.2px);
-    animation-delay:.18s;
-  }
-
-  .atomRing{
-    position:absolute;
-    border-radius:50%;
-    border:2px solid transparent;
-    opacity:calc(.62 + var(--visual-level) * .34);
-    filter:drop-shadow(0 0 calc(12px + var(--visual-level) * 30px) var(--state-c1));
-    transform-style:preserve-3d;
-  }
-  .ringA{
-    inset:15%;
-    border-top-color:var(--state-c1);
-    border-left-color:rgba(61,230,245,.42);
-    border-bottom-color:rgba(255,255,255,.30);
-    transform:rotateX(68deg) rotateZ(-10deg) scale(calc(1 + var(--visual-level) * .10));
-    animation:spinA var(--orbit-speed) linear infinite;
-  }
-  .ringB{
-    inset:10%;
-    border-top-color:var(--state-c3);
-    border-right-color:rgba(239,0,184,.46);
-    border-left-color:rgba(255,255,255,.18);
-    opacity:calc(.52 + var(--visual-level) * .38);
-    transform:rotateX(76deg) rotateY(19deg) rotateZ(86deg) scale(calc(.96 + var(--visual-level) * .14));
-    animation:spinB calc(var(--orbit-speed) * 1.25) linear infinite reverse;
-  }
-  .ringC{
-    inset:21%;
-    border-top-color:rgba(255,255,255,.86);
-    border-right-color:rgba(61,230,245,.34);
-    opacity:calc(.42 + var(--visual-level) * .30);
-    transform:rotateX(31deg) rotateY(68deg) rotateZ(18deg) scale(calc(.92 + var(--visual-level) * .10));
-    animation:spinC calc(var(--orbit-speed) * 1.55) linear infinite;
-  }
-
-  .particle{
-    position:absolute;
-    left:50%;top:50%;
-    width:8px;height:8px;
-    margin:-4px 0 0 -4px;
-    border-radius:999px;
-    background:var(--c-white);
-    box-shadow:0 0 14px rgba(255,255,255,.96),0 0 30px var(--state-c1);
-    opacity:calc(.62 + var(--visual-level) * .38);
-    animation:particleA 8.8s linear infinite;
-  }
-  .p2{width:7px;height:7px;background:var(--state-c1);box-shadow:0 0 17px var(--state-c1),0 0 32px var(--state-c1);animation:particleB 6.7s linear infinite reverse}
-  .p3{width:6px;height:6px;background:var(--state-c3);box-shadow:0 0 17px var(--state-c3),0 0 33px var(--state-c4);animation:particleC 10.9s linear infinite}
-  .p4{width:5px;height:5px;background:#fff;box-shadow:0 0 14px #fff,0 0 24px var(--state-c3);animation:particleD 12.4s linear infinite reverse;opacity:calc(.46 + var(--visual-level) * .40)}
-
-  .sphere{
-    position:absolute;
-    inset:18%;
-    border-radius:50%;
-    overflow:hidden;
-    opacity:.98;
-    transform:scale(calc(1 + var(--visual-level) * .035));
-    background:
-      radial-gradient(circle at 31% 24%, rgba(255,255,255,.92) 0 3.6%, rgba(255,255,255,.30) 4.1%, transparent 12%),
-      radial-gradient(circle at 36% 34%, rgba(61,230,245,.72), transparent 28%),
-      radial-gradient(circle at 70% 64%, rgba(239,0,184,.62), transparent 36%),
-      radial-gradient(circle at 52% 52%, rgba(106,53,255,.58), transparent 55%),
-      linear-gradient(136deg, rgba(10,119,170,.96), rgba(5,49,112,.98) 46%, rgba(63,38,145,.94));
-    box-shadow:
-      inset 0 1px 0 rgba(255,255,255,.72),
-      inset -22px -26px 66px rgba(4,29,72,.58),
-      inset 19px 18px 58px rgba(61,230,245,.18),
-      0 0 calc(22px + var(--visual-level) * 42px) rgba(61,230,245,.24),
-      0 0 calc(48px + var(--visual-level) * 78px) rgba(239,0,184,.14);
-    animation:sphereBreath var(--speed) ease-in-out infinite;
-    backdrop-filter:blur(1px) saturate(1.14);
-  }
-  .sphere::before{
-    content:"";
-    position:absolute;
-    inset:3% 4% auto 6%;
-    height:44%;
-    border-radius:50%;
-    background:linear-gradient(180deg, rgba(255,255,255,.42), rgba(255,255,255,.09) 58%, transparent);
-    transform:rotate(-13deg);
-    mix-blend-mode:screen;
-    opacity:calc(var(--shell-opacity) * .82);
-    z-index:8;
-  }
-  .sphere::after{
-    content:"";
-    position:absolute;
-    inset:0;
-    border-radius:50%;
-    background:
-      linear-gradient(105deg, transparent 0 20%, rgba(255,255,255,.20) 23%, transparent 32% 100%),
-      radial-gradient(circle at 72% 26%, rgba(255,255,255,.72) 0 1.4%, transparent 2.4%),
-      radial-gradient(circle at 28% 37%, rgba(255,255,255,.58) 0 1.1%, transparent 2.2%);
-    opacity:calc(.32 + var(--visual-level) * .20);
-    animation:sheen 8.4s ease-in-out infinite;
-    z-index:9;
-    pointer-events:none;
-  }
-
-  #innerCanvas{
-    position:absolute;
-    inset:0;
-    width:100%;
-    height:100%;
-    z-index:3;
-    mix-blend-mode:screen;
-    opacity:var(--inner-opacity);
-  }
-
-  .audioCore{
-    position:absolute;
-    left:50%;top:50%;
-    width:33%;height:33%;
-    margin:-16.5% 0 0 -16.5%;
-    border-radius:50%;
-    z-index:5;
-    background:
-      radial-gradient(circle at 38% 30%, rgba(255,255,255,.95), rgba(255,255,255,.42) 14%, transparent 22%),
-      radial-gradient(circle at 50% 50%, rgba(247,251,255,.76), rgba(61,230,245,.58) 38%, rgba(106,53,255,.38) 62%, transparent 72%);
-    box-shadow:
-      0 0 calc(14px + var(--visual-level) * 44px) var(--state-c1),
-      0 0 calc(22px + var(--visual-level) * 70px) var(--state-c3),
-      inset 0 0 calc(10px + var(--visual-level) * 22px) rgba(255,255,255,.42);
-    opacity:calc(.62 + var(--visual-level) * .36);
-    transform:scale(var(--core-scale));
-    filter:saturate(1.45) brightness(1.12) blur(.08px);
-    transition:box-shadow .16s ease-out, opacity .16s ease-out;
-    animation:corePulse .9s ease-in-out infinite;
-  }
-  .audioCore::after{
-    content:"";
-    position:absolute;
-    inset:-52%;
-    border-radius:50%;
-    background:conic-gradient(from 0deg, transparent, rgba(61,230,245,.24), transparent, rgba(239,0,184,.22), transparent);
-    opacity:calc(.22 + var(--visual-level) * .40);
-    animation:coreSpin calc(var(--speed) * .74) linear infinite;
-  }
-
-  .shell{
-    position:absolute;
-    inset:16%;
-    border-radius:50%;
-    z-index:10;
-    pointer-events:none;
-    background:
-      radial-gradient(circle at 34% 20%, rgba(255,255,255,.20), transparent 24%),
-      radial-gradient(circle at 50% 50%, rgba(255,255,255,.07), transparent 65%);
-    border:1px solid rgba(255,255,255,.22);
-    box-shadow:
-      inset 0 0 28px rgba(255,255,255,.13),
-      inset 0 0 64px rgba(61,230,245,.10),
-      0 0 calc(16px + var(--visual-level) * 36px) rgba(61,230,245,.18);
-    opacity:var(--shell-opacity);
-  }
-
-  .expandingPulse,
-  .expandingPulse2,
-  .expandingPulse3{
-    position:absolute;
-    inset:15%;
-    border-radius:50%;
-    border:1px solid rgba(61,230,245,.38);
-    z-index:12;
-    opacity:0;
-    filter:drop-shadow(0 0 16px var(--state-c1));
-    animation:expandingPulse 2.1s ease-out infinite;
-  }
-  .expandingPulse2{animation-delay:.52s;border-color:rgba(239,0,184,.34)}
-  .expandingPulse3{animation-delay:1.04s;border-color:rgba(255,255,255,.32)}
-
-  .sweep{
-    position:absolute;
-    inset:13%;
-    border-radius:50%;
-    z-index:11;
-    opacity:0;
-    background:conic-gradient(from 0deg, transparent 0 70%, rgba(255,255,255,.0), var(--state-c1), transparent 92% 100%);
-    filter:blur(.3px) drop-shadow(0 0 16px var(--state-c1));
-    animation:processingSweep 1.35s linear infinite;
-    pointer-events:none;
-  }
-
-  body[data-state="processing"] .sweep{opacity:calc(.48 + var(--visual-level) * .34)}
-  body[data-state="thinking"] .audioCore{animation-duration:1.7s}
-  body[data-state="complete"] .reactiveHalo{animation-duration:1.2s}
-  body[data-state="error"] .reactiveHalo{animation-duration:1.05s}
-  body[data-state="idle"] .expandingPulse,
-  body[data-state="ready"] .expandingPulse,
-  body[data-state="listening"] .expandingPulse{animation-duration:3.4s}
-  body[data-state="user_speaking"] .expandingPulse,
-  body[data-state="ai_speaking"] .expandingPulse{animation-duration:1.25s}
-
-  #statusWrap{
-    position:fixed;
-    left:50%;
-    bottom:clamp(8px,4.0vh,24px);
-    transform:translateX(-50%);
-    display:none;
-    align-items:center;
-    gap:8px;
-    padding:8px 14px;
-    border-radius:999px;
-    z-index:20;
-    pointer-events:none;
-    color:rgba(247,251,255,.96);
-    font-size:12px;
-    font-weight:750;
-    letter-spacing:.15px;
-    background:linear-gradient(135deg, rgba(4,29,72,.66), rgba(4,78,155,.24));
-    border:1px solid rgba(247,251,255,.18);
-    box-shadow:0 14px 42px rgba(0,17,42,.22), inset 0 1px 0 rgba(255,255,255,.20);
-    backdrop-filter:blur(16px);
-    -webkit-backdrop-filter:blur(16px);
-    white-space:nowrap;
-    max-width:calc(100vw - 24px);
-  }
-  #statusWrap.on{display:flex}
-  #dot{
-    width:7px;height:7px;border-radius:50%;
-    background:var(--state-c1);
-    box-shadow:0 0 14px var(--state-c1),0 0 28px var(--state-c1);
-    flex:0 0 auto;
-  }
-  #statusText{overflow:hidden;text-overflow:ellipsis}
-
-  #debug{
-    position:fixed;
-    left:8px;top:8px;z-index:30;
-    display:none;
-    color:rgba(247,251,255,.92);
-    background:rgba(4,29,72,.74);
-    border:1px solid rgba(247,251,255,.16);
-    border-radius:10px;
-    padding:7px 9px;
-    font:11px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-    pointer-events:none;
-    max-width:calc(100vw - 24px);
-    white-space:pre-wrap;
-  }
-  #debug.on{display:block}
-
-  @keyframes outerGlowBreath{0%,100%{transform:scale(.95);opacity:calc(.25 + var(--visual-level) * .38)}50%{transform:scale(1.06);opacity:calc(.42 + var(--visual-level) * .54)}}
-  @keyframes haloPulse{0%,100%{transform:scale(calc(var(--halo-scale) + var(--visual-level) * .14));opacity:calc(.22 + var(--visual-level) * .46)}50%{transform:scale(calc(var(--halo-scale) + .035 + var(--visual-level) * .32));opacity:calc(.38 + var(--visual-level) * .56)}}
-  @keyframes spinA{from{rotate:0deg}to{rotate:360deg}}
-  @keyframes spinB{from{rotate:0deg}to{rotate:360deg}}
-  @keyframes spinC{from{rotate:0deg}to{rotate:360deg}}
-  @keyframes particleA{from{transform:rotate(0deg) translateX(40%) rotate(0deg)}to{transform:rotate(360deg) translateX(40%) rotate(-360deg)}}
-  @keyframes particleB{from{transform:rotate(0deg) translateX(48%) rotate(0deg)}to{transform:rotate(360deg) translateX(48%) rotate(-360deg)}}
-  @keyframes particleC{from{transform:rotate(0deg) translateX(53%) rotate(0deg)}to{transform:rotate(360deg) translateX(53%) rotate(-360deg)}}
-  @keyframes particleD{from{transform:rotate(0deg) translateX(36%) rotate(0deg)}to{transform:rotate(360deg) translateX(36%) rotate(-360deg)}}
-  @keyframes sphereBreath{0%,100%{filter:saturate(1.18) brightness(1.06)}50%{filter:saturate(1.48) brightness(1.15)}}
-  @keyframes sheen{0%,100%{transform:translateX(-3%) rotate(0deg);opacity:.28}50%{transform:translateX(5%) rotate(1deg);opacity:.56}}
-  @keyframes corePulse{0%,100%{transform:scale(calc(var(--core-scale) * .96));opacity:calc(.38 + var(--visual-level) * .36)}50%{transform:scale(calc(var(--core-scale) * 1.09));opacity:calc(.58 + var(--visual-level) * .40)}}
-  @keyframes coreSpin{from{rotate:0deg}to{rotate:360deg}}
-  @keyframes expandingPulse{0%{opacity:0;transform:scale(.82)}18%{opacity:calc(.08 + var(--visual-level) * .45)}100%{opacity:0;transform:scale(calc(1.18 + var(--visual-level) * .44))}}
-  @keyframes processingSweep{from{rotate:0deg}to{rotate:360deg}}
-
-  @media (prefers-reduced-motion:reduce){
-    .atomRing,.particle,.audioCore::after,.sweep{animation-duration:9s!important}
-    .expandingPulse,.reactiveHalo,.outerGlow,.sphere,.audioCore{animation-duration:4s!important}
-  }
+  html,body{margin:0;height:100%;background:transparent;overflow:hidden}
+  #root{position:fixed;inset:0}
 </style>
 </head>
-<body data-state="ready">
-<div id="root" aria-label="CLARITY AI Avatar">
-  <div class="stage" id="stage">
-    <div class="outerGlow"></div>
-    <div class="reactiveHalo"></div>
-    <div class="reactiveHalo2"></div>
-    <div class="reactiveHalo3"></div>
+<body>
+<div id="root"></div>
 
-    <div class="atomRing ringA"></div>
-    <div class="atomRing ringB"></div>
-    <div class="atomRing ringC"></div>
-    <span class="particle p1"></span>
-    <span class="particle p2"></span>
-    <span class="particle p3"></span>
-    <span class="particle p4"></span>
-
-    <div class="sphere" id="sphere">
-      <canvas id="innerCanvas"></canvas>
-      <div class="audioCore"></div>
-    </div>
-    <div class="shell"></div>
-    <div class="sweep"></div>
-    <div class="expandingPulse"></div>
-    <div class="expandingPulse2"></div>
-    <div class="expandingPulse3"></div>
-  </div>
-</div>
-<div id="statusWrap" aria-hidden="true"><span id="dot"></span><span id="statusText">Bereit</span></div>
-<div id="debug"></div>
-
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
 <script>
 (()=>{
-  'use strict';
+  const root = document.getElementById('root');
+  const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true, powerPreference:'high-performance' });
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  root.appendChild(renderer.domElement);
 
-  const VERSION = 'clarity_avatar_v2_1_1_CLEAN_REACTIVE_ORB';
-  const Q = new URLSearchParams(location.search || '');
-  const DEBUG = Q.get('debug') === '1';
-  const SHOW_LABEL = Q.get('label') === '1' || Q.get('showLabel') === '1';
-  const LOW_MOTION = Q.get('motion') === 'low' || Q.get('reducedMotion') === '1';
-  const LANG = normalizeLang(Q.get('lang') || Q.get('language') || 'de');
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 50);
+  camera.position.set(0,0,3.2);
 
-  if (DEBUG || Q.get('bg') === '1') document.body.classList.add('bg');
+  scene.add(new THREE.AmbientLight(0xffffff, 0.88));
+  const dir = new THREE.DirectionalLight(0xffffff, 0.32);
+  dir.position.set(3,2,3);
+  scene.add(dir);
 
-  const root = document.documentElement;
-  const body = document.body;
-  const canvas = document.getElementById('innerCanvas');
-  const sphere = document.getElementById('sphere');
-  const statusWrap = document.getElementById('statusWrap');
-  const statusText = document.getElementById('statusText');
-  const debugEl = document.getElementById('debug');
-  const ctx = canvas.getContext('2d', { alpha:true });
+  const avatarGroup = new THREE.Group();
+  scene.add(avatarGroup);
 
-  if (DEBUG) debugEl.classList.add('on');
-  if (SHOW_LABEL) statusWrap.classList.add('on');
+  const R_INNER = 0.85;
+  const geoInner = new THREE.SphereGeometry(R_INNER, 192, 128);
 
-  const clamp01 = v => Math.max(0, Math.min(1, Number(v) || 0));
-  const lerp = (a,b,t) => a + (b-a)*t;
-  const now = () => performance.now();
-  const safe = fn => { try { return fn(); } catch(_) {} };
-
-  function normalizeLang(v){
-    const s = String(v || '').toLowerCase();
-    if (s.startsWith('de')) return 'de';
-    if (s.startsWith('es')) return 'es';
-    if (s.startsWith('fr')) return 'fr';
-    if (s.startsWith('it')) return 'it';
-    return 'en';
-  }
-
-  const LABELS = {
-    de:{idle:'Bereit',ready:'Bereit',listening:'Zuhören',user_speaking:'Kandidat spricht',ai_speaking:'KI spricht',thinking:'KI denkt',processing:'Verarbeitung läuft',complete:'Abgeschlossen',error:'Bitte warten',stopped:'Gestoppt'},
-    en:{idle:'Ready',ready:'Ready',listening:'Listening',user_speaking:'User speaking',ai_speaking:'AI speaking',thinking:'Thinking',processing:'Processing',complete:'Complete',error:'Please wait',stopped:'Stopped'},
-    es:{idle:'Listo',ready:'Listo',listening:'Escuchando',user_speaking:'Usuario hablando',ai_speaking:'IA hablando',thinking:'Pensando',processing:'Procesando',complete:'Completado',error:'Espere, por favor',stopped:'Detenido'},
-    fr:{idle:'Prêt',ready:'Prêt',listening:'Écoute',user_speaking:'Utilisateur parle',ai_speaking:'IA parle',thinking:'Réflexion',processing:'Traitement',complete:'Terminé',error:'Veuillez patienter',stopped:'Arrêté'},
-    it:{idle:'Pronto',ready:'Pronto',listening:'In ascolto',user_speaking:'Utente parla',ai_speaking:'IA parla',thinking:'Elaborazione',processing:'Elaborazione',complete:'Completato',error:'Attendere',stopped:'Fermato'}
-  };
-  const T = LABELS[LANG] || LABELS.en;
-
-  const STATES = {
-    idle:          { c1:'#3DE6F5', c2:'#064E9B', c3:'#6A35FF', c4:'#EF00B8', base:.08, amp:.10, scale:1.000, halo:1.000, shell:.36, inner:.78, glow:.55, speed:'5.8s', orbit:'8.8s', label:T.idle },
-    ready:         { c1:'#3DE6F5', c2:'#064E9B', c3:'#6A35FF', c4:'#EF00B8', base:.12, amp:.14, scale:1.010, halo:1.012, shell:.35, inner:.82, glow:.66, speed:'5.0s', orbit:'7.9s', label:T.ready },
-    listening:     { c1:'#3DE6F5', c2:'#064E9B', c3:'#49F0C2', c4:'#6A35FF', base:.20, amp:.20, scale:1.035, halo:1.035, shell:.32, inner:.88, glow:.86, speed:'3.5s', orbit:'6.7s', label:T.listening },
-    user_speaking: { c1:'#3DE6F5', c2:'#064E9B', c3:'#49F0C2', c4:'#6A35FF', base:.34, amp:.58, scale:1.060, halo:1.070, shell:.27, inner:.96, glow:1.08, speed:'1.65s', orbit:'5.2s', label:T.user_speaking },
-    ai_speaking:   { c1:'#EF00B8', c2:'#6A35FF', c3:'#3DE6F5', c4:'#F7FBFF', base:.40, amp:.60, scale:1.078, halo:1.092, shell:.25, inner:.98, glow:1.18, speed:'1.42s', orbit:'4.9s', label:T.ai_speaking },
-    thinking:      { c1:'#6A35FF', c2:'#041D48', c3:'#3DE6F5', c4:'#EF00B8', base:.22, amp:.22, scale:1.030, halo:1.035, shell:.30, inner:.90, glow:.92, speed:'2.9s', orbit:'6.0s', label:T.thinking },
-    processing:    { c1:'#3DE6F5', c2:'#F7FBFF', c3:'#6A35FF', c4:'#EF00B8', base:.36, amp:.38, scale:1.045, halo:1.075, shell:.28, inner:.94, glow:1.12, speed:'1.2s', orbit:'3.9s', label:T.processing },
-    complete:      { c1:'#49F0C2', c2:'#F7FBFF', c3:'#3DE6F5', c4:'#6A35FF', base:.28, amp:.34, scale:1.050, halo:1.070, shell:.27, inner:.96, glow:1.12, speed:'1.7s', orbit:'5.2s', label:T.complete },
-    error:         { c1:'#FFB84D', c2:'#EF00B8', c3:'#064E9B', c4:'#F7FBFF', base:.24, amp:.28, scale:1.025, halo:1.040, shell:.32, inner:.90, glow:.88, speed:'1.8s', orbit:'6.8s', label:T.error },
-    stopped:       { c1:'#F7FBFF', c2:'#064E9B', c3:'#041D48', c4:'#6A35FF', base:.03, amp:.04, scale:.985, halo:.990, shell:.42, inner:.62, glow:.36, speed:'6.4s', orbit:'10s', label:T.stopped }
+  const uniforms = {
+    uTime:      { value: 0 },
+    uBaseAmp:   { value: 0.055 },
+    uAudioAmp:  { value: 0.18 },
+    uLevel:     { value: 0.0 },
+    uBand:      { value: 0.0 },
+    uGlow:      { value: 0.82 },
+    uColorA:    { value: new THREE.Vector3(214/255, 0.90, 0.52) },
+    uColorB:    { value: new THREE.Vector3(227/255, 0.80, 0.34) },
+    uColorC:    { value: new THREE.Vector3(196/255, 0.86, 0.42) },
+    uColorBoost:{ value: 0.0 },
+    uAspect:    { value: innerWidth/innerHeight }
   };
 
-  function normalizeState(value){
-    const x = String(value || '').trim().toLowerCase().replace(/[\s-]+/g,'_');
-    const aliases = {
-      wait:'idle',waiting:'idle',standby:'idle',awake:'ready',start:'ready',active:'ready',initialized:'ready',
-      listen:'listening',hearing:'listening',recording:'listening',mic_on:'listening',
-      user:'user_speaking',user_speech:'user_speaking',user_talking:'user_speaking',candidate_speaking:'user_speaking',candidate:'user_speaking',speech_started:'user_speaking',input_audio:'user_speaking',
-      speaking:'ai_speaking',speak:'ai_speaking',ai:'ai_speaking',assistant:'ai_speaking',assistant_speaking:'ai_speaking',ai_talking:'ai_speaking',talking:'ai_speaking',response_audio:'ai_speaking',
-      think:'thinking',analyzing:'thinking',analysing:'thinking',preparing:'thinking',deliberating:'thinking',
-      process:'processing',upload:'processing',uploading:'processing',exporting:'processing',report:'processing',building_report:'processing',pdf:'processing',finalizing:'processing',
-      done:'complete',success:'complete',finished:'complete',report_ready:'complete',completed:'complete',
-      warn:'error',warning:'error',failed:'error',failure:'error',problem:'error',
-      stop:'stopped',hangup:'stopped'
-    };
-    return STATES[x] ? x : (aliases[x] || 'ready');
-  }
+  const simplex = `
+  vec3 mod289(vec3 x){return x - floor(x * (1.0/289.0)) * 289.0;}
+  vec4 mod289(vec4 x){return x - floor(x * (1.0/289.0)) * 289.0;}
+  vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
+  vec4 taylorInvSqrt(vec4 r){return 1.79284291400159 - 0.85373472095314 * r;}
+  float snoise(vec3 v){
+    const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+    const vec4 D = vec4(0.0,0.5,1.0,2.0);
+    vec3 i=floor(v+dot(v,C.yyy));
+    vec3 x0=v-i+dot(i,C.xxx);
+    vec3 g=step(x0.yzx,x0.xyz); vec3 l=1.0-g;
+    vec3 i1=min(g.xyz,l.zxy), i2=max(g.xyz,l.zxy);
+    vec3 x1=x0-i1+C.xxx, x2=x0-i2+C.yyy, x3=x0-D.yyy;
+    i=mod289(i);
+    vec4 p=permute(permute(permute(i.z+vec4(0.0,i1.z,i2.z,1.0))+i.y+vec4(0.0,i1.y,i2.y,1.0))+i.x+vec4(0.0,i1.x,i2.x,1.0));
+    float n_=0.142857142857; vec3 ns=n_*D.wyz-D.xzx;
+    vec4 j=p-49.0*floor(p*ns.z*ns.z); vec4 x_=floor(j*ns.z); vec4 y_=floor(j-7.0*x_);
+    vec4 x=x_*ns.x+ns.yyyy, y=y_*ns.x+ns.yyyy, h=1.0-abs(x)-abs(y);
+    vec4 b0=vec4(x.xy,y.xy), b1=vec4(x.zw,y.zw);
+    vec4 s0=floor(b0)*2.0+1.0, s1=floor(b1)*2.0+1.0; vec4 sh=-step(h,vec4(0.0));
+    vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy, a1=b1.xzyw+s1.xzyw*sh.zzww;
+    vec3 p0=vec3(a0.xy,h.x), p1=vec3(a1.xy,h.y), p2=vec3(a0.zw,h.z), p3=vec3(a1.zw,h.w);
+    vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
+    p0*=norm.x; p1*=norm.y; p2*=norm.z; p3*=norm.w;
+    vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0); m*=m;
+    return 42.0*dot(m*m, vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
+  }`;
 
-  let stateName = 'ready';
-  let visualLevel = .12;
-  let targetLevel = .12;
-  let userLevel = 0;
-  let aiLevel = 0;
-  let lastLevelAt = now();
-  let lastInputSource = '';
-  let frame = 0;
+  const vInner = `
+    uniform float uTime,uBaseAmp,uAudioAmp,uLevel,uBand;
+    varying vec3 vPos; varying float vDef; varying float vNoise;
+    ${simplex}
+    void main(){
+      vec3 p=position;
+      float t=uTime*0.38;
+      float n1=snoise(normal*1.45+vec3(t*0.55,t*0.35,t*0.72));
+      float n2=snoise(position*1.05+vec3(-t*0.28,t*0.48,-t*0.18));
+      float audioMix = (0.65*uLevel + 0.35*uBand);
+      float d=uBaseAmp*n1 + uAudioAmp*audioMix*n2;
+      vNoise = n2;
+      vDef=d;
+      vec3 q=normalize(p)*(1.0+d);
+      vPos=q;
+      gl_Position=projectionMatrix*modelViewMatrix*vec4(q,1.0);
+    }`;
 
-  function log(label, data){
-    if (!DEBUG) return;
-    const text = `[${VERSION}] ${label}${data ? '\n' + JSON.stringify(data).slice(0,900) : ''}`;
-    console.log(text);
-    debugEl.textContent = text;
-  }
-
-  function postParent(payload){
-    safe(() => parent && parent.postMessage && parent.postMessage({ from:'clarity-avatar', version:VERSION, ...payload }, '*'));
-  }
-
-  function applyState(name){
-    const s = STATES[name] || STATES.ready;
-    root.style.setProperty('--state-c1', s.c1);
-    root.style.setProperty('--state-c2', s.c2);
-    root.style.setProperty('--state-c3', s.c3);
-    root.style.setProperty('--state-c4', s.c4);
-    root.style.setProperty('--speed', s.speed);
-    root.style.setProperty('--orbit-speed', s.orbit);
-    root.style.setProperty('--shell-opacity', String(s.shell));
-    root.style.setProperty('--inner-opacity', String(s.inner));
-    root.style.setProperty('--glow', String(s.glow));
-    body.dataset.state = name;
-    statusText.textContent = s.label;
-  }
-
-  function setState(value){
-    stateName = normalizeState(value);
-    applyState(stateName);
-    postParent({ type:'avatar:state', state:stateName, label:(STATES[stateName] || STATES.ready).label });
-    log('state', { state:stateName, level:visualLevel, source:lastInputSource });
-  }
-
-  function setLevel(value, source){
-    const v = clamp01(value);
-    const src = String(source || '').toLowerCase();
-    lastInputSource = src;
-    lastLevelAt = now();
-
-    if (src === 'user' || src === 'mic' || src === 'candidate' || src === 'input') {
-      userLevel = Math.max(userLevel, v);
-      targetLevel = Math.max(targetLevel, v);
-      if (v > .06 && ['idle','ready','listening'].includes(stateName)) setState('user_speaking');
-    } else if (src === 'ai' || src === 'assistant' || src === 'tts' || src === 'output' || src === 'system') {
-      aiLevel = Math.max(aiLevel, v);
-      targetLevel = Math.max(targetLevel, v);
-      if (v > .06 && ['idle','ready','thinking'].includes(stateName)) setState('ai_speaking');
-    } else {
-      targetLevel = Math.max(targetLevel, v);
-      if (stateName === 'ai_speaking') aiLevel = Math.max(aiLevel, v);
-      if (stateName === 'user_speaking' || stateName === 'listening') userLevel = Math.max(userLevel, v);
+  const fInner = `
+    precision highp float;
+    varying vec3 vPos; varying float vDef; varying float vNoise;
+    uniform float uGlow,uTime,uLevel,uBand,uColorBoost;
+    uniform vec3 uColorA,uColorB,uColorC;
+    vec3 hsl2rgb(vec3 hsl){
+      float h=hsl.x,s=hsl.y,l=hsl.z;
+      float c=(1.0-abs(2.0*l-1.0))*s;
+      float x=c*(1.0-abs(mod(h*6.0,2.0)-1.0));
+      float m=l-0.5*c; vec3 rgb;
+      if(h<1.0/6.0) rgb=vec3(c,x,0.0);
+      else if(h<2.0/6.0) rgb=vec3(x,c,0.0);
+      else if(h<3.0/6.0) rgb=vec3(0.0,c,x);
+      else if(h<4.0/6.0) rgb=vec3(0.0,x,c);
+      else if(h<5.0/6.0) rgb=vec3(x,0.0,c);
+      else rgb=vec3(c,0.0,x);
+      return rgb+m;
     }
-  }
+    void main(){
+      vec3 n=normalize(vPos);
+      float a=atan(n.y,n.x);
+      float swirl = sin(a*2.2 + uTime*0.65 + vNoise*1.4)*0.5+0.5;
+      vec3 colA=hsl2rgb(uColorA);
+      vec3 colB=hsl2rgb(uColorB);
+      vec3 colC=hsl2rgb(uColorC);
+      vec3 base = mix(colA,colB,swirl);
+      float speechPull = clamp(0.18 + 0.82*(0.62*uLevel + 0.38*uBand),0.0,1.0);
+      vec3 color = mix(base,colC,speechPull*0.72);
+      float core = smoothstep(0.95,0.08,length(vPos));
+      float fres = pow(1.0-abs(n.z),2.4);
+      float pulse = 0.55 + 0.45*sin(uTime*2.4 + speechPull*2.8);
+      vec3 bright = mix(color, vec3(1.0), 0.12 + 0.18*speechPull + 0.12*uColorBoost);
+      vec3 finalCol = mix(color, bright, core*(0.35 + 0.28*speechPull));
+      vec3 glow = finalCol * (uGlow + 0.22*uColorBoost) * (0.35 + 0.65*fres) * (0.9 + 0.1*pulse);
+      gl_FragColor = vec4(finalCol + glow*0.42, 0.95);
+    }`;
 
-  function setConfig(cfg){
-    if (!cfg || typeof cfg !== 'object') return;
-    if (cfg.lang || cfg.language) {
-      // Language is read at load. Keep no-op for compatibility.
-    }
-    if (cfg.showLabel === true || cfg.label === true) statusWrap.classList.add('on');
-    if (cfg.showLabel === false || cfg.label === false) statusWrap.classList.remove('on');
-    if (cfg.state) setState(cfg.state);
-    if (typeof cfg.level !== 'undefined') setLevel(cfg.level, cfg.source || 'system');
-  }
+  const innerMat = new THREE.ShaderMaterial({
+    uniforms, vertexShader:vInner, fragmentShader:fInner, transparent:true
+  });
+  const innerSphere = new THREE.Mesh(geoInner, innerMat);
+  avatarGroup.add(innerSphere);
 
-  function parseMessage(data){
-    if (!data) return {};
-    if (typeof data === 'string') {
-      try { return JSON.parse(data); } catch(_) { return { type:data }; }
-    }
-    return data;
-  }
+  const R_GLASS = 1.0;
+  const geoGlass = new THREE.SphereGeometry(R_GLASS, 128, 96);
+  const glassUniforms = {
+    uTint:     { value:new THREE.Color(0xdde8ff) },
+    uStrength: { value:0.19 },
+    uAlpha:    { value:0.07 }
+  };
+  const glassMat = new THREE.ShaderMaterial({
+    transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
+    uniforms: glassUniforms,
+    vertexShader:`
+      varying vec3 vN; varying vec3 vV;
+      void main(){
+        vec4 mv = modelViewMatrix * vec4(position,1.0);
+        vV = -mv.xyz; vN = normalize(normalMatrix * normal);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader:`
+      precision highp float;
+      varying vec3 vN; varying vec3 vV;
+      uniform vec3 uTint; uniform float uStrength; uniform float uAlpha;
+      void main(){
+        float fres = pow(1.0 - max(0.0, dot(normalize(vN), normalize(vV))), 2.15);
+        vec3 col = uTint * (0.30 + 0.70*fres);
+        float a = uAlpha + fres * uStrength;
+        gl_FragColor = vec4(col, a);
+      }`
+  });
+  const glass = new THREE.Mesh(geoGlass, glassMat);
+  avatarGroup.add(glass);
 
-  function syntheticEnergy(name, t){
-    if (LOW_MOTION) return .04;
-    if (name === 'ai_speaking') return .38 + .30*Math.pow(Math.sin(t*8.5)*.5+.5,1.65) + .14*Math.pow(Math.sin(t*15.8+1.1)*.5+.5,2.0);
-    if (name === 'user_speaking') return .34 + .28*Math.pow(Math.sin(t*6.5+.4)*.5+.5,1.55) + .11*Math.pow(Math.sin(t*12.2)*.5+.5,2.1);
-    if (name === 'processing') return .35 + .20*Math.pow(Math.sin(t*4.6)*.5+.5,1.1);
-    if (name === 'thinking') return .20 + .14*Math.pow(Math.sin(t*2.5+.2)*.5+.5,1.4);
-    if (name === 'listening') return .18 + .12*Math.pow(Math.sin(t*3.0)*.5+.5,1.2);
-    if (name === 'complete') return .20 + .28*Math.max(0, Math.sin(t*2.6));
-    if (name === 'error') return .20 + .13*Math.pow(Math.sin(t*3.7)*.5+.5,2.0);
-    return .07 + .06*(Math.sin(t*1.45)*.5+.5);
-  }
-
-  function hexToRgb(hex){
-    const s = String(hex || '#ffffff').replace('#','');
-    const n = parseInt(s.length === 3 ? s.split('').map(x=>x+x).join('') : s, 16);
-    return { r:(n>>16)&255, g:(n>>8)&255, b:n&255 };
-  }
-  function rgba(hex, a){
-    const c = hexToRgb(hex);
-    return `rgba(${c.r},${c.g},${c.b},${a})`;
-  }
-
-  function resizeCanvas(){
-    const rect = sphere.getBoundingClientRect();
-    const dpr = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1));
-    const w = Math.max(10, Math.round(rect.width * dpr));
-    const h = Math.max(10, Math.round(rect.height * dpr));
-    if (canvas.width !== w || canvas.height !== h) {
-      canvas.width = w;
-      canvas.height = h;
-      canvas.style.width = rect.width + 'px';
-      canvas.style.height = rect.height + 'px';
-    }
-  }
-
-  function drawInnerCanvas(t, energy){
-    const w = canvas.width;
-    const h = canvas.height;
-    if (!w || !h) return;
-    const cx = w/2;
-    const cy = h/2;
-    const r = Math.min(w,h)/2;
-    const s = STATES[stateName] || STATES.ready;
-    ctx.clearRect(0,0,w,h);
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(cx,cy,r*.965,0,Math.PI*2);
-    ctx.clip();
-
-    // Inner luminous cloud.
-    const cloud = ctx.createRadialGradient(cx-r*.08,cy-r*.05,r*.05,cx,cy,r*.78);
-    cloud.addColorStop(0, rgba('#ffffff', .16 + energy*.20));
-    cloud.addColorStop(.22, rgba(s.c1, .20 + energy*.26));
-    cloud.addColorStop(.52, rgba(s.c3, .16 + energy*.20));
-    cloud.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = cloud;
-    ctx.fillRect(0,0,w,h);
-
-    // Expanding inner acoustic rings.
-    const pulseCount = 4;
-    for (let i=0;i<pulseCount;i++){
-      const phase = ((t*.55 + i/pulseCount) % 1);
-      const rr = r * (.18 + phase * (.58 + energy*.18));
-      const alpha = (1-phase) * (.08 + energy*.28);
-      ctx.beginPath();
-      ctx.arc(cx,cy,rr,0,Math.PI*2);
-      ctx.strokeStyle = i%2 ? rgba(s.c3, alpha) : rgba(s.c1, alpha);
-      ctx.lineWidth = Math.max(1, r*(.0045 + energy*.004));
-      ctx.stroke();
-    }
-
-    // Clean circular signal: no horizontal waveform bars, only soft round energy rings.
-    const microCount = 3;
-    for (let j=0;j<microCount;j++){
-      const phase = ((t*.82 + j/microCount) % 1);
-      const rr = r * (.10 + phase * (.24 + energy*.12));
-      const alpha = (1-phase) * (.08 + energy*.22);
-      ctx.beginPath();
-      ctx.arc(cx, cy, rr, 0, Math.PI*2);
-      ctx.strokeStyle = j%2 ? rgba(s.c3, alpha) : rgba(s.c1, alpha);
-      ctx.lineWidth = Math.max(1, r*(.0045 + energy*.004));
-      ctx.shadowColor = j%2 ? s.c3 : s.c1;
-      ctx.shadowBlur = r*(.018 + energy*.045);
-      ctx.stroke();
-    }
-
-    // Rotating internal energy arcs.
-    ctx.shadowBlur = r*(.045 + energy*.08);
-    for (let k=0;k<3;k++){
-      const phase = t*(.75 + k*.18) + k*2.1;
-      const rr = r * (.30 + k*.12 + energy*.08);
-      ctx.beginPath();
-      ctx.arc(cx, cy, rr*(.62 + energy*.06), phase, phase + Math.PI*(.70 + energy*.20));
-      ctx.strokeStyle = k%2 ? rgba(s.c3,.10 + energy*.15) : rgba(s.c1,.12 + energy*.16);
-      ctx.lineWidth = Math.max(1, r*(.0045 + energy*.004));
-      ctx.stroke();
-    }
-
-    // Soft central flash on strong peaks.
-    const core = ctx.createRadialGradient(cx,cy,0,cx,cy,r*.34);
-    core.addColorStop(0, rgba('#ffffff', .22 + energy*.35));
-    core.addColorStop(.35, rgba(s.c1, .12 + energy*.25));
-    core.addColorStop(.82, rgba(s.c3, .06 + energy*.13));
-    core.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = core;
-    ctx.beginPath();
-    ctx.arc(cx,cy,r*(.20 + energy*.16),0,Math.PI*2);
-    ctx.fill();
-
-    ctx.restore();
-  }
-
-  function animationLoop(){
-    frame += 1;
-    const t = now()/1000;
-    const age = now() - lastLevelAt;
-    const s = STATES[stateName] || STATES.ready;
-
-    // Fade direct level when bridge pauses, but keep clear synthetic life in active states.
-    const decay = age > 150 ? Math.pow(.985, Math.min(90, (age-150)/16)) : 1;
-    userLevel *= .88;
-    aiLevel *= .88;
-    targetLevel *= .92 * decay;
-
-    const synthetic = syntheticEnergy(stateName, t);
-    const sourceLevel = Math.max(targetLevel, userLevel, aiLevel, s.base + synthetic * s.amp);
-    visualLevel = lerp(visualLevel, clamp01(sourceLevel), LOW_MOTION ? .05 : .16);
-
-    const strong = Math.pow(visualLevel, .72);
-    const coreScale = 1 + strong * (stateName === 'ai_speaking' ? .52 : stateName === 'user_speaking' ? .46 : .31);
-    const haloScale = s.halo + strong * (stateName === 'ai_speaking' ? .25 : stateName === 'user_speaking' ? .22 : .15);
-    const orbScale = s.scale + strong * (stateName === 'ai_speaking' ? .030 : stateName === 'user_speaking' ? .026 : .018);
-
-    root.style.setProperty('--level', visualLevel.toFixed(3));
-    root.style.setProperty('--visual-level', visualLevel.toFixed(3));
-    root.style.setProperty('--core-scale', coreScale.toFixed(3));
-    root.style.setProperty('--halo-scale', haloScale.toFixed(3));
-    root.style.setProperty('--orb-scale', orbScale.toFixed(3));
-    root.style.setProperty('--wave-opacity', String(Math.min(.78, .18 + visualLevel*.56).toFixed(3)));
-    root.style.setProperty('--ring-spread', String(1 + visualLevel*.22));
-
-    if (frame % 3 === 0) resizeCanvas();
-    drawInnerCanvas(t, visualLevel);
-
-    if (DEBUG && frame % 22 === 0) {
-      debugEl.textContent = `[${VERSION}]\nstate=${stateName}\nlevel=${visualLevel.toFixed(3)} target=${targetLevel.toFixed(3)}\nsource=${lastInputSource || '-'}\nageMs=${Math.round(age)}`;
-    }
-    requestAnimationFrame(animationLoop);
-  }
-
-  window.addEventListener('resize', resizeCanvas);
-  window.addEventListener('message', ev => {
-    const d = parseMessage(ev.data);
-    const type = String(d.type || d.event || '').trim();
-
-    if (type === 'ping') {
-      postParent({ type:'avatar:ready', state:stateName });
-      return;
-    }
-    if (type === 'avatar:set' || type === 'avatar:state' || type === 'clarity.avatar') {
-      setState(d.state || d.value || d.status || 'ready');
-      return;
-    }
-    if (type === 'avatar:level' || type === 'clarity.avatar.level') {
-      setLevel(d.value ?? d.level ?? d.audioLevel ?? d.energy ?? 0, d.source || d.kind || d.channel || 'system');
-      return;
-    }
-    if (type === 'avatar:bridge' || type === 'clarity.avatar.bridge') {
-      if (d.state) setState(d.state);
-      if (typeof d.value !== 'undefined' || typeof d.level !== 'undefined') setLevel(d.value ?? d.level, d.source || d.kind || 'system');
-      if (d.data && typeof d.data === 'object') {
-        if (d.data.state) setState(d.data.state);
-        if (typeof d.data.value !== 'undefined' || typeof d.data.level !== 'undefined') setLevel(d.data.value ?? d.data.level, d.data.source || d.data.kind || 'system');
+  const ringGeo = new THREE.PlaneGeometry(6,6,1,1);
+  const ringUniforms = {
+    uTime:{value:0},
+    uLevel:{value:0},
+    uHue:{value:214/255},
+    uSat:{value:0.85},
+    uLig:{value:0.68},
+    uBoost:{value:0.0}
+  };
+  const ringMat = new THREE.ShaderMaterial({
+    transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
+    uniforms:ringUniforms,
+    vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+    fragmentShader:`
+      precision highp float; varying vec2 vUv;
+      uniform float uTime; uniform float uLevel; uniform float uHue; uniform float uSat; uniform float uLig; uniform float uBoost;
+      vec3 hsl2rgb(vec3 hsl){
+        float h=hsl.x,s=hsl.y,l=hsl.z;
+        float c=(1.0-abs(2.0*l-1.0))*s;
+        float x=c*(1.0-abs(mod(h*6.0,2.0)-1.0));
+        float m=l-0.5*c; vec3 rgb;
+        if(h<1.0/6.0) rgb=vec3(c,x,0.0);
+        else if(h<2.0/6.0) rgb=vec3(x,c,0.0);
+        else if(h<3.0/6.0) rgb=vec3(0.0,c,x);
+        else if(h<4.0/6.0) rgb=vec3(0.0,x,c);
+        else if(h<5.0/6.0) rgb=vec3(x,0.0,c);
+        else rgb=vec3(c,0.0,x);
+        return rgb+m;
       }
-      return;
-    }
-    if (type === 'avatar:config') { setConfig(d); return; }
-    if (type === 'avatar:stop') { setState('stopped'); setLevel(0,'system'); return; }
-    if (type === 'avatar:reset') { setState('ready'); setLevel(.14,'system'); return; }
-    if (type === 'avatar:complete') { setState('complete'); setLevel(.85,'system'); return; }
-    if (type === 'avatar:error') { setState('error'); setLevel(.55,'system'); return; }
+      void main(){
+        vec2 p = vUv*2.0-1.0;
+        float d = length(p);
+        float speech = smoothstep(0.0,1.0,uLevel);
+        float R = 0.775 + 0.012*sin(uTime*2.2) + 0.048*speech;
+        float width = 0.028 + 0.026*speech;
+        float edge = abs(d-R);
+        float ring = smoothstep(width, 0.0, edge);
+        float halo = smoothstep(R + 0.22 + speech*0.08, R - 0.01, d);
+        vec3 col = hsl2rgb(vec3(uHue,uSat,uLig));
+        float a = ring*(0.38 + 0.52*speech + 0.10*uBoost) + halo*(0.06 + 0.18*speech);
+        gl_FragColor = vec4(col, a);
+      }`
+  });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.scale.setScalar(1.18);
+  ring.position.z = -0.55;
+  avatarGroup.add(ring);
 
-    // Friendly fallback for direct payloads from Wix.
-    if (d.state && !type) setState(d.state);
-    if ((typeof d.value !== 'undefined' || typeof d.level !== 'undefined') && !type) setLevel(d.value ?? d.level, d.source || 'system');
+  const PALETTES = {
+    idle:      { A:[210/360,0.88,0.42], B:[235/360,0.76,0.28], C:[286/360,0.76,0.34], ring:[214/360,0.84,0.67], glow:0.82, base:0.055, audio:0.16, shellAlpha:0.065, shellStrength:0.18, boost:0.02, rotX:0.05, rotY:0.12, scale:1.00 },
+    ready:     { A:[210/360,0.88,0.43], B:[235/360,0.78,0.29], C:[286/360,0.78,0.35], ring:[214/360,0.84,0.69], glow:0.84, base:0.058, audio:0.17, shellAlpha:0.067, shellStrength:0.18, boost:0.03, rotX:0.05, rotY:0.12, scale:1.00 },
+    listening: { A:[200/360,0.92,0.46], B:[225/360,0.82,0.30], C:[272/360,0.72,0.36], ring:[195/360,0.90,0.72], glow:0.90, base:0.063, audio:0.18, shellAlpha:0.060, shellStrength:0.17, boost:0.05, rotX:0.05, rotY:0.15, scale:1.01 },
+    user_speaking:{ A:[190/360,0.96,0.48], B:[215/360,0.88,0.33], C:[245/360,0.72,0.37], ring:[188/360,0.92,0.73], glow:0.97, base:0.072, audio:0.25, shellAlpha:0.058, shellStrength:0.18, boost:0.10, rotX:0.06, rotY:0.17, scale:1.02 },
+    ai_speaking:{ A:[210/360,0.86,0.44], B:[250/360,0.84,0.32], C:[318/360,0.88,0.43], ring:[310/360,0.92,0.70], glow:1.00, base:0.076, audio:0.28, shellAlpha:0.056, shellStrength:0.20, boost:0.14, rotX:0.06, rotY:0.20, scale:1.025 },
+    speaking:  { A:[210/360,0.86,0.44], B:[250/360,0.84,0.32], C:[318/360,0.88,0.43], ring:[310/360,0.92,0.70], glow:1.00, base:0.076, audio:0.28, shellAlpha:0.056, shellStrength:0.20, boost:0.14, rotX:0.06, rotY:0.20, scale:1.025 },
+    thinking:  { A:[214/360,0.86,0.42], B:[248/360,0.78,0.30], C:[292/360,0.78,0.37], ring:[270/360,0.82,0.68], glow:0.92, base:0.060, audio:0.14, shellAlpha:0.062, shellStrength:0.17, boost:0.05, rotX:0.04, rotY:0.10, scale:1.005 },
+    processing:{ A:[205/360,0.90,0.45], B:[235/360,0.80,0.31], C:[305/360,0.84,0.40], ring:[220/360,0.92,0.70], glow:0.98, base:0.070, audio:0.18, shellAlpha:0.058, shellStrength:0.19, boost:0.10, rotX:0.05, rotY:0.18, scale:1.015 },
+    complete:  { A:[190/360,0.88,0.50], B:[220/360,0.80,0.35], C:[290/360,0.72,0.42], ring:[185/360,0.88,0.76], glow:0.98, base:0.060, audio:0.16, shellAlpha:0.060, shellStrength:0.18, boost:0.10, rotX:0.05, rotY:0.14, scale:1.01 },
+    error:     { A:[210/360,0.72,0.43], B:[260/360,0.62,0.30], C:[340/360,0.82,0.42], ring:[10/360,0.88,0.68], glow:0.92, base:0.058, audio:0.13, shellAlpha:0.064, shellStrength:0.18, boost:0.08, rotX:0.04, rotY:0.10, scale:1.00 }
+  };
+
+  let currentState = 'idle';
+  let rotX = 0.05, rotY = 0.12;
+  let targetLevel = 0, currentLevel = 0, lastSignal = performance.now();
+  let targetScaleBase = 1.0, currentScale = 1.0;
+
+  function applyPalette(stateName){
+    const s = PALETTES[stateName] || PALETTES.idle;
+    uniforms.uColorA.value.set(s.A[0], s.A[1], s.A[2]);
+    uniforms.uColorB.value.set(s.B[0], s.B[1], s.B[2]);
+    uniforms.uColorC.value.set(s.C[0], s.C[1], s.C[2]);
+    uniforms.uGlow.value = s.glow;
+    uniforms.uBaseAmp.value = s.base;
+    uniforms.uAudioAmp.value = s.audio;
+    uniforms.uColorBoost.value = s.boost;
+    ringUniforms.uHue.value = s.ring[0];
+    ringUniforms.uSat.value = s.ring[1];
+    ringUniforms.uLig.value = s.ring[2];
+    ringUniforms.uBoost.value = s.boost;
+    glassUniforms.uAlpha.value = s.shellAlpha;
+    glassUniforms.uStrength.value = s.shellStrength;
+    rotX = s.rotX; rotY = s.rotY;
+    targetScaleBase = s.scale;
+    currentState = stateName;
+  }
+
+  function normalizeState(s){
+    if(!s) return 'idle';
+    const map = {
+      idle:'idle',
+      ready:'ready',
+      listening:'listening',
+      user_speaking:'user_speaking',
+      userSpeaking:'user_speaking',
+      ai_speaking:'ai_speaking',
+      aiSpeaking:'ai_speaking',
+      speaking:'speaking',
+      thinking:'thinking',
+      processing:'processing',
+      complete:'complete',
+      completed:'complete',
+      error:'error'
+    };
+    return map[s] || 'idle';
+  }
+
+  function setState(state='idle'){
+    applyPalette(normalizeState(state));
+    lastSignal = performance.now();
+  }
+
+  function setLevel(v=0){
+    targetLevel = Math.max(0, Math.min(1, Number(v) || 0));
+    lastSignal = performance.now();
+  }
+
+  let prevTime = performance.now()/1000;
+  const nobreath = new URLSearchParams(location.search).get('nobreath') === '1';
+
+  function frame(){
+    requestAnimationFrame(frame);
+    const now = performance.now()/1000;
+    const dt = Math.min(now - prevTime, 0.05);
+    prevTime = now;
+
+    const since = performance.now() - lastSignal;
+    const isSpeakingState = currentState === 'user_speaking' || currentState === 'ai_speaking' || currentState === 'speaking';
+    const fallback = (!nobreath && since > 2800)
+      ? (isSpeakingState ? (Math.sin(now*2.2)*0.5+0.5)*0.32 : (Math.sin(now*1.25)*0.5+0.5)*0.18)
+      : targetLevel;
+
+    currentLevel = currentLevel * 0.84 + fallback * 0.16;
+    uniforms.uLevel.value = currentLevel;
+    uniforms.uTime.value += dt;
+    ringUniforms.uTime.value += dt;
+    ringUniforms.uLevel.value = currentLevel;
+
+    innerSphere.rotation.y += rotY * dt;
+    innerSphere.rotation.x += rotX * dt;
+
+    const speechScale = isSpeakingState ? (0.016 + currentLevel * 0.062) : (0.008 + currentLevel * 0.032);
+    const pulse = Math.sin(now * (isSpeakingState ? 5.4 : 2.2)) * (isSpeakingState ? 0.006 : 0.003);
+    const wantedScale = targetScaleBase + speechScale + pulse;
+    currentScale = currentScale * 0.84 + wantedScale * 0.16;
+    avatarGroup.scale.setScalar(currentScale);
+
+    ring.scale.setScalar(1.18 + currentLevel * (isSpeakingState ? 0.07 : 0.03));
+    ring.lookAt(camera.position);
+
+    renderer.render(scene, camera);
+  }
+  frame();
+
+  addEventListener('resize', ()=>{
+    renderer.setSize(innerWidth, innerHeight);
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    uniforms.uAspect.value = innerWidth/innerHeight;
   });
 
-  // Public mini API for manual tests in browser console.
-  window.ClarityAvatar = {
-    version: VERSION,
-    setState,
-    setLevel,
-    stop: () => setState('stopped'),
-    reset: () => { setState('ready'); setLevel(.14, 'system'); },
-    complete: () => { setState('complete'); setLevel(.85, 'system'); }
-  };
+  function handleMessage(data, sourceWindow){
+    const d = typeof data === 'string' ? (()=>{ try { return JSON.parse(data); } catch(e){ return null; } })() : data;
+    if(!d || typeof d !== 'object') return;
 
-  applyState('ready');
-  resizeCanvas();
-  setLevel(.16, 'system');
-  requestAnimationFrame(animationLoop);
+    if(d.type === 'avatar:set') setState(d.state || 'idle');
+    if(d.type === 'avatar:level') setLevel(d.value);
+    if(d.type === 'avatar:stop') { setLevel(0); setState('idle'); }
+    if(d.type === 'avatar:reset') { setLevel(0); setState('idle'); }
+    if(d.type === 'avatar:complete') { setState('complete'); setLevel(0.15); }
+    if(d.type === 'avatar:error') { setState('error'); }
+    if(d.type === 'avatar:bridge'){
+      if(d.state) setState(d.state);
+      if(typeof d.value !== 'undefined') setLevel(d.value);
+    }
+    if(d.type === 'ping') sourceWindow?.postMessage?.({type:'avatar:ready'}, '*');
+  }
 
-  postParent({ type:'avatar:ready', state:stateName });
-  log('ready', { lang:LANG, label:SHOW_LABEL, bg:document.body.classList.contains('bg') });
+  addEventListener('message', (ev)=> handleMessage(ev.data, ev.source));
+
+  setState('idle');
+  setLevel(0);
+  setTimeout(()=> parent?.postMessage?.({type:'avatar:ready'}, '*'), 40);
 })();
 </script>
 </body>
