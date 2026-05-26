@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v3.12.1 ASSESSMENT_END_LOCK: based on v3.12.0; adds assessment-only target autofinish/hangup lock without changing interview drivers -->
+  <!-- v3.12.2 ASSESSMENT_HYBRID_HANDOFF_RESTORE: based on v3.12.0; keeps assessment auto-end lock and restores hybrid spoken-to-chat handoff text -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -2461,7 +2461,7 @@
       return;
     }
 
-    if (isInterviewHybrid(CTX)) {
+    if (isInterviewHybrid(CTX) || isAssessmentHybridLive(CTX)) {
       sendFinalCloseInstruction(source || 'hard_end_hybrid_handoff', true);
       return;
     }
@@ -2490,10 +2490,19 @@
 
     if (speakFinal && !FINAL_MESSAGE_SPOKEN) {
       const lk = activeInterviewLang(CTX);
-      const finalClose = finalClosingText({ ...CTX, lang: lk });
+      const profile = langProfile(lk);
+      const finalClose = isAssessmentHybridLive(CTX)
+        ? (assessmentHybridClosingText(CTX, lk, profile) || finalClosingText({ ...CTX, lang: lk }))
+        : finalClosingText({ ...CTX, lang: lk });
+      const isAssessmentEnd = isAssessmentVoiceLive(CTX);
+      const isHybridEnd = isAssessmentHybridLive(CTX);
       const instruction = lk === 'de'
-        ? `Das Interview ist jetzt endgültig abgeschlossen. Stelle keine weitere Frage. Sage jetzt exakt diesen Abschluss ohne zusätzliche Erklärungen: „${finalClose}“ Danach rufe end_interview auf.`
-        : `The interview is now definitively complete. Do not ask another question. Now say exactly this closing message without additional explanation: “${finalClose}” Then call end_interview.`;
+        ? (isHybridEnd
+          ? `Der mündliche Teil ist jetzt abgeschlossen. Stelle keine weitere mündliche Frage. Sage jetzt exakt diesen Übergabesatz ohne zusätzliche Erklärungen: „${finalClose}“ Danach rufe end_interview auf.`
+          : `${isAssessmentEnd ? 'Das Assessment' : 'Das Interview'} ist jetzt endgültig abgeschlossen. Stelle keine weitere Frage. Sage jetzt exakt diesen Abschluss ohne zusätzliche Erklärungen: „${finalClose}“ Danach rufe end_interview auf.`)
+        : (isHybridEnd
+          ? `The spoken part is now complete. Do not ask another spoken question. Now say exactly this handoff message without additional explanation: “${finalClose}” Then call end_interview.`
+          : `The ${isAssessmentEnd ? 'assessment' : 'interview'} is now definitively complete. Do not ask another question. Now say exactly this closing message without additional explanation: “${finalClose}” Then call end_interview.`);
 
       try {
         if (isVideoOnlyInterview(CTX)) {
@@ -2597,11 +2606,13 @@
 
     const lk = activeInterviewLang(CTX);
     const profile = langProfile(lk);
-    const finalClose = isInterviewHybrid(CTX)
-      ? (interviewHybridClosingText(CTX, lk, profile) || finalClosingText({ ...CTX, lang: lk }))
-      : finalClosingText({ ...CTX, lang: lk });
     const isAssessmentEnd = isAssessmentVoiceLive(CTX);
     const isHybridEnd = isInterviewHybrid(CTX) || isAssessmentHybridLive(CTX);
+    const finalClose = isAssessmentHybridLive(CTX)
+      ? (assessmentHybridClosingText(CTX, lk, profile) || finalClosingText({ ...CTX, lang: lk }))
+      : (isInterviewHybrid(CTX)
+        ? (interviewHybridClosingText(CTX, lk, profile) || finalClosingText({ ...CTX, lang: lk }))
+        : finalClosingText({ ...CTX, lang: lk }));
     const instruction = lk === 'de'
       ? (isHybridEnd
         ? `Der mündliche Teil ist jetzt abgeschlossen. Stelle keine weitere mündliche Frage. Sage jetzt exakt diesen Übergabesatz ohne zusätzliche Erklärungen: „${finalClose}“ Danach rufe end_interview auf.`
