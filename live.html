@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v3.12.0 MODE_SPLIT_DRIVER: based on stable v3.11.8 MIX_ORAL_TARGET_LOCK; keeps Avatar Bridge; adds separate Audio/Video/Mix driver helpers and deterministic Video-only question control -->
+  <!-- v3.12.1 ASSESSMENT_END_LOCK: based on v3.12.0; adds assessment-only target autofinish/hangup lock without changing interview drivers -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -1482,9 +1482,12 @@
       return { role:'assistant', turnType:'system', questionIndex: structuredCurrentQuestionIndex || nextNo, subTurnIndex: structuredCurrentSubTurnIndex || 0, isMainQuestion:false, isFollowUp:false, isIncludedInReport:false, isTechnical:true };
     }
     structuredCurrentQuestionIndex = nextNo;
-    if (isInterviewLiveContext(CTX) && structuredCurrentQuestionIndex >= target && !targetMainQuestionReachedAt) {
+    const assessmentTarget = isAssessmentVoiceLive(CTX) ? assessmentLiveQuestionTarget(CTX) : 0;
+    const reachedInterviewTarget = isInterviewLiveContext(CTX) && structuredCurrentQuestionIndex >= interviewLiveQuestionTarget(CTX);
+    const reachedAssessmentTarget = isAssessmentVoiceLive(CTX) && structuredCurrentQuestionIndex >= assessmentTarget;
+    if ((reachedInterviewTarget || reachedAssessmentTarget) && !targetMainQuestionReachedAt) {
       targetMainQuestionReachedAt = Date.now();
-      scheduleTargetReachedAutoFinish('target_main_question_asked', TARGET_QUESTION_ANSWER_GRACE_MS);
+      scheduleTargetReachedAutoFinish(reachedAssessmentTarget ? 'assessment_target_main_question_asked' : 'target_main_question_asked', TARGET_QUESTION_ANSWER_GRACE_MS);
     }
     structuredCurrentSubTurnIndex = 0;
     structuredAwaitingFollowUpQuestion = false;
@@ -1784,6 +1787,54 @@
     }
 
     // Default Mix policy: about 70% spoken, remaining slots in chat.
+    return defaultOralTarget;
+  }
+
+
+  function assessmentModeName(ctx = CTX){
+    return String(ctx?.assessmentMode || ctx?.mode || (AUDIO_ONLY ? 'audio' : 'video')).toLowerCase().replace(/[+\s-]+/g, '_');
+  }
+
+  function isAssessmentHybridLive(ctx = CTX){
+    if (!isAssessmentContext(ctx)) return false;
+    const m = assessmentModeName(ctx);
+    return m === 'audio_chat' || m === 'video_chat' || m === 'mix' || m === 'mixmode' || m === 'hybrid';
+  }
+
+  function isAssessmentVoiceLive(ctx = CTX){
+    if (!isAssessmentContext(ctx)) return false;
+    return assessmentModeName(ctx) !== 'chat';
+  }
+
+  function assessmentLiveQuestionTarget(ctx = CTX){
+    const total = interviewMainQuestionTarget(ctx);
+    if (!isAssessmentVoiceLive(ctx)) return total;
+    if (!isAssessmentHybridLive(ctx)) return total;
+
+    const defaultOralTarget = hybridDefaultOralTarget(total);
+    const explicitSpoken = Number(
+      ctx?.spokenQuestionCount ||
+      ctx?.mediaQuestionCount ||
+      ctx?.oralQuestionCount ||
+      ctx?.voiceQuestionCount ||
+      ctx?.videoQuestionCount ||
+      0
+    );
+    if (Number.isFinite(explicitSpoken) && explicitSpoken > 0) {
+      return Math.max(1, Math.min(total, Math.round(explicitSpoken)));
+    }
+
+    const chatQ = Number(
+      ctx?.chatQuestionCount ||
+      ctx?.writtenQuestionCount ||
+      ctx?.textQuestionCount ||
+      ctx?.chatQuestionsCount ||
+      0
+    );
+    if (Number.isFinite(chatQ) && chatQ > 0 && chatQ < total) {
+      return Math.max(1, Math.min(total, total - Math.round(chatQ)));
+    }
+
     return defaultOralTarget;
   }
 
@@ -2484,8 +2535,10 @@
 
   function scheduleStrictTargetFinalization(source, delayMs){
     if (END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK) return;
-    if (!isInterviewLiveContext(CTX)) return;
-    if (structuredCurrentQuestionIndex < interviewLiveQuestionTarget(CTX) && !nearCompleteVideoOnlyByRuntime(CTX)) return;
+    const assessmentTarget = isAssessmentVoiceLive(CTX) ? assessmentLiveQuestionTarget(CTX) : 0;
+    const isAssessmentTargetReached = isAssessmentVoiceLive(CTX) && structuredCurrentQuestionIndex >= assessmentTarget;
+    if (!isInterviewLiveContext(CTX) && !isAssessmentTargetReached) return;
+    if (isInterviewLiveContext(CTX) && structuredCurrentQuestionIndex < interviewLiveQuestionTarget(CTX) && !nearCompleteVideoOnlyByRuntime(CTX)) return;
 
     const delay = Math.max(1000, Number(delayMs) || TARGET_FINALIZE_AFTER_ANSWER_MS);
     try { if (targetAutoFinishTimer) clearTimeout(targetAutoFinishTimer); } catch(_) {}
@@ -2526,7 +2579,7 @@
     if (END_CALLED || FINAL_HANGUP_TIMER) return;
     if (!forced && !shouldAutoFinishInterview()) return;
 
-    if (forced && isInterviewLiveContext(CTX)) {
+    if (forced && (isInterviewLiveContext(CTX) || isAssessmentVoiceLive(CTX))) {
       HARD_END_LOCK = true;
       TARGET_FINALIZE_REQUESTED = true;
       clearHardEndTimers();
@@ -2547,13 +2600,15 @@
     const finalClose = isInterviewHybrid(CTX)
       ? (interviewHybridClosingText(CTX, lk, profile) || finalClosingText({ ...CTX, lang: lk }))
       : finalClosingText({ ...CTX, lang: lk });
+    const isAssessmentEnd = isAssessmentVoiceLive(CTX);
+    const isHybridEnd = isInterviewHybrid(CTX) || isAssessmentHybridLive(CTX);
     const instruction = lk === 'de'
-      ? (isInterviewHybrid(CTX)
+      ? (isHybridEnd
         ? `Der mündliche Teil ist jetzt abgeschlossen. Stelle keine weitere mündliche Frage. Sage jetzt exakt diesen Übergabesatz ohne zusätzliche Erklärungen: „${finalClose}“ Danach rufe end_interview auf.`
-        : `Das Interview ist jetzt abgeschlossen. Stelle keine weitere Frage. Sage jetzt exakt diesen Abschluss ohne zusätzliche Erklärungen: „${finalClose}“ Danach rufe end_interview auf.`)
-      : (isInterviewHybrid(CTX)
+        : `${isAssessmentEnd ? 'Das Assessment' : 'Das Interview'} ist jetzt abgeschlossen. Stelle keine weitere Frage. Sage jetzt exakt diesen Abschluss ohne zusätzliche Erklärungen: „${finalClose}“ Danach rufe end_interview auf.`)
+      : (isHybridEnd
         ? `The spoken part is now complete. Do not ask another spoken question. Now say exactly this handoff message without additional explanation: “${finalClose}” Then call end_interview.`
-        : `The interview is now complete. Do not ask another question. Now say exactly this closing message without additional explanation: “${finalClose}” Then call end_interview.`);
+        : `The ${isAssessmentEnd ? 'assessment' : 'interview'} is now complete. Do not ask another question. Now say exactly this closing message without additional explanation: “${finalClose}” Then call end_interview.`);
 
     log('[END] autofinish requested', {
       source: source || '',
@@ -2788,9 +2843,12 @@
   }
 
   function scheduleTargetReachedAutoFinish(source, delayMs){
-    if (!isInterviewLiveContext(CTX)) return;
+    const assessmentTarget = isAssessmentVoiceLive(CTX) ? assessmentLiveQuestionTarget(CTX) : 0;
+    const assessmentReached = isAssessmentVoiceLive(CTX) && structuredCurrentQuestionIndex >= assessmentTarget;
+    if (!isInterviewLiveContext(CTX) && !assessmentReached) return;
     if (END_CALLED || FINAL_HANGUP_TIMER) return;
-    if (structuredCurrentQuestionIndex < interviewLiveQuestionTarget(CTX) && !nearCompleteVideoOnlyByRuntime(CTX)) return;
+    if (isInterviewLiveContext(CTX) && structuredCurrentQuestionIndex < interviewLiveQuestionTarget(CTX) && !nearCompleteVideoOnlyByRuntime(CTX)) return;
+    if (isAssessmentVoiceLive(CTX) && structuredCurrentQuestionIndex < assessmentTarget) return;
 
     const delay = Number.isFinite(Number(delayMs)) ? Number(delayMs) : TARGET_QUESTION_ANSWER_GRACE_MS;
     try { if (targetAutoFinishTimer) clearTimeout(targetAutoFinishTimer); } catch(_) {}
@@ -2798,13 +2856,14 @@
       if (END_CALLED || FINAL_HANGUP_TIMER) return;
 
       // v3.11.7: For Mix/Video+Chat the spoken target is intentionally lower than the
-      // full Q-set. The remaining slots are handled by chat. The old full-target guard
-      // blocked automatic handoff at Q7/10, so the correct handoff sentence could be
-      // spoken but the technical finalizer did not reliably run.
-      const requiredTarget = isInterviewHybrid(CTX) ? interviewLiveQuestionTarget(CTX) : interviewMainQuestionTarget(CTX);
+      // full Q-set. The remaining slots are handled by chat. Assessment hybrid follows
+      // the same principle, but remains isolated from the Interview driver.
+      const requiredTarget = isAssessmentVoiceLive(CTX)
+        ? assessmentTarget
+        : (isInterviewHybrid(CTX) ? interviewLiveQuestionTarget(CTX) : interviewMainQuestionTarget(CTX));
       if (structuredCurrentQuestionIndex < requiredTarget && !nearCompleteVideoOnlyByRuntime(CTX)) return;
 
-      requestHardEnd(source || (isInterviewHybrid(CTX) ? 'hybrid_spoken_target_reached_timer' : 'target_reached_timer'), { speakFinal: true, cancelActive: true });
+      requestHardEnd(source || (isAssessmentHybridLive(CTX) || isInterviewHybrid(CTX) ? 'hybrid_spoken_target_reached_timer' : 'target_reached_timer'), { speakFinal: true, cancelActive: true });
     }, Math.max(1500, delay));
 
     log('[END] target reached autofinish scheduled', {
@@ -2812,8 +2871,9 @@
       delayMs: Math.max(1500, delay),
       mainQuestions: structuredCurrentQuestionIndex,
       targetQuestions: interviewMainQuestionTarget(CTX),
-      liveTargetQuestions: interviewLiveQuestionTarget(CTX),
-      hybrid: isInterviewHybrid(CTX),
+      liveTargetQuestions: isAssessmentVoiceLive(CTX) ? assessmentTarget : interviewLiveQuestionTarget(CTX),
+      hybrid: isInterviewHybrid(CTX) || isAssessmentHybridLive(CTX),
+      assessment: isAssessmentVoiceLive(CTX),
       userUtterances,
       userAudioItems
     });
@@ -2832,10 +2892,13 @@
       mainQuestions: structuredCurrentQuestionIndex,
       targetQuestions: interviewMainQuestionTarget(CTX)
     });
-    if (structuredCurrentQuestionIndex >= interviewLiveQuestionTarget(CTX) || nearCompleteVideoOnlyByRuntime(CTX)) {
+    const assessmentTarget = isAssessmentVoiceLive(CTX) ? assessmentLiveQuestionTarget(CTX) : 0;
+    const assessmentReached = isAssessmentVoiceLive(CTX) && structuredCurrentQuestionIndex >= assessmentTarget;
+    if (structuredCurrentQuestionIndex >= interviewLiveQuestionTarget(CTX) || nearCompleteVideoOnlyByRuntime(CTX) || assessmentReached) {
       const q = structuredCurrentQuestionIndex || 0;
       const delay = structuredFollowUpAskedForQuestion[q] ? TARGET_FINALIZE_AFTER_ANSWER_MS : TARGET_FOLLOWUP_WAIT_MS;
-      scheduleStrictTargetFinalization('candidate_audio_after_target', delay);
+      if (assessmentReached) scheduleTargetReachedAutoFinish('assessment_candidate_audio_after_target', delay);
+      else scheduleStrictTargetFinalization('candidate_audio_after_target', delay);
       if (isVideoOnlyInterview(CTX)) scheduleVideoOnlyDriver('candidate_audio_after_target', delay + 500);
     } else {
       scheduleInterviewAutoFinishCheck('candidate_audio_item');
@@ -3308,8 +3371,9 @@
         avatarLevel('user', 0.12, 'user_transcript_completed');
 
         userUtterances += 1;
-        if (structuredCurrentQuestionIndex >= interviewMainQuestionTarget(CTX)) {
-          scheduleTargetReachedAutoFinish('user_transcript_after_target', STRUCTURED_AUTOFINISH_IDLE_MS);
+        const assessmentTarget = isAssessmentVoiceLive(CTX) ? assessmentLiveQuestionTarget(CTX) : 0;
+        if (structuredCurrentQuestionIndex >= interviewMainQuestionTarget(CTX) || (assessmentTarget && structuredCurrentQuestionIndex >= assessmentTarget)) {
+          scheduleTargetReachedAutoFinish(isAssessmentVoiceLive(CTX) ? 'assessment_user_transcript_after_target' : 'user_transcript_after_target', STRUCTURED_AUTOFINISH_IDLE_MS);
         } else {
           scheduleInterviewAutoFinishCheck('user_transcript_completed');
         }
@@ -3620,10 +3684,12 @@
 
     /* RESPONSE DONE — GA safety: after the target is reached, do not wait forever for user transcription events. */
     if (eventType === 'response.done' || eventType === 'response.completed') {
-      if (isInterviewLiveContext(CTX) && structuredCurrentQuestionIndex >= interviewLiveQuestionTarget(CTX)) {
-        // v3.11.7: In Hybrid/Mix the spoken target is e.g. 7/10. Once that response is done,
-        // schedule the handoff finalizer instead of waiting for the full Q10/Q20 count.
-        scheduleTargetReachedAutoFinish(isInterviewHybrid(CTX) ? 'hybrid_response_done_after_spoken_target' : 'response_done_after_target', isInterviewHybrid(CTX) ? TARGET_FINALIZE_AFTER_ANSWER_MS : STRUCTURED_AUTOFINISH_IDLE_MS);
+      const assessmentTarget = isAssessmentVoiceLive(CTX) ? assessmentLiveQuestionTarget(CTX) : 0;
+      if ((isInterviewLiveContext(CTX) && structuredCurrentQuestionIndex >= interviewLiveQuestionTarget(CTX)) || (assessmentTarget && structuredCurrentQuestionIndex >= assessmentTarget)) {
+        // v3.11.7/v3.12.1: In Hybrid/Mix the spoken target is e.g. 7/10. Once that response is done,
+        // schedule the handoff/finalizer instead of waiting for the full Q10/Q20 count.
+        const hybridDone = isInterviewHybrid(CTX) || isAssessmentHybridLive(CTX);
+        scheduleTargetReachedAutoFinish(hybridDone ? 'hybrid_response_done_after_spoken_target' : (isAssessmentVoiceLive(CTX) ? 'assessment_response_done_after_target' : 'response_done_after_target'), hybridDone ? TARGET_FINALIZE_AFTER_ANSWER_MS : STRUCTURED_AUTOFINISH_IDLE_MS);
       }
       return;
     }
