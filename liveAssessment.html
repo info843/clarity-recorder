@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v3.12.2 ASSESSMENT_HYBRID_HANDOFF_RESTORE: based on v3.12.0; keeps assessment auto-end lock and restores hybrid spoken-to-chat handoff text -->
+  <!-- liveAssessment v1.1 ASSESSMENT_STRICT_TIMERS: separated Assessment live driver, shorter handoff/hangup buffers -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -253,7 +253,7 @@
   // bevor Audio, Mikrofon, Kamera und Recorder gestoppt werden.
   const FINAL_HANGUP_BUFFER_MS = Math.max(
     2500,
-    Math.min(65000, Number(Q.get('finalHangupBufferMs') || 55000) || 55000)
+    Math.min(45000, Number(Q.get('finalHangupBufferMs') || 12000) || 12000)
   );
 
   if (DEBUG_UI) document.body.classList.add('debug-ui');
@@ -1176,9 +1176,9 @@
   let ABSOLUTE_FINALIZE_TIMER = null;
   let MODEL_END_NO_FINAL_TIMER = null;
   let SLOT_STALL_TIMER = null;
-  const TARGET_QUESTION_ANSWER_GRACE_MS = Math.max(30000, Math.min(120000, Number(Q.get('targetAnswerGraceMs') || 65000) || 65000));
+  const TARGET_QUESTION_ANSWER_GRACE_MS = Math.max(8000, Math.min(60000, Number(Q.get('targetAnswerGraceMs') || 18000) || 18000));
   const TARGET_FOLLOWUP_WAIT_MS = Math.max(6000, Math.min(20000, Number(Q.get('targetFollowupWaitMs') || 11000) || 11000));
-  const TARGET_FINALIZE_AFTER_ANSWER_MS = Math.max(2000, Math.min(9000, Number(Q.get('targetFinalizeAfterAnswerMs') || 3500) || 3500));
+  const TARGET_FINALIZE_AFTER_ANSWER_MS = Math.max(1000, Math.min(7000, Number(Q.get('targetFinalizeAfterAnswerMs') || 1800) || 1800));
   const EXTRA_AFTER_TARGET_FINISH_MS = Math.max(1000, Math.min(8000, Number(Q.get('extraAfterTargetFinishMs') || 2500) || 2500));
   const HARD_END_WATCHDOG_MS = Math.max(9000, Math.min(30000, Number(Q.get('hardEndWatchdogMs') || 14000) || 14000));
   const SLOT_FOLLOWUP_STALL_MS = Math.max(9000, Math.min(26000, Number(Q.get('slotFollowupStallMs') || 14500) || 14500));
@@ -1241,7 +1241,7 @@
   let VIDEO_DRIVER_LAST_AT = 0;
   let VIDEO_DRIVER_FINAL_LOCK = false;
 
-  const STRUCTURED_AUTOFINISH_IDLE_MS = Math.max(12000, Math.min(45000, Number(Q.get('autoFinishIdleMs') || 22000) || 22000));
+  const STRUCTURED_AUTOFINISH_IDLE_MS = Math.max(4000, Math.min(30000, Number(Q.get('autoFinishIdleMs') || 6500) || 6500));
   const STRUCTURED_AUTOFINISH_FORCE_MS = Math.max(8000, Math.min(30000, Number(Q.get('autoFinishForceMs') || 16000) || 16000));
 
 
@@ -2960,12 +2960,12 @@
   }
 
   function effectiveFinalHangupBufferMs(){
-    const base = Math.max(2500, Number(FINAL_HANGUP_BUFFER_MS) || 55000);
-    // Interview closing text is intentionally long and candidate-facing. Keep assessment on its
-    // established value, but give interviews enough time so the final sentence is not cut off.
-    // Video/Audio/Mix share this buffer only after the driver has already reached its final state.
-    if (isInterviewLiveContext(CTX)) return Math.max(52000, Math.min(65000, base));
-    return Math.max(2500, Math.min(36000, base));
+    const base = Math.max(2500, Number(FINAL_HANGUP_BUFFER_MS) || 12000);
+    // liveAssessment.html is Assessment-only. Hybrid/Mix only needs the short handoff sentence
+    // before recorder finish and chat takeover. Audio/video-only gets a slightly longer closing.
+    if (isAssessmentHybridLive(CTX)) return Math.max(9000, Math.min(14000, base));
+    if (isAssessmentVoiceLive(CTX)) return Math.max(11000, Math.min(18000, base));
+    return Math.max(2500, Math.min(18000, base));
   }
 
   function beginFinalHangup(source){
@@ -3991,8 +3991,8 @@
     const qset = String(ctx?.questionSet || ctx?.interviewConfig?.questionSet || `Q${maxQ}`).toUpperCase();
     const area = assessmentArea(ctx);
     const chatQ = Number(ctx?.chatQuestionCount || 0);
-    const hybridNoteDe = chatQ > 0 ? ` Dies ist nur der mündliche Teil eines Hybrid-Assessments. Stelle hier höchstens ${maxQ} mündliche Hauptfragen; der restliche schriftliche Teil folgt im Chat. Erwähne am Ende, dass anschließend ein kurzer schriftlicher Teil folgt.` : '';
-    const hybridNoteEn = chatQ > 0 ? ` This is only the spoken part of a hybrid assessment. Ask at most ${maxQ} spoken main questions here; the remaining written part follows in chat. At the end, mention that a short written part will follow.` : '';
+    const hybridNoteDe = chatQ > 0 ? ` Dies ist nur der mündliche Teil eines Hybrid-Assessments. Stelle hier GENAU ${maxQ} mündliche Hauptfragen; der restliche schriftliche Teil folgt im Chat. Nach der Antwort auf die letzte mündliche Frage folgt ausschließlich der Übergabesatz, keine weitere Frage.` : '';
+    const hybridNoteEn = chatQ > 0 ? ` This is only the spoken part of a hybrid assessment. Ask EXACTLY ${maxQ} spoken main questions here; the remaining written part follows in chat. After the answer to the last spoken question, only say the handoff message and ask no further question.` : '';
     if (lk === 'de') {
       return `Analysetiefe ${qset}: Stelle maximal ${maxQ} Hauptfragen für die ${assessmentAreaLabel(area, lk)}. Stelle immer nur EINE Frage zur Zeit. Keine kundeneigenen Interviewfragen verwenden. Beende die Analyse erst nach ausreichend Antworten und nach einer klaren Abschlussmeldung.${hybridNoteDe}`;
     }
@@ -4029,7 +4029,7 @@
         `Analysebereich: ${assessmentAreaLabel(area, lk)}.`,
         assessmentFocusText(area, lk, hasPosition),
         assessmentQuestionPolicyText(ctx, lk),
-        'Stelle niemals zwei Fragen in einer Nachricht. Jede Nachricht darf maximal eine Frage enthalten.',
+        'Stelle niemals zwei Fragen in einer Nachricht. Jede Nachricht darf maximal eine Frage enthalten. Dies ist keine Coaching- oder Trainingssituation: keine Verbesserungsvorschläge, keine Bitte um bessere Formulierung, keine zweite Chance, keine zusätzlichen Nachfragen.',
         'Nach jeder Frage warten, bis die Person wirklich fertig geantwortet hat. Kurze Atemgeräusche, Füllwörter oder sehr kurze Geräusche zählen NICHT als Antwort. Warte nach einer Antwort einen natürlichen Moment, damit die Person ergänzen kann, und stelle erst dann die nächste Frage.',
         'Starte die erste Frage erst, nachdem die Person „bereit“ gesagt hat oder nach Fallback-Timeout.',
         `Wenn alle mündlichen Assessment-Fragen abgeschlossen sind, sage zum Abschluss EXAKT diesen Satz, ohne technische Details hinzuzufügen: „${assessmentClose}“ Danach rufe end_interview auf.`,
@@ -4042,7 +4042,7 @@
       `Assessment area: ${assessmentAreaLabel(area, lk)}.`,
       assessmentFocusText(area, lk, hasPosition),
       assessmentQuestionPolicyText(ctx, lk),
-      'Never ask two questions in one message. Each assistant message may contain at most one question.',
+      'Never ask two questions in one message. Each assistant message may contain at most one question. This is not coaching or training: no improvement suggestions, no request to rephrase better, no second chance, no additional follow-up questions.',
       'After each question, wait until the participant has truly finished answering. Breathing, filler words, or very short noises do NOT count as an answer. Leave a natural pause after each answer so the participant can add more, and only then continue.',
       `Ask the first question only after the user says one of these readiness words or after the fallback timeout: ${(profile.readyWords || ['ready']).join(', ')}.`,
       `When all assessment questions are completed, say exactly this closing message in ${profile.englishName} and do not add technical details: “${assessmentClose}” Then call end_interview.`,
