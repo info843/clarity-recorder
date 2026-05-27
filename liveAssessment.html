@@ -2417,7 +2417,7 @@
   }
 
 
-  /* ===== Assessment v2.0 Deterministic Slot Engine =====
+  /* ===== Assessment v2.2 Turn-Locked Slot Engine =====
      Product rule for Modul1:
      - Assessment is not a free interview and not a coaching session.
      - One fixed slot question -> one participant answer -> next slot.
@@ -2440,7 +2440,10 @@
     stallTimer: null,
     lastAssistantAt: 0,
     lastUserAt: 0,
-    answers: Object.create(null)
+    answers: Object.create(null),
+    phase: 'idle',
+    slotAskedAt: 0,
+    slotListenSince: 0
   };
 
   function assessmentV2IsActive(){
@@ -2505,7 +2508,32 @@
     ASSESSMENT_V2.lastAssistantAt = 0;
     ASSESSMENT_V2.lastUserAt = 0;
     ASSESSMENT_V2.answers = Object.create(null);
-    try { log('[ASSESSMENT_V2] reset', { reason, target: assessmentV2Target(), total: assessmentV2TotalTarget(), mode: assessmentModeName(CTX), hybrid: assessmentV2IsHybrid() }); } catch(_) {}
+    ASSESSMENT_V2.phase = 'idle';
+    ASSESSMENT_V2.slotAskedAt = 0;
+    ASSESSMENT_V2.slotListenSince = 0;
+    assessmentV2Debug('reset', { reason, target: assessmentV2Target(), total: assessmentV2TotalTarget(), mode: assessmentModeName(CTX), hybrid: assessmentV2IsHybrid() });
+  }
+
+  function assessmentV2Debug(stage, data = {}){
+    try {
+      const payload = {
+        stage: String(stage || ''),
+        phase: ASSESSMENT_V2.phase || '',
+        asked: ASSESSMENT_V2.asked || 0,
+        answered: ASSESSMENT_V2.answered || 0,
+        awaitingAnswer: !!ASSESSMENT_V2.awaitingAnswer,
+        lastAskedNo: ASSESSMENT_V2.lastAskedNo || 0,
+        target: assessmentV2Target(),
+        total: assessmentV2TotalTarget(),
+        finalLock: !!ASSESSMENT_V2.finalLock,
+        structuredCurrentQuestionIndex: structuredCurrentQuestionIndex || 0,
+        source: data?.source || '',
+        extra: data || {},
+        ts: new Date().toISOString()
+      };
+      log('[ASSESSMENT_V2.2]', payload);
+      try { postToParent('clarity.assessment.v2.debug', payload); } catch(_) {}
+    } catch(e) { try { log('[ASSESSMENT_V2.2] debug failed', errMsg(e)); } catch(_) {} }
   }
 
   function assessmentV2LooksLikeMainQuestion(text){
@@ -2549,29 +2577,21 @@
     ASSESSMENT_V2.lastAskedNo = idx;
     ASSESSMENT_V2.awaitingAnswer = true;
     ASSESSMENT_V2.lastAssistantAt = Date.now();
+    ASSESSMENT_V2.slotAskedAt = Date.now();
+    ASSESSMENT_V2.slotListenSince = Date.now();
+    ASSESSMENT_V2.phase = 'listening';
     assessmentV2ArmAnswerStall(idx, source);
     try { postToParent('clarity.assessment.v2.slot_asked', { index:idx, target, text:String(text||'').slice(0,220), source, ts:new Date().toISOString() }); } catch(_) {}
-    try { log('[ASSESSMENT_V2] slot asked/armed', { no:idx, target, source, structuredCurrentQuestionIndex }); } catch(_) {}
+    assessmentV2Debug('slot_asked', { no:idx, target, source, questionPreview:String(text||'').slice(0,160) });
     return true;
   }
 
   function assessmentV2RegisterAskedFromAssistant(text, source = 'assistant'){
     if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return;
     if (!assessmentV2LooksLikeMainQuestion(text)) return;
-
-    // v2.1: Most questions are now registered when the driver sends them, not when
-    // Realtime later transcribes the assistant audio. Assistant transcript is only a
-    // fallback signal. Do not let it advance the slot while awaiting an answer.
-    if (ASSESSMENT_V2.awaitingAnswer && ASSESSMENT_V2.lastAskedNo > ASSESSMENT_V2.answered) {
-      try { log('[ASSESSMENT_V2] assistant transcript question observed for current slot', { current: ASSESSMENT_V2.lastAskedNo, source }); } catch(_) {}
-      return;
-    }
-
-    const target = assessmentV2Target();
-    let no = Math.max(ASSESSMENT_V2.asked + 1, Number(structuredCurrentQuestionIndex || 0) || 0);
-    if (!Number.isFinite(no) || no <= 0) no = ASSESSMENT_V2.asked + 1;
-    no = Math.max(1, Math.min(target, Math.round(no)));
-    assessmentV2MarkSlotAsked(no, text, source || 'assistant_transcript');
+    // v2.2: Assistant transcript is diagnostics only. Slot advancement is driven only by
+    // explicit assessmentV2AskSlot() calls, never by audio/text fragments from the model.
+    assessmentV2Debug('assistant_question_transcript_observed_no_advance', { source, textPreview:String(text||'').slice(0,160) });
   }
 
   function assessmentV2RegisterUserAnswer(text, source = 'user'){
@@ -2579,17 +2599,20 @@
     const clean = String(text || '').trim();
     if (!clean || clean.length < 2) return;
     const target = assessmentV2Target();
-    const currentQuestion = Math.max(ASSESSMENT_V2.lastAskedNo || 0, Number(structuredCurrentQuestionIndex || 0) || 0);
-    if (currentQuestion <= 0) return; // readiness answer to welcome is not a slot answer
-    const no = Math.max(1, Math.min(target, Math.round(currentQuestion)));
+    if (!ASSESSMENT_V2.awaitingAnswer || !ASSESSMENT_V2.lastAskedNo || ASSESSMENT_V2.lastAskedNo <= ASSESSMENT_V2.answered) {
+      assessmentV2Debug('user_answer_ignored_no_open_slot', { source, textPreview:clean.slice(0,160) });
+      return;
+    }
+    const no = Math.max(1, Math.min(target, Math.round(ASSESSMENT_V2.lastAskedNo)));
     ASSESSMENT_V2.answers[no] = clean;
     ASSESSMENT_V2.answered = Math.max(ASSESSMENT_V2.answered, no);
     ASSESSMENT_V2.awaitingAnswer = false;
+    ASSESSMENT_V2.phase = 'answered';
     ASSESSMENT_V2.lastUserAt = Date.now();
     ASSESSMENT_TARGET_ANSWERED = ASSESSMENT_V2.answered >= target;
     assessmentV2ClearTimer('stallTimer');
     try { postToParent('clarity.assessment.v2.slot_answered', { index:no, target, text:clean.slice(0,240), source, ts:new Date().toISOString() }); } catch(_) {}
-    try { log('[ASSESSMENT_V2] slot answered', { no, target, source, answered: ASSESSMENT_V2.answered, asked: ASSESSMENT_V2.asked }); } catch(_) {}
+    assessmentV2Debug('slot_answered', { no, target, source, answered: ASSESSMENT_V2.answered, asked: ASSESSMENT_V2.asked, textPreview:clean.slice(0,160) });
 
     if (no >= target) {
       assessmentV2Finalize('target_answered');
@@ -2600,7 +2623,7 @@
     ASSESSMENT_V2.nextTimer = setTimeout(() => {
       if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return;
       assessmentV2AskSlot(no + 1, 'after_answer_next_slot');
-    }, Math.max(2200, Math.min(6500, Number(Q.get('assessmentV2NextQuestionDelayMs') || 3600) || 3600)));
+    }, Math.max(3800, Math.min(8500, Number(Q.get('assessmentV2NextQuestionDelayMs') || 5200) || 5200)));
   }
 
   function assessmentV2AskSlot(no, source = 'ask_slot'){
@@ -2665,7 +2688,7 @@
       });
     } catch(_) {}
 
-    try { log('[ASSESSMENT_V2] FINAL_LOCK target answer reached', { source, hybrid, answered: ASSESSMENT_V2.answered, asked: ASSESSMENT_V2.asked, target, buffer }); } catch(_) {}
+    assessmentV2Debug('final_lock_target_answered', { source, hybrid, answered: ASSESSMENT_V2.answered, asked: ASSESSMENT_V2.asked, target, buffer });
 
     setStatus('warn', hybrid ? t('processing') : t('processing'));
     setStopButtonAvailable(false);
@@ -2704,13 +2727,21 @@
   function assessmentV2RegisterAudioItemAnswer(itemId = '', source = 'user_audio_item'){
     if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return false;
     if (!ASSESSMENT_V2.awaitingAnswer || !ASSESSMENT_V2.lastAskedNo || ASSESSMENT_V2.lastAskedNo <= ASSESSMENT_V2.answered) return false;
-    // Realtime sometimes emits input_audio items without a completed transcript until much later.
-    // For control flow, a completed user audio item after a driven slot is a valid answer signal.
-    // The real answer text still comes from candidate-audio/Mux transcription for the report.
+    const src = String(source || '').toLowerCase();
+    if (!src.includes('done')) {
+      assessmentV2Debug('audio_item_ignored_not_done', { itemId, source });
+      return false;
+    }
+    const elapsed = Date.now() - Math.max(ASSESSMENT_V2.slotListenSince || 0, ASSESSMENT_V2.slotAskedAt || 0);
+    const minMs = Math.max(6500, Math.min(18000, Number(Q.get('assessmentV2MinAudioAnswerMs') || 9500) || 9500));
+    if (elapsed < minMs) {
+      assessmentV2Debug('audio_item_ignored_too_early', { itemId, source, elapsedMs:elapsed, minMs, slot:ASSESSMENT_V2.lastAskedNo });
+      return false;
+    }
     const slot = ASSESSMENT_V2.lastAskedNo;
     const controlText = `[audio answer captured for assessment slot ${slot}]`;
-    try { log('[ASSESSMENT_V2] control answer from user audio item', { slot, itemId, source }); } catch(_) {}
-    assessmentV2RegisterUserAnswer(controlText, source || 'user_audio_item');
+    assessmentV2Debug('control_answer_from_audio_done', { slot, itemId, source, elapsedMs:elapsed });
+    assessmentV2RegisterUserAnswer(controlText, source || 'user_audio_item_done');
     return true;
   }
 
@@ -2969,6 +3000,10 @@
 
   function requestHardEnd(source, opts = {}){
     if (END_CALLED || FINAL_HANGUP_TIMER) return;
+    if (typeof assessmentV2IsActive === 'function' && assessmentV2IsActive() && !ASSESSMENT_V2.finalLock) {
+      assessmentV2Debug('legacy_hard_end_bypassed_by_v22', { source });
+      return false;
+    }
 
     if (isInterviewLiveContext(CTX) && structuredCurrentQuestionIndex < interviewMainQuestionTarget(CTX)) {
       log('[HARD-END] blocked before media target complete', {
@@ -3141,6 +3176,10 @@
 
   function handleDetectedFinalOrHandoffTranscript(source, text){
     if (END_CALLED || FINAL_HANGUP_TIMER) return false;
+    if (typeof assessmentV2IsActive === 'function' && assessmentV2IsActive() && !ASSESSMENT_V2.finalLock) {
+      assessmentV2Debug('early_final_text_ignored_by_v22_until_target_answer', { source, textPreview:String(text||'').slice(0,160) });
+      return false;
+    }
     if (!finalClosingDetected(text)) return false;
     if (!finalMediaTargetReachedForHangup()) {
       log('[END] final/handoff text detected before media target; not hanging up yet', {
@@ -3178,6 +3217,10 @@
 
   function sendFinalCloseInstruction(source, forced = false){
     if (END_CALLED || FINAL_HANGUP_TIMER) return;
+    if (typeof assessmentV2IsActive === 'function' && assessmentV2IsActive() && !ASSESSMENT_V2.finalLock) {
+      assessmentV2Debug('legacy_final_close_bypassed_by_v22_until_target_answer', { source, forced });
+      return;
+    }
     if (isAssessmentVoiceLive(CTX) && !assessmentTargetAnswerReadyForFinal(source || 'send_final_close')) {
       log('[END] assessment final close blocked until target answer', {
         source: source || '',
@@ -3290,7 +3333,9 @@
       // Those messages polluted the conversation and made the assistant drift into normal GPT chat.
       // Audio-only and Mix keep the older path because they were stable in testing.
       if (isVideoOnlyInterview(CTX) || isAssessmentVoiceLive(CTX)) {
-        try { dcSend({ type: 'response.cancel' }); } catch(_) {}
+        // v2.2: For assessment questions we do NOT cancel any active response.
+        // Cancelling caused clipped welcome/questions and premature slot transitions.
+        if (isVideoOnlyInterview(CTX) && !isAssessmentVoiceLive(CTX)) { try { dcSend({ type: 'response.cancel' }); } catch(_) {} }
         dcSend({
           type: 'response.create',
           response: {
@@ -3299,7 +3344,7 @@
             instructions: String(instruction)
           }
         });
-        log('[DRIVER:video] response.instructions sent', {
+        log(isAssessmentVoiceLive(CTX) ? '[ASSESSMENT_V2.2] response.instructions sent' : '[DRIVER:video] response.instructions sent', {
           source: source || '',
           current: structuredCurrentQuestionIndex,
           target: interviewMainQuestionTarget(CTX),
@@ -3331,6 +3376,10 @@
   }
 
   function scheduleAssessmentSlotDriver(source, q, delayMs = 1800){
+    if (typeof assessmentV2IsActive === 'function' && assessmentV2IsActive() && !ASSESSMENT_V2.finalLock) {
+      assessmentV2Debug('legacy_slot_driver_bypassed_by_v22', { source, q, delayMs });
+      return false;
+    }
     if (!isAssessmentVoiceLive(CTX)) return false;
     if (END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK) return false;
     const target = assessmentLiveQuestionTarget(CTX);
@@ -3478,6 +3527,10 @@
 
     const assessmentVoice = isAssessmentVoiceLive(CTX);
     const interviewVoice = isInterviewLiveContext(CTX);
+    if (assessmentVoice && typeof assessmentV2IsActive === 'function' && assessmentV2IsActive() && !ASSESSMENT_V2.finalLock) {
+      assessmentV2Debug('legacy_auto_finish_check_bypassed_by_v22', { source });
+      return;
+    }
     if (!interviewVoice && !assessmentVoice) return;
 
     const target = assessmentVoice ? assessmentLiveQuestionTarget(CTX) : interviewLiveQuestionTarget(CTX);
@@ -3500,7 +3553,10 @@
   }
 
   function scheduleTargetReachedAutoFinish(source, delayMs){
-    try { assessmentV2RegisterAudioItemAnswer(key, source || 'candidate_audio_item'); } catch(e) { try { log('[ASSESSMENT_V2] audio item answer hook failed', errMsg(e)); } catch(_) {} }
+    if (isAssessmentVoiceLive(CTX) && typeof assessmentV2IsActive === 'function' && assessmentV2IsActive() && !ASSESSMENT_V2.finalLock) {
+      assessmentV2Debug('legacy_target_autofinish_bypassed_by_v22', { source, delayMs });
+      return;
+    }
 
     const assessmentTarget = isAssessmentVoiceLive(CTX) ? assessmentLiveQuestionTarget(CTX) : 0;
     const assessmentReached = isAssessmentVoiceLive(CTX) && structuredCurrentQuestionIndex >= assessmentTarget;
@@ -4238,11 +4294,12 @@
         const audioItemId = it.id || data.item_id || data.itemId || '';
         log('[TRANSCRIPT] user input_audio item observed, waiting for transcription.completed', {
           itemId: audioItemId,
-          contentTypes
+          contentTypes,
+          eventType
         });
-        // GA fallback: if no completed transcription event follows, this still lets
-        // the technical Q-cap/hangup logic know that the candidate answered.
-        markCandidateAudioItem(audioItemId, eventType);
+        // v2.2: Created events are too early; only a DONE input-audio item can be used
+        // as a conservative control fallback if no text transcript arrives.
+        if (eventType === 'conversation.item.done') markCandidateAudioItem(audioItemId, eventType);
         return;
       }
 
