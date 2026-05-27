@@ -2521,29 +2521,57 @@
     return true;
   }
 
-  function assessmentV2RegisterAskedFromAssistant(text, source = 'assistant'){
-    if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return;
-    if (!assessmentV2LooksLikeMainQuestion(text)) return;
-    const target = assessmentV2Target();
-    let no = Math.max(ASSESSMENT_V2.asked + 1, Number(structuredCurrentQuestionIndex || 0) || 0);
-    if (!Number.isFinite(no) || no <= 0) no = ASSESSMENT_V2.asked + 1;
-    no = Math.max(1, Math.min(target, Math.round(no)));
-    ASSESSMENT_V2.asked = Math.max(ASSESSMENT_V2.asked, no);
-    ASSESSMENT_V2.lastAskedNo = no;
-    ASSESSMENT_V2.awaitingAnswer = true;
-    ASSESSMENT_V2.lastAssistantAt = Date.now();
+  function assessmentV2ArmAnswerStall(no, source = 'stall'){
     assessmentV2ClearTimer('stallTimer');
-    // Give the participant real time to answer. Only if no answer event arrives after a generous window,
-    // repeat/pull the same missing slot. Never finalize from this timer.
+    const waitMs = Math.max(45000, Math.min(90000, Number(Q.get('assessmentV2AnswerStallMs') || 65000) || 65000));
     ASSESSMENT_V2.stallTimer = setTimeout(() => {
       if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return;
       if (ASSESSMENT_V2.awaitingAnswer && ASSESSMENT_V2.lastAskedNo === no && ASSESSMENT_V2.answered < no) {
         try { log('[ASSESSMENT_V2] answer stall: re-request same slot', { no, source }); } catch(_) {}
         assessmentV2AskSlot(no, 'answer_stall_same_slot');
       }
-    }, Math.max(45000, Math.min(90000, Number(Q.get('assessmentV2AnswerStallMs') || 65000) || 65000)));
-    try { postToParent('clarity.assessment.v2.slot_asked', { index:no, target, text:String(text||'').slice(0,220), source, ts:new Date().toISOString() }); } catch(_) {}
-    try { log('[ASSESSMENT_V2] slot asked', { no, target, source, structuredCurrentQuestionIndex }); } catch(_) {}
+    }, waitMs);
+  }
+
+  function assessmentV2MarkSlotAsked(no, text = '', source = 'slot'){
+    if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return false;
+    const target = assessmentV2Target();
+    const idx = Math.max(1, Math.min(target, Math.round(Number(no || 1) || 1)));
+
+    // Never advance to a new slot while we are still waiting for the current answer.
+    // This prevents assistant audio transcript echo from turning Q1 into Q2 before the participant answers.
+    if (ASSESSMENT_V2.awaitingAnswer && ASSESSMENT_V2.lastAskedNo > ASSESSMENT_V2.answered) {
+      try { log('[ASSESSMENT_V2] duplicate/echo slot ask ignored while awaiting answer', { idx, current: ASSESSMENT_V2.lastAskedNo, source }); } catch(_) {}
+      return false;
+    }
+
+    ASSESSMENT_V2.asked = Math.max(ASSESSMENT_V2.asked, idx);
+    ASSESSMENT_V2.lastAskedNo = idx;
+    ASSESSMENT_V2.awaitingAnswer = true;
+    ASSESSMENT_V2.lastAssistantAt = Date.now();
+    assessmentV2ArmAnswerStall(idx, source);
+    try { postToParent('clarity.assessment.v2.slot_asked', { index:idx, target, text:String(text||'').slice(0,220), source, ts:new Date().toISOString() }); } catch(_) {}
+    try { log('[ASSESSMENT_V2] slot asked/armed', { no:idx, target, source, structuredCurrentQuestionIndex }); } catch(_) {}
+    return true;
+  }
+
+  function assessmentV2RegisterAskedFromAssistant(text, source = 'assistant'){
+    if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return;
+    if (!assessmentV2LooksLikeMainQuestion(text)) return;
+
+    // v2.1: Most questions are now registered when the driver sends them, not when
+    // Realtime later transcribes the assistant audio. Assistant transcript is only a
+    // fallback signal. Do not let it advance the slot while awaiting an answer.
+    if (ASSESSMENT_V2.awaitingAnswer && ASSESSMENT_V2.lastAskedNo > ASSESSMENT_V2.answered) {
+      try { log('[ASSESSMENT_V2] assistant transcript question observed for current slot', { current: ASSESSMENT_V2.lastAskedNo, source }); } catch(_) {}
+      return;
+    }
+
+    const target = assessmentV2Target();
+    let no = Math.max(ASSESSMENT_V2.asked + 1, Number(structuredCurrentQuestionIndex || 0) || 0);
+    if (!Number.isFinite(no) || no <= 0) no = ASSESSMENT_V2.asked + 1;
+    no = Math.max(1, Math.min(target, Math.round(no)));
+    assessmentV2MarkSlotAsked(no, text, source || 'assistant_transcript');
   }
 
   function assessmentV2RegisterUserAnswer(text, source = 'user'){
@@ -2580,6 +2608,12 @@
     const target = assessmentV2Target();
     const idx = Math.max(1, Math.min(target, Number(no || 1) || 1));
     if (idx <= ASSESSMENT_V2.answered) return false;
+    if (ASSESSMENT_V2.awaitingAnswer && ASSESSMENT_V2.lastAskedNo > ASSESSMENT_V2.answered && ASSESSMENT_V2.lastAskedNo !== idx) {
+      try { log('[ASSESSMENT_V2] ask slot blocked while awaiting previous answer', { requested:idx, awaiting:ASSESSMENT_V2.lastAskedNo, answered:ASSESSMENT_V2.answered, source }); } catch(_) {}
+      return false;
+    }
+    const questionText = assessmentV2QuestionText(idx);
+    assessmentV2MarkSlotAsked(idx, questionText, source || 'ask_slot');
     try { log('[ASSESSMENT_V2] ask slot', { idx, target, source }); } catch(_) {}
     return createAssistantAudioResponseFromInstruction(assessmentV2QuestionInstruction(idx, source), `assessment_v2_${source}_${idx}`);
   }
@@ -2664,6 +2698,19 @@
       try { log('[ASSESSMENT_V2] hard hangup after final lock', { source, buffer }); } catch(_) {}
       try { hangup(hybrid ? 'assessment_v2_oral_handoff_complete' : 'assessment_v2_complete'); } catch(e) { try { log('[ASSESSMENT_V2] hard hangup failed', errMsg(e)); } catch(_) {} }
     }, buffer);
+    return true;
+  }
+
+  function assessmentV2RegisterAudioItemAnswer(itemId = '', source = 'user_audio_item'){
+    if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return false;
+    if (!ASSESSMENT_V2.awaitingAnswer || !ASSESSMENT_V2.lastAskedNo || ASSESSMENT_V2.lastAskedNo <= ASSESSMENT_V2.answered) return false;
+    // Realtime sometimes emits input_audio items without a completed transcript until much later.
+    // For control flow, a completed user audio item after a driven slot is a valid answer signal.
+    // The real answer text still comes from candidate-audio/Mux transcription for the report.
+    const slot = ASSESSMENT_V2.lastAskedNo;
+    const controlText = `[audio answer captured for assessment slot ${slot}]`;
+    try { log('[ASSESSMENT_V2] control answer from user audio item', { slot, itemId, source }); } catch(_) {}
+    assessmentV2RegisterUserAnswer(controlText, source || 'user_audio_item');
     return true;
   }
 
@@ -3453,6 +3500,8 @@
   }
 
   function scheduleTargetReachedAutoFinish(source, delayMs){
+    try { assessmentV2RegisterAudioItemAnswer(key, source || 'candidate_audio_item'); } catch(e) { try { log('[ASSESSMENT_V2] audio item answer hook failed', errMsg(e)); } catch(_) {} }
+
     const assessmentTarget = isAssessmentVoiceLive(CTX) ? assessmentLiveQuestionTarget(CTX) : 0;
     const assessmentReached = isAssessmentVoiceLive(CTX) && structuredCurrentQuestionIndex >= assessmentTarget;
     if (!isInterviewLiveContext(CTX) && !assessmentReached) return;
@@ -3513,6 +3562,8 @@
       mainQuestions: structuredCurrentQuestionIndex,
       targetQuestions: interviewMainQuestionTarget(CTX)
     });
+    try { assessmentV2RegisterAudioItemAnswer(key, source || 'candidate_audio_item'); } catch(e) { try { log('[ASSESSMENT_V2] audio item answer hook failed', errMsg(e)); } catch(_) {} }
+
     const assessmentTarget = isAssessmentVoiceLive(CTX) ? assessmentLiveQuestionTarget(CTX) : 0;
     const assessmentReached = isAssessmentVoiceLive(CTX) && structuredCurrentQuestionIndex >= assessmentTarget;
     if (structuredCurrentQuestionIndex >= interviewLiveQuestionTarget(CTX) || nearCompleteVideoOnlyByRuntime(CTX) || assessmentReached) {
@@ -5096,6 +5147,16 @@
     if (!READY_DETECTED && !firstQuestionFallbackElapsed) return;
 
     FIRST_Q_SENT = true;
+
+    if (isAssessmentVoiceLive(CTX) && typeof assessmentV2AskSlot === 'function') {
+      try {
+        assessmentV2AskSlot(1, 'first_question');
+        log('[ASSESSMENT_V2] first slot requested through deterministic engine');
+        return;
+      } catch(e) {
+        log('[ASSESSMENT_V2] first slot request failed, falling back to legacy first question', errMsg(e));
+      }
+    }
 
     const lk = activeInterviewLang(CTX);
     const plan = currentStructuredQuestionPlan(CTX);
