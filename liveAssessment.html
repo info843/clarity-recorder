@@ -1,4 +1,4 @@
-<!-- liveAssessment.html — v2.4 STABLE_SLOT_STATE_MACHINE | Dedicated CLARITY Assessment live file. Conservative slot state machine with question-audio lock, transcript debounce, mic-silence validation, and control fallback. Interview live.html stays untouched. -->
+<!-- liveAssessment.html — v2.4.1 ROLE_LOCKED_SLOT_STATE_MACHINE | Dedicated CLARITY Assessment live file. Conservative slot state machine with stronger assessment role-lock, no-coaching/no-summary guard, question-audio lock, transcript debounce, mic-silence validation, and control fallback. Interview live.html stays untouched. -->
 <!doctype html>
 <html lang="de">
 <head>
@@ -2506,9 +2506,9 @@
     const transitionDe = no <= 1 ? '' : 'Danke. Dann kommen wir zur nächsten Assessment-Frage. ';
     const transitionEn = no <= 1 ? '' : 'Thank you. Let us continue with the next assessment question. ';
     if (lk === 'de') {
-      return `${transitionDe}Stelle jetzt genau diese eine Frage und danach keine weitere Frage, bis die Person geantwortet hat. Keine Verbesserungsvorschläge, keine Bewertung, keine Coaching-Hinweise, keine zweite Chance. Frage: ${q}`;
+      return `${transitionDe}Stelle jetzt exakt nur diese eine Assessment-Frage. Du darfst höchstens kurz „Danke“ sagen und dann die Frage stellen. Danach sofort warten. Keine Zusammenfassung der letzten Antwort, kein Lob, keine Bewertung, keine Motivation, keine Coaching-Hinweise, keine zweite Chance, kein Angebot zur weiteren Besprechung. Verwende nicht „wenn du möchtest“ oder „wenn Sie möchten“. Frage: ${q}`;
     }
-    return `${transitionEn}Now ask exactly this one question and then do not ask another question until the participant has answered. No improvement suggestions, no evaluation, no coaching, no second attempt. Question: ${q}`;
+    return `${transitionEn}Now ask exactly only this one assessment question. You may say at most a brief “Thank you” and then the question. Then wait immediately. No summary of the previous answer, no praise, no evaluation, no motivation, no coaching, no second attempt, no offer to discuss further. Do not use “if you want”. Question: ${q}`;
   }
 
   function assessmentV2ClearTimer(name){
@@ -2581,9 +2581,24 @@
     if (!textHasQuestion(raw)) return false;
     const n = normalizeForMatch(raw);
     if (!n) return false;
-    const banned = ['mochten sie noch etwas', 'möchten sie noch etwas', 'anything else', 'would you like to add', 'do you want to add', 'noch etwas erganzen', 'noch etwas ergänzen'];
+    const banned = ['mochten sie noch etwas', 'möchten sie noch etwas', 'anything else', 'would you like to add', 'do you want to add', 'noch etwas erganzen', 'noch etwas ergänzen', 'wenn du mochtest', 'wenn du möchtest', 'wenn sie mochten', 'wenn sie möchten', 'konnen wir gemeinsam', 'können wir gemeinsam', 'super strukturierten ansatz', 'weitere details', 'konkrete beispiele durchgehen', 'stehe ich gern', 'if you want', 'we can go through', 'great structured approach', 'happy to help', 'let me know'];
     if (banned.some(x => n.includes(normalizeForMatch(x)))) return false;
     return true;
+  }
+
+
+
+  function assessmentV24LooksLikeRoleDrift(text){
+    const n = normalizeForMatch(text);
+    if (!n) return false;
+    const signals = [
+      'wenn du mochtest', 'wenn du möchtest', 'wenn sie mochten', 'wenn sie möchten',
+      'konnen wir gemeinsam', 'können wir gemeinsam', 'weitere details', 'konkrete beispiele durchgehen',
+      'super strukturierten ansatz', 'klingt nach einem', 'stehe ich gern', 'alles klar ich freue mich',
+      'if you want', 'we can go through', 'great structured approach', 'sounds like a very structured',
+      'happy to help', 'let me know', 'we can discuss further'
+    ];
+    return signals.some(x => n.includes(normalizeForMatch(x)));
   }
 
   function assessmentV24Now(){ return Date.now(); }
@@ -2808,8 +2823,8 @@
 
   function assessmentV2ArmBufferedAnswerCommit(slot, source = 'buffer'){
     assessmentV2ClearTimer('pendingAnswerTimer');
-    const settleMs = Math.max(10000, Math.min(28000, Number(Q.get('assessmentV24AnswerSettleMs') || Q.get('assessmentV2AnswerSettleMs') || 14500) || 14500));
-    const minFromQuestionDoneMs = Math.max(9000, Math.min(28000, Number(Q.get('assessmentV24MinAnswerWindowMs') || Q.get('assessmentV2MinTranscriptAnswerMs') || 13000) || 13000));
+    const settleMs = Math.max(10000, Math.min(28000, Number(Q.get('assessmentV24AnswerSettleMs') || Q.get('assessmentV2AnswerSettleMs') || 16500) || 14500));
+    const minFromQuestionDoneMs = Math.max(9000, Math.min(28000, Number(Q.get('assessmentV24MinAnswerWindowMs') || Q.get('assessmentV2MinTranscriptAnswerMs') || 15000) || 13000));
     const localSilenceMs = Math.max(2500, Math.min(9000, Number(Q.get('assessmentV24MicSilenceMs') || 4500) || 4500));
     const remoteSilenceMs = Math.max(1000, Math.min(5000, Number(Q.get('assessmentV24AiSilenceMs') || 2200) || 2200));
     ASSESSMENT_V2.pendingAnswerTimer = setTimeout(() => {
@@ -3029,6 +3044,13 @@
         // do not end. Pull the missing slot instead.
         if (ASSESSMENT_V2.answered >= assessmentV2Target()) assessmentV2Finalize('assistant_completion_text_detected');
         else assessmentV2AskSlot(Math.max(1, ASSESSMENT_V2.answered + 1), 'completion_too_early_missing_slot');
+        return;
+      }
+      if (assessmentV24LooksLikeRoleDrift(text)) {
+        assessmentV2Debug('assistant_role_drift_detected_ignored', { textPreview:text.slice(0,220), answered:ASSESSMENT_V2.answered, asked:ASSESSMENT_V2.asked, awaiting:ASSESSMENT_V2.lastAskedNo });
+        // Do not let coaching/free-chat text become a report question or a slot transition.
+        // If the current slot already has an answer buffered, let the normal debounce commit it.
+        // If not, keep waiting for the participant or the stall reminder.
         return;
       }
       assessmentV2RegisterAskedFromAssistant(text, payload?.sourceEvent || 'assistant_transcript');
@@ -5087,9 +5109,9 @@
     const hybridNoteDe = chatQ > 0 ? ` Dies ist nur der mündliche Teil eines Hybrid-Assessments. Stelle hier GENAU ${maxQ} mündliche Hauptfragen; der restliche schriftliche Teil folgt im Chat. Nach der Antwort auf die letzte mündliche Frage folgt ausschließlich der Übergabesatz, keine weitere Frage.` : '';
     const hybridNoteEn = chatQ > 0 ? ` This is only the spoken part of a hybrid assessment. Ask EXACTLY ${maxQ} spoken main questions here; the remaining written part follows in chat. After the answer to the last spoken question, only say the handoff message and ask no further question.` : '';
     if (lk === 'de') {
-      return `Analysetiefe ${qset}: Stelle genau ${maxQ} Hauptfragen für die ${assessmentAreaLabel(area, lk)}. Stelle immer nur EINE Frage zur Zeit. Keine kundeneigenen Interviewfragen verwenden. Beende die Analyse erst nach ausreichend Antworten und nach einer klaren Abschlussmeldung.${hybridNoteDe}`;
+      return `Analysetiefe ${qset}: Stelle genau ${maxQ} Hauptfragen für die ${assessmentAreaLabel(area, lk)}. Stelle immer nur EINE Frage zur Zeit. Keine kundeneigenen Interviewfragen verwenden. Keine Zusammenfassung der Antwort, kein Lob, keine Motivation, keine Coaching-Hinweise, kein Angebot wie „wenn Sie möchten“ und kein freies Gespräch. Beende die Analyse erst nach ausreichend Antworten und nach einer klaren Abschlussmeldung.${hybridNoteDe}`;
     }
-    return `Analysis depth ${qset}: Ask exactly ${maxQ} main questions for the ${assessmentAreaLabel(area, lk)}. Ask exactly ONE question at a time. Do not use customer interview questions. End the assessment only after sufficient answers and a clear closing message.${hybridNoteEn}`;
+    return `Analysis depth ${qset}: Ask exactly ${maxQ} main questions for the ${assessmentAreaLabel(area, lk)}. Ask exactly ONE question at a time. Do not use customer interview questions. Do not summarize answers, do not praise, do not motivate, do not coach, do not offer further discussion with phrases such as “if you want”, and do not switch into free conversation. End the assessment only after sufficient answers and a clear closing message.${hybridNoteEn}`;
   }
 
   function assessmentHybridClosingText(ctx, lk, profile){
@@ -5122,7 +5144,7 @@
         `Analysebereich: ${assessmentAreaLabel(area, lk)}.`,
         assessmentFocusText(area, lk, hasPosition),
         assessmentQuestionPolicyText(ctx, lk),
-        'Stelle niemals zwei Fragen in einer Nachricht. Jede Nachricht darf maximal eine Frage enthalten. Dies ist keine Coaching- oder Trainingssituation: keine Verbesserungsvorschläge, keine Bitte um bessere Formulierung, keine zweite Chance, keine zusätzlichen Nachfragen.',
+        'Stelle niemals zwei Fragen in einer Nachricht. Jede Nachricht darf maximal eine Frage enthalten. Dies ist keine Coaching- oder Trainingssituation: keine Verbesserungsvorschläge, keine Bitte um bessere Formulierung, keine zweite Chance, keine zusätzlichen Nachfragen. Fasse Antworten niemals zusammen, lobe oder motiviere nicht, biete keine weitere gemeinsame Durcharbeitung an und verwende keine Formulierungen wie „wenn du möchtest“ oder „wenn Sie möchten“.',
         'Nach jeder Frage warten, bis die Person wirklich fertig geantwortet hat. Kurze Atemgeräusche, Füllwörter oder sehr kurze Geräusche zählen NICHT als Antwort. Warte nach einer Antwort einen natürlichen Moment, damit die Person ergänzen kann, und stelle erst dann die nächste Frage.',
         'Starte die erste Frage erst, nachdem die Person „bereit“ gesagt hat oder nach Fallback-Timeout.',
         `Wenn alle mündlichen Assessment-Fragen abgeschlossen sind, sage zum Abschluss EXAKT diesen Satz, ohne technische Details hinzuzufügen: „${assessmentClose}“ Danach rufe end_interview auf.`,
@@ -5135,7 +5157,7 @@
       `Assessment area: ${assessmentAreaLabel(area, lk)}.`,
       assessmentFocusText(area, lk, hasPosition),
       assessmentQuestionPolicyText(ctx, lk),
-      'Never ask two questions in one message. Each assistant message may contain at most one question. This is not coaching or training: no improvement suggestions, no request to rephrase better, no second chance, no additional follow-up questions.',
+      'Never ask two questions in one message. Each assistant message may contain at most one question. This is not coaching or training: no improvement suggestions, no request to rephrase better, no second chance, no additional follow-up questions. Never summarize answers, never praise or motivate, never offer to go through more details together, and never use phrases such as “if you want”.',
       'After each question, wait until the participant has truly finished answering. Breathing, filler words, or very short noises do NOT count as an answer. Leave a natural pause after each answer so the participant can add more, and only then continue.',
       `Ask the first question only after the user says one of these readiness words or after the fallback timeout: ${(profile.readyWords || ['ready']).join(', ')}.`,
       `When all assessment questions are completed, say exactly this closing message in ${profile.englishName} and do not add technical details: “${assessmentClose}” Then call end_interview.`,
