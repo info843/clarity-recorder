@@ -2428,7 +2428,7 @@
   }
 
 
-  /* ===== Assessment v2.4 Stable Slot State Machine =====
+  /* ===== Assessment v2.4.3 Universal Q10 / Hangup Guard Slot State Machine =====
      Product rule for Modul1:
      - Assessment is not a free interview and not a coaching session.
      - One fixed slot question -> one participant answer -> next slot.
@@ -2463,6 +2463,9 @@
     pendingAnswerTimer: null,
     questionDoneFallbackTimer: null,
     controlFallbackTimer: null,
+    q10GuardTimer: null,
+    progressWatchTimer: null,
+    finalForceTimer: null,
     slotQuestionAudioDoneAt: 0,
     slotQuestionFallbackAt: 0,
     lastAudioItemAt: 0,
@@ -2527,6 +2530,9 @@
     assessmentV2ClearTimer('pendingAnswerTimer');
     assessmentV2ClearTimer('questionDoneFallbackTimer');
     assessmentV2ClearTimer('controlFallbackTimer');
+    assessmentV2ClearTimer('q10GuardTimer');
+    assessmentV2ClearTimer('progressWatchTimer');
+    assessmentV2ClearTimer('finalForceTimer');
     ASSESSMENT_V2.started = true;
     ASSESSMENT_V2.asked = 0;
     ASSESSMENT_V2.answered = 0;
@@ -2574,9 +2580,9 @@
         extra: data || {},
         ts: new Date().toISOString()
       };
-      log('[ASSESSMENT_V2.4.2]', payload);
+      log('[ASSESSMENT_V2.4.3]', payload);
       try { postToParent('clarity.assessment.v2.debug', payload); } catch(_) {}
-    } catch(e) { try { log('[ASSESSMENT_V2.4.2] debug failed', errMsg(e)); } catch(_) {} }
+    } catch(e) { try { log('[ASSESSMENT_V2.4.3] debug failed', errMsg(e)); } catch(_) {} }
   }
 
   function assessmentV2LooksLikeMainQuestion(text){
@@ -2728,7 +2734,10 @@
     if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return false;
     if (!ASSESSMENT_V2.awaitingAnswer || ASSESSMENT_V2.lastAskedNo !== no || ASSESSMENT_V2.answered >= no) return false;
     assessmentV2ClearTimer('controlFallbackTimer');
-    const delayMs = Math.max(16000, Math.min(38000, Number(Q.get('assessmentV24NoTranscriptFallbackMs') || 24000) || 24000));
+    const target = assessmentV2Target();
+    const nearTarget = Number(no || 0) >= Math.max(1, target - 1);
+    const fallbackDefaultMs = nearTarget ? 17500 : 24000;
+    const delayMs = Math.max(12000, Math.min(38000, Number(Q.get('assessmentV243NoTranscriptFallbackMs') || Q.get('assessmentV24NoTranscriptFallbackMs') || fallbackDefaultMs) || fallbackDefaultMs));
     ASSESSMENT_V2.controlFallbackTimer = setTimeout(() => {
       if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return;
       if (!ASSESSMENT_V2.awaitingAnswer || ASSESSMENT_V2.lastAskedNo !== no || ASSESSMENT_V2.answered >= no) return;
@@ -2762,12 +2771,15 @@
 
   function assessmentV2ArmAnswerStall(no, source = 'stall'){
     assessmentV2ClearTimer('stallTimer');
-    const waitMs = Math.max(52000, Math.min(115000, Number(Q.get('assessmentV2AnswerStallMs') || 78000) || 78000));
+    const target = assessmentV2Target();
+    const nearTarget = Number(no || 0) >= Math.max(1, target - 1);
+    const defaultWaitMs = nearTarget ? 38500 : 65000;
+    const waitMs = Math.max(26000, Math.min(115000, Number(Q.get('assessmentV243AnswerStallMs') || Q.get('assessmentV2AnswerStallMs') || defaultWaitMs) || defaultWaitMs));
     ASSESSMENT_V2.stallTimer = setTimeout(() => {
       if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return;
       if (!(ASSESSMENT_V2.awaitingAnswer && ASSESSMENT_V2.lastAskedNo === no && ASSESSMENT_V2.answered < no)) return;
 
-      try { log('[ASSESSMENT_V2.4.2] answer stall check', { no, source, pendingChars:String(ASSESSMENT_V2.pendingAnswerText||'').length, lastAudioItemAt:ASSESSMENT_V2.lastAudioItemAt || 0, reminders:ASSESSMENT_V2.reminders[no] || 0 }); } catch(_) {}
+      try { log('[ASSESSMENT_V2.4.3] answer stall check', { no, source, pendingChars:String(ASSESSMENT_V2.pendingAnswerText||'').length, lastAudioItemAt:ASSESSMENT_V2.lastAudioItemAt || 0, reminders:ASSESSMENT_V2.reminders[no] || 0 }); } catch(_) {}
 
       if (String(ASSESSMENT_V2.pendingAnswerText || '').trim()) {
         assessmentV2ArmBufferedAnswerCommit(no, 'answer_stall_pending_text_v242');
@@ -2829,6 +2841,7 @@
     assessmentV2ArmAnswerStall(idx, source);
     try { postToParent('clarity.assessment.v2.slot_asked', { index:idx, target, text:String(text||'').slice(0,220), source, ts:new Date().toISOString() }); } catch(_) {}
     assessmentV2Debug('slot_asked', { no:idx, target, source, questionPreview:String(text||'').slice(0,160) });
+    try { assessmentV243ArmQ10Guard('after_slot_asked'); } catch(_) {}
     return true;
   }
 
@@ -2853,6 +2866,98 @@
       if (bn.includes(an)) return b;
     }
     return `${a} ${b}`.replace(/\s+/g, ' ').trim();
+  }
+
+
+  function assessmentV243AnyCandidateActivityAfterQuestion(no){
+    try {
+      const qDoneAt = ASSESSMENT_V2.slotQuestionAudioDoneAt || ASSESSMENT_V2.slotListenSince || ASSESSMENT_V2.slotAskedAt || 0;
+      const localVoiceAt = Math.max(Number(ASSESSMENT_LOCAL_VOICE_LAST_AT || 0), Number(ASSESSMENT_V2.lastLocalVoiceAt || 0));
+      const transcriptAt = Number(ASSESSMENT_V2.pendingAnswerLastAt || 0);
+      const audioItemAt = Number(ASSESSMENT_V2.lastAudioItemAt || 0);
+      if (!qDoneAt) return !!(transcriptAt || audioItemAt || localVoiceAt);
+      return !!(
+        (transcriptAt && transcriptAt >= qDoneAt - 1800) ||
+        (audioItemAt && audioItemAt >= qDoneAt - 1800) ||
+        (localVoiceAt && localVoiceAt >= qDoneAt - 1800)
+      );
+    } catch(_) { return false; }
+  }
+
+  function assessmentV243ArmQ10Guard(source = 'guard'){
+    if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return false;
+    assessmentV2ClearTimer('q10GuardTimer');
+    const target = assessmentV2Target();
+    const answered = Number(ASSESSMENT_V2.answered || 0);
+    const asked = Number(ASSESSMENT_V2.asked || 0);
+    const awaiting = !!ASSESSMENT_V2.awaitingAnswer;
+
+    // Universal audio/video rule: if Q9 is done, Q10 must be asked soon. If Q10 is open
+    // and candidate activity was detected but live transcript is unreliable, force a safe
+    // control commit so hangup/processing can start. Candidate-only audio remains the report evidence.
+    let delayMs = 9000;
+    if (answered >= Math.max(1, target - 1) && !awaiting) delayMs = 3200;
+    else if (awaiting && ASSESSMENT_V2.lastAskedNo >= Math.max(1, target - 1)) delayMs = 18500;
+    else delayMs = 14000;
+
+    ASSESSMENT_V2.q10GuardTimer = setTimeout(() => {
+      if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return;
+      const t = assessmentV2Target();
+      const a = Number(ASSESSMENT_V2.answered || 0);
+      const k = Number(ASSESSMENT_V2.asked || 0);
+      const last = Number(ASSESSMENT_V2.lastAskedNo || 0);
+      const open = !!ASSESSMENT_V2.awaitingAnswer;
+
+      if (!open && a >= t) {
+        assessmentV2Finalize('v243_q10_guard_answered_target');
+        return;
+      }
+
+      if (!open && a >= Math.max(1, t - 1)) {
+        assessmentV2Debug('v243_q10_guard_forcing_final_question', { source, answered:a, asked:k, target:t });
+        assessmentV2AskSlot(t, 'v243_q10_guard_force_q10');
+        assessmentV243ArmQ10Guard('after_force_q10');
+        return;
+      }
+
+      if (!open && a < t) {
+        const next = Math.min(t, Math.max(a + 1, k + 1, 1));
+        assessmentV2Debug('v243_progress_guard_forcing_next_question', { source, answered:a, asked:k, next, target:t });
+        assessmentV2AskSlot(next, 'v243_progress_guard_next');
+        assessmentV243ArmQ10Guard('after_force_next');
+        return;
+      }
+
+      if (open && last >= Math.max(1, t - 1)) {
+        const sinceAsk = assessmentV24MsSince(ASSESSMENT_V2.slotAskedAt, 0);
+        const sinceQDone = assessmentV24MsSince(ASSESSMENT_V2.slotQuestionAudioDoneAt || ASSESSMENT_V2.slotListenSince || ASSESSMENT_V2.slotAskedAt, 0);
+        const hasPending = String(ASSESSMENT_V2.pendingAnswerText || '').trim().length > 0;
+        const hasActivity = assessmentV243AnyCandidateActivityAfterQuestion(last);
+        if (hasPending) {
+          const sinceLastText = assessmentV24MsSince(ASSESSMENT_V2.pendingAnswerLastAt, 0);
+          if (sinceLastText > 15000 && (sinceQDone > 30000 || sinceAsk > 48000)) {
+            assessmentV2Debug('v243_q10_guard_force_committing_pending_near_target', { source, last, target:t, sinceAsk, sinceQDone, sinceLastText });
+            assessmentV2CommitBufferedAnswer(last, 'v243_q10_guard_force_pending_near_target');
+          } else {
+            assessmentV2Debug('v243_q10_guard_arming_pending_near_target', { source, last, target:t, sinceAsk, sinceQDone, sinceLastText });
+            assessmentV2ArmBufferedAnswerCommit(last, 'v243_q10_guard_pending_near_target');
+          }
+          assessmentV243ArmQ10Guard('after_pending_near_target');
+          return;
+        }
+        if ((sinceQDone > 26000 || sinceAsk > 42000) && hasActivity) {
+          assessmentV2Debug('v243_q10_guard_control_commit_near_target', { source, last, target:t, sinceAsk, sinceQDone, hasActivity });
+          assessmentV242CommitControlFallback(last, 'v243_q10_guard_control_commit_near_target');
+          assessmentV243ArmQ10Guard('after_control_commit_near_target');
+          return;
+        }
+      }
+
+      assessmentV243ArmQ10Guard('rearmed_' + String(source || 'guard'));
+    }, delayMs);
+
+    assessmentV2Debug('v243_q10_guard_armed', { source, delayMs, answered, asked, awaiting, lastAskedNo: ASSESSMENT_V2.lastAskedNo || 0, target });
+    return true;
   }
 
   function assessmentV2CommitBufferedAnswer(slot, source = 'buffer_commit'){
@@ -2883,6 +2988,7 @@
 
     try { postToParent('clarity.assessment.v2.slot_answered', { index:no, target, text:clean.slice(0,240), source, ts:new Date().toISOString() }); } catch(_) {}
     assessmentV2Debug('slot_answered_debounced', { no, target, source, answered: ASSESSMENT_V2.answered, asked: ASSESSMENT_V2.asked, textPreview:clean.slice(0,160) });
+    try { assessmentV243ArmQ10Guard('after_slot_answered'); } catch(_) {}
 
     if (no >= target) {
       assessmentV2Finalize('target_answered_debounced');
@@ -2890,7 +2996,9 @@
     }
 
     assessmentV2ClearTimer('nextTimer');
-    const nextDelay = Math.max(5200, Math.min(12000, Number(Q.get('assessmentV2NextQuestionDelayMs') || 9500) || 9500));
+    const nearTargetNext = no >= Math.max(1, target - 1);
+    const nextDelayDefault = nearTargetNext ? 6800 : 10500;
+    const nextDelay = Math.max(5200, Math.min(13500, Number(Q.get('assessmentV243NextQuestionDelayMs') || Q.get('assessmentV2NextQuestionDelayMs') || nextDelayDefault) || nextDelayDefault));
     ASSESSMENT_V2.nextTimer = setTimeout(() => {
       if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return;
       assessmentV2AskSlot(no + 1, 'after_debounced_answer_next_slot');
@@ -2986,6 +3094,7 @@
     ASSESSMENT_V2.pendingAnswerLastAt = nowTs;
     ASSESSMENT_V2.phase = 'answer_buffering';
     assessmentV2Debug('answer_fragment_buffered', { no, source, sinceAsk, pendingChars:ASSESSMENT_V2.pendingAnswerText.length, textPreview:clean.slice(0,160) });
+    try { assessmentV243ArmQ10Guard('after_answer_fragment'); } catch(_) {}
     assessmentV2ArmBufferedAnswerCommit(no, source || 'user_transcript');
   }
 
@@ -3031,6 +3140,9 @@
     assessmentV2ClearTimer('pendingAnswerTimer');
     assessmentV2ClearTimer('controlFallbackTimer');
     assessmentV2ClearTimer('questionDoneFallbackTimer');
+    assessmentV2ClearTimer('q10GuardTimer');
+    assessmentV2ClearTimer('progressWatchTimer');
+    assessmentV2ClearTimer('finalForceTimer');
     try { if (ASSESSMENT_SLOT_DRIVER_TIMER) clearTimeout(ASSESSMENT_SLOT_DRIVER_TIMER); } catch(_) {}
     ASSESSMENT_SLOT_DRIVER_TIMER = null;
     try { if (structuredAutoFinishTimer) clearTimeout(structuredAutoFinishTimer); } catch(_) {}
@@ -3103,6 +3215,7 @@
     ASSESSMENT_V2.lastAudioItemAt = Date.now();
     ASSESSMENT_V2.lastAudioItemId = String(itemId || '');
     assessmentV2Debug('audio_item_observed_control_fallback_armed_v24', { itemId, source, slot:no, answered:ASSESSMENT_V2.answered });
+    try { assessmentV243ArmQ10Guard('after_audio_item'); } catch(_) {}
     return assessmentV24ArmControlFallback(no, itemId, source || 'candidate_audio_item');
   }
 
@@ -6424,6 +6537,7 @@
     MODEL_END_NO_FINAL_TIMER = null;
     try { if (ASSESSMENT_SLOT_DRIVER_TIMER) clearTimeout(ASSESSMENT_SLOT_DRIVER_TIMER); } catch(_) {}
     ASSESSMENT_SLOT_DRIVER_TIMER = null;
+    try { assessmentV2ClearTimer('q10GuardTimer'); assessmentV2ClearTimer('progressWatchTimer'); assessmentV2ClearTimer('finalForceTimer'); } catch(_) {}
     clearAssessmentDirectHangupTimer(reason || 'hangup');
     clearHardEndTimers();
 
