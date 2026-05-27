@@ -1,10 +1,10 @@
-<!-- liveAssessment.html — v2.4.1 ROLE_LOCKED_SLOT_STATE_MACHINE | Dedicated CLARITY Assessment live file. Conservative slot state machine with stronger assessment role-lock, no-coaching/no-summary guard, question-audio lock, transcript debounce, mic-silence validation, and control fallback. Interview live.html stays untouched. -->
+<!-- liveAssessment.html — v2.4.4 DETERMINISTIC_TURN_EXPORT_FINAL_GUARD | Dedicated CLARITY Assessment live file. Conservative slot state machine with stronger assessment role-lock, no-coaching/no-summary guard, question-audio lock, transcript debounce, mic-silence validation, and control fallback. Interview live.html stays untouched. -->
 <!doctype html>
 <html lang="de">
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- liveAssessment v2.4.2 ORAL_Q10_FAILSAFE_SLOT_MACHINE: fixed assessment slots, readiness-answer filter, longer answer settle windows, transcript-independent stall fallback, Q10 failsafe finalization, media stop/export independent from model end_interview -->
+  <!-- liveAssessment v2.4.4 DETERMINISTIC_TURN_EXPORT_FINAL_GUARD: fixed assessment slots, readiness-answer filter, longer answer settle windows, transcript-independent stall fallback, Q10 failsafe finalization, media stop/export independent from model end_interview -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -2428,7 +2428,64 @@
   }
 
 
-  /* ===== Assessment v2.4.3 Universal Q10 / Hangup Guard Slot State Machine =====
+  function assessmentV244EmitDeterministicTurn(role, questionIndex, text, source = 'assessment_v244', extra = {}){
+    try {
+      const clean = String(text || '').replace(/\s+/g, ' ').trim();
+      const q = Math.max(1, Math.min(50, Math.round(Number(questionIndex || 0) || 0)));
+      if (!clean || !q) return false;
+      const r = String(role || '').toLowerCase() === 'assistant' ? 'assistant' : 'candidate';
+      const isCandidate = r === 'candidate';
+      const isFallback = !!extra.isFallback || /^\[(Control note|Kontrollhinweis|Audio answer|Audio-Antwort)/i.test(clean);
+      structuredTurnIndex += 1;
+      postToParent('clarity.live.turn', {
+        uid: UID || CTX?.uid || CTX?.linkId || '',
+        linkId: UID || CTX?.uid || CTX?.linkId || '',
+        sessionId: CTX?.sessionId || CTX?.liveSessionId || '',
+        companyId: COMPANY_ID || CTX?.companyId || '',
+        productType: 'modul1',
+        moduleArea: CTX?.moduleArea || '',
+        mode: AUDIO_ONLY ? 'audio' : (CTX?.mode || 'video'),
+        position: CTX?.position || '',
+        candidateName: CTX?.candidateName || CTX?.name || '',
+        candidateEmail: CTX?.candidateEmail || CTX?.employeeEmail || '',
+        turnIndex: structuredTurnIndex,
+        questionIndex: q,
+        subTurnIndex: 0,
+        role: r,
+        speaker: r,
+        turnType: isCandidate ? 'answer' : 'main_question',
+        source: isCandidate ? 'assessment_deterministic_slot_answer' : 'assessment_deterministic_slot_question',
+        originalText: clean,
+        cleanText: clean,
+        originalLang: activeInterviewLang(CTX),
+        reportLang: activeReportLang(CTX),
+        isFinal: true,
+        isMainQuestion: !isCandidate,
+        isFollowUp: false,
+        isCandidateAnswer: isCandidate && !isFallback,
+        isIncludedInReport: !isFallback,
+        isTechnical: !!isFallback,
+        itemId: '',
+        responseId: '',
+        sourceEvent: source || 'assessment_v244_deterministic_turn',
+        createdAt: new Date().toISOString(),
+        metaJson: {
+          source: source || '',
+          deterministicAssessmentSlot: true,
+          fallbackAnswer: !!isFallback,
+          questionSet: CTX?.questionSet || '',
+          totalQuestionCount: CTX?.totalQuestionCount || CTX?.questionCount || assessmentV2Target()
+        }
+      });
+      return true;
+    } catch(e) {
+      try { log('[ASSESSMENT_V2.4.4] deterministic turn emit failed', errMsg(e)); } catch(_) {}
+      return false;
+    }
+  }
+
+
+  /* ===== Assessment v2.4.4 Deterministic Turn Export / Final Guard Slot State Machine =====
      Product rule for Modul1:
      - Assessment is not a free interview and not a coaching session.
      - One fixed slot question -> one participant answer -> next slot.
@@ -2580,9 +2637,9 @@
         extra: data || {},
         ts: new Date().toISOString()
       };
-      log('[ASSESSMENT_V2.4.3]', payload);
+      log('[ASSESSMENT_V2.4.4]', payload);
       try { postToParent('clarity.assessment.v2.debug', payload); } catch(_) {}
-    } catch(e) { try { log('[ASSESSMENT_V2.4.3] debug failed', errMsg(e)); } catch(_) {} }
+    } catch(e) { try { log('[ASSESSMENT_V2.4.4] debug failed', errMsg(e)); } catch(_) {} }
   }
 
   function assessmentV2LooksLikeMainQuestion(text){
@@ -2779,7 +2836,7 @@
       if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return;
       if (!(ASSESSMENT_V2.awaitingAnswer && ASSESSMENT_V2.lastAskedNo === no && ASSESSMENT_V2.answered < no)) return;
 
-      try { log('[ASSESSMENT_V2.4.3] answer stall check', { no, source, pendingChars:String(ASSESSMENT_V2.pendingAnswerText||'').length, lastAudioItemAt:ASSESSMENT_V2.lastAudioItemAt || 0, reminders:ASSESSMENT_V2.reminders[no] || 0 }); } catch(_) {}
+      try { log('[ASSESSMENT_V2.4.4] answer stall check', { no, source, pendingChars:String(ASSESSMENT_V2.pendingAnswerText||'').length, lastAudioItemAt:ASSESSMENT_V2.lastAudioItemAt || 0, reminders:ASSESSMENT_V2.reminders[no] || 0 }); } catch(_) {}
 
       if (String(ASSESSMENT_V2.pendingAnswerText || '').trim()) {
         assessmentV2ArmBufferedAnswerCommit(no, 'answer_stall_pending_text_v242');
@@ -2840,6 +2897,7 @@
     assessmentV24ArmQuestionAudioDoneFallback(idx, source);
     assessmentV2ArmAnswerStall(idx, source);
     try { postToParent('clarity.assessment.v2.slot_asked', { index:idx, target, text:String(text||'').slice(0,220), source, ts:new Date().toISOString() }); } catch(_) {}
+    try { assessmentV244EmitDeterministicTurn('assistant', idx, text, 'assessment_v244_slot_asked_' + String(source || 'slot')); } catch(_) {}
     assessmentV2Debug('slot_asked', { no:idx, target, source, questionPreview:String(text||'').slice(0,160) });
     try { assessmentV243ArmQ10Guard('after_slot_asked'); } catch(_) {}
     return true;
@@ -2987,6 +3045,10 @@
     ASSESSMENT_V2.pendingAnswerLastAt = 0;
 
     try { postToParent('clarity.assessment.v2.slot_answered', { index:no, target, text:clean.slice(0,240), source, ts:new Date().toISOString() }); } catch(_) {}
+    try {
+      const isFallbackTurn = !!ASSESSMENT_V2.fallbackAnswers[no] || /^\[(Control note|Kontrollhinweis|Audio answer|Audio-Antwort)/i.test(clean);
+      assessmentV244EmitDeterministicTurn('candidate', no, clean, 'assessment_v244_slot_answered_' + String(source || 'answer'), { isFallback:isFallbackTurn });
+    } catch(_) {}
     assessmentV2Debug('slot_answered_debounced', { no, target, source, answered: ASSESSMENT_V2.answered, asked: ASSESSMENT_V2.asked, textPreview:clean.slice(0,160) });
     try { assessmentV243ArmQ10Guard('after_slot_answered'); } catch(_) {}
 
@@ -3135,6 +3197,10 @@
 
     ASSESSMENT_V2.finalLock = true;
     ASSESSMENT_TARGET_ANSWERED = true;
+    HARD_END_LOCK = true;
+    TARGET_FINALIZE_REQUESTED = true;
+    FINAL_MESSAGE_SPOKEN = true;
+    END_REQUESTED_BY_MODEL = true;
     assessmentV2ClearTimer('nextTimer');
     assessmentV2ClearTimer('stallTimer');
     assessmentV2ClearTimer('pendingAnswerTimer');
@@ -3153,7 +3219,7 @@
     const hybrid = assessmentV2IsHybrid();
     const buffer = hybrid
       ? Math.max(15000, Math.min(22000, Number(Q.get('assessmentV2HybridHangupMs') || 18000) || 18000))
-      : Math.max(20000, Math.min(28000, Number(Q.get('assessmentV2FinalHangupMs') || 23000) || 23000));
+      : Math.max(1200, Math.min(6500, Number(Q.get('assessmentV244FinalHangupMs') || Q.get('assessmentV2FinalHangupMs') || 2200) || 2200));
 
     try {
       postToParent('clarity.assessment.v2.target_answered', {
@@ -3189,13 +3255,17 @@
     try { stopRecording(); ASSESSMENT_V2.mediaStopped = true; } catch(e) { try { log('[ASSESSMENT_V2] stopRecording failed', errMsg(e)); } catch(_) {} }
 
     const close = assessmentV2ClosingText();
-    if (!ASSESSMENT_V2.finalInstructionSent && close) {
+    if (hybrid && !ASSESSMENT_V2.finalInstructionSent && close) {
       ASSESSMENT_V2.finalInstructionSent = true;
       const lk = activeInterviewLang(CTX);
       const instruction = lk === 'de'
-        ? `Das Assessment ist technisch abgeschlossen. Stelle keine weitere Frage. Sage jetzt exakt diesen Satz und nichts danach: „${close}“`
-        : `The assessment is technically complete. Do not ask another question. Now say exactly this sentence and nothing after it: “${close}”`;
-      try { createAssistantAudioResponseFromInstruction(instruction, hybrid ? 'assessment_v24_handoff_sentence' : 'assessment_v24_final_sentence'); } catch(e) { try { log('[ASSESSMENT_V2] final instruction failed', errMsg(e)); } catch(_) {} }
+        ? `Der mündliche Teil des Assessments ist abgeschlossen. Stelle keine weitere mündliche Frage. Sage jetzt exakt diesen Satz und nichts danach: „${close}“`
+        : `The spoken part of the assessment is complete. Do not ask another spoken question. Now say exactly this sentence and nothing after it: “${close}”`;
+      try { createAssistantAudioResponseFromInstruction(instruction, 'assessment_v244_handoff_sentence'); } catch(e) { try { log('[ASSESSMENT_V2] handoff instruction failed', errMsg(e)); } catch(_) {} }
+    } else if (!hybrid) {
+      ASSESSMENT_V2.finalInstructionSent = true;
+      try { postToParent('clarity.assessment.v2.final_silent_processing', { uid:UID, companyId:COMPANY_ID, source, text:close, ts:new Date().toISOString() }); } catch(_) {}
+      assessmentV2Debug('v244_final_audio_suppressed_single_hangup_guard', { source, buffer, closePreview:String(close||'').slice(0,160) });
     }
 
     assessmentV2ClearTimer('hardTimer');
