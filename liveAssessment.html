@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- liveAssessment v1.3 ASSESSMENT_HANGUP_SLOT_DRIVER: hard hangup after handoff/closing + assessment slot progression guard -->
+  <!-- liveAssessment v1.4 ASSESSMENT_FORCE_FINALIZER: parent-safe hard stop, deterministic assessment end timers -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -1177,6 +1177,7 @@
   let MODEL_END_NO_FINAL_TIMER = null;
   let SLOT_STALL_TIMER = null;
   let ASSESSMENT_SLOT_DRIVER_TIMER = null;
+  let ASSESSMENT_DIRECT_HANGUP_TIMER = null;
   const TARGET_QUESTION_ANSWER_GRACE_MS = Math.max(8000, Math.min(60000, Number(Q.get('targetAnswerGraceMs') || 18000) || 18000));
   const TARGET_FOLLOWUP_WAIT_MS = Math.max(6000, Math.min(20000, Number(Q.get('targetFollowupWaitMs') || 11000) || 11000));
   const TARGET_FINALIZE_AFTER_ANSWER_MS = Math.max(1000, Math.min(7000, Number(Q.get('targetFinalizeAfterAnswerMs') || 1800) || 1800));
@@ -1244,6 +1245,10 @@
 
   const STRUCTURED_AUTOFINISH_IDLE_MS = Math.max(4000, Math.min(30000, Number(Q.get('autoFinishIdleMs') || 6500) || 6500));
   const STRUCTURED_AUTOFINISH_FORCE_MS = Math.max(8000, Math.min(30000, Number(Q.get('autoFinishForceMs') || 16000) || 16000));
+  // Assessment safety: once the last required media slot is complete and the final/handoff
+  // instruction has been sent, do not depend on a model tool call. Stop media after this window.
+  const ASSESSMENT_DIRECT_HANGUP_MS = Math.max(12000, Math.min(26000, Number(Q.get('assessmentDirectHangupMs') || FINAL_HANGUP_BUFFER_MS || 20000) || 20000));
+  const ASSESSMENT_ANSWER_STALL_ADVANCE_MS = Math.max(22000, Math.min(60000, Number(Q.get('assessmentAnswerStallAdvanceMs') || 36000) || 36000));
 
 
   function selectedCustomerQuestionLines(ctx = CTX){
@@ -1642,6 +1647,15 @@
     structuredEarlyClosingRecoveryTimer = null;
     structuredLastAssistantTurnType = 'main_question';
     structuredLastPlannedMainMatch = source;
+
+    // Assessment safety: if Realtime misses the candidate transcript/audio-item after a question,
+    // do not leave the assessment stuck forever. After a generous answer window, pull the
+    // deterministic slot driver forward. This is only a recovery path; normal candidate answers
+    // still trigger the next slot much earlier.
+    if (isAssessmentVoiceLive(CTX) && structuredCurrentQuestionIndex < assessmentLiveQuestionTarget(CTX)) {
+      scheduleAssessmentSlotDriver('assessment_answer_stall_after_main_question', structuredCurrentQuestionIndex, ASSESSMENT_ANSWER_STALL_ADVANCE_MS);
+    }
+
     return { role:'assistant', turnType:'main_question', questionIndex: structuredCurrentQuestionIndex, subTurnIndex:0, isMainQuestion:true, isFollowUp:false, isIncludedInReport:true };
   }
 
@@ -2678,7 +2692,7 @@
           : `The ${isAssessmentEnd ? 'assessment' : 'interview'} is now definitively complete. Do not ask another question. Now say exactly this closing message without additional explanation: “${finalClose}” Then call end_interview.`);
 
       try {
-        if (isVideoOnlyInterview(CTX)) {
+        if (isVideoOnlyInterview(CTX) || isAssessmentVoiceLive(CTX)) {
           dcSend({
             type: 'response.create',
             response: {
@@ -2696,6 +2710,10 @@
         }
       } catch (e) {
         log('[HARD-END] final instruction failed', errMsg(e));
+      }
+
+      if (isAssessmentVoiceLive(CTX)) {
+        scheduleAssessmentDirectHangup(source || 'assessment_hard_end_instruction_sent', effectiveFinalHangupBufferMs());
       }
     } else {
       beginFinalHangup(source || 'hard_end_no_final_needed');
@@ -2868,6 +2886,10 @@
       log('[END] autofinish instruction failed', errMsg(e));
     }
 
+    if (isAssessmentVoiceLive(CTX)) {
+      scheduleAssessmentDirectHangup(source || 'assessment_autofinish_instruction_sent', effectiveFinalHangupBufferMs());
+    }
+
     try { if (HARD_END_WATCHDOG_TIMER) clearTimeout(HARD_END_WATCHDOG_TIMER); } catch(_) {}
     HARD_END_WATCHDOG_TIMER = setTimeout(() => {
       if (END_CALLED || FINAL_HANGUP_TIMER) return;
@@ -2897,7 +2919,7 @@
       // v3.12.0: Video-only control must not be injected as fake user messages.
       // Those messages polluted the conversation and made the assistant drift into normal GPT chat.
       // Audio-only and Mix keep the older path because they were stable in testing.
-      if (isVideoOnlyInterview(CTX)) {
+      if (isVideoOnlyInterview(CTX) || isAssessmentVoiceLive(CTX)) {
         try { dcSend({ type: 'response.cancel' }); } catch(_) {}
         dcSend({
           type: 'response.create',
@@ -3212,6 +3234,98 @@
     return true;
   }
 
+
+  function clearAssessmentDirectHangupTimer(reason = ''){
+    try { if (ASSESSMENT_DIRECT_HANGUP_TIMER) clearTimeout(ASSESSMENT_DIRECT_HANGUP_TIMER); } catch(_) {}
+    ASSESSMENT_DIRECT_HANGUP_TIMER = null;
+  }
+
+  function scheduleAssessmentDirectHangup(source = 'assessment_direct_hangup', delayMs = 0){
+    if (!isAssessmentVoiceLive(CTX)) return false;
+    if (END_CALLED || destroyed) return false;
+
+    const delay = Math.max(12000, Math.min(26000, Number(delayMs || ASSESSMENT_DIRECT_HANGUP_MS) || 20000));
+    clearAssessmentDirectHangupTimer(source || 'reschedule');
+
+    postToParent('clarity.live.final_message_pending', {
+      uid: UID,
+      companyId: COMPANY_ID,
+      source: source || '',
+      bufferMs: delay,
+      direct: true,
+      mainQuestions: structuredCurrentQuestionIndex,
+      targetQuestions: isAssessmentVoiceLive(CTX) ? assessmentLiveQuestionTarget(CTX) : interviewMainQuestionTarget(CTX),
+      ts: new Date().toISOString()
+    });
+
+    if (isAssessmentHybridLive(CTX)) {
+      postToParent('clarity.live.handoff_pending', {
+        uid: UID,
+        companyId: COMPANY_ID,
+        source: source || '',
+        bufferMs: delay,
+        direct: true,
+        mainQuestions: structuredCurrentQuestionIndex,
+        targetQuestions: assessmentLiveQuestionTarget(CTX),
+        chatQuestionCount: Number(CTX?.chatQuestionCount || 0),
+        ts: new Date().toISOString()
+      });
+    }
+
+    log('[END] assessment direct hangup fail-safe scheduled', {
+      source: source || '',
+      delayMs: delay,
+      mainQuestions: structuredCurrentQuestionIndex,
+      targetQuestions: assessmentLiveQuestionTarget(CTX),
+      hybrid: isAssessmentHybridLive(CTX)
+    });
+
+    ASSESSMENT_DIRECT_HANGUP_TIMER = setTimeout(() => {
+      if (END_CALLED || destroyed) return;
+      if (FINAL_HANGUP_TIMER) return;
+
+      FINAL_MESSAGE_SPOKEN = true;
+      HARD_END_LOCK = true;
+      TARGET_FINALIZE_REQUESTED = true;
+      END_CALLED = true;
+
+      log('[END] assessment direct hangup fail-safe fired', {
+        source: source || '',
+        delayMs: delay,
+        mainQuestions: structuredCurrentQuestionIndex,
+        targetQuestions: assessmentLiveQuestionTarget(CTX),
+        hybrid: isAssessmentHybridLive(CTX)
+      });
+
+      postToParent('clarity.live.final_message_done', {
+        uid: UID,
+        companyId: COMPANY_ID,
+        source: source || '',
+        bufferMs: delay,
+        direct: true,
+        ts: new Date().toISOString()
+      });
+
+      if (isAssessmentHybridLive(CTX)) {
+        postToParent('clarity.live.handoff_ready', {
+          uid: UID,
+          companyId: COMPANY_ID,
+          source: source || '',
+          bufferMs: delay,
+          direct: true,
+          mainQuestions: structuredCurrentQuestionIndex,
+          targetQuestions: assessmentLiveQuestionTarget(CTX),
+          chatQuestionCount: Number(CTX?.chatQuestionCount || 0),
+          ts: new Date().toISOString()
+        });
+      }
+
+      hangup(source || 'assessment_direct_hangup_timeout');
+    }, delay);
+
+    return true;
+  }
+
   function effectiveFinalHangupBufferMs(){
     const base = Math.max(2500, Number(FINAL_HANGUP_BUFFER_MS) || 15000);
     // liveAssessment.html is Assessment-only. The spoken handoff/closing must not be cut,
@@ -3224,6 +3338,7 @@
   function beginFinalHangup(source){
     if (END_CALLED) return;
     if (FINAL_HANGUP_TIMER) return;
+    clearAssessmentDirectHangupTimer(source || 'begin_final_hangup');
     try { if (HARD_END_WATCHDOG_TIMER) clearTimeout(HARD_END_WATCHDOG_TIMER); } catch(_) {}
     HARD_END_WATCHDOG_TIMER = null;
     const hangupBufferMs = effectiveFinalHangupBufferMs();
@@ -5466,6 +5581,7 @@
     MODEL_END_NO_FINAL_TIMER = null;
     try { if (ASSESSMENT_SLOT_DRIVER_TIMER) clearTimeout(ASSESSMENT_SLOT_DRIVER_TIMER); } catch(_) {}
     ASSESSMENT_SLOT_DRIVER_TIMER = null;
+    clearAssessmentDirectHangupTimer(reason || 'hangup');
     clearHardEndTimers();
 
     if (destroyed && reason !== 'user_fallback_end') return;
