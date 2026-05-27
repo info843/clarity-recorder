@@ -1,10 +1,10 @@
-<!-- liveAssessment.html — v1.5 ASSESSMENT_TARGET_ANSWER_GUARD | Dedicated CLARITY Assessment live file. Interview live.html stays untouched. -->
+<!-- liveAssessment.html — v2.0 DETERMINISTIC_SLOT_ENGINE | Dedicated CLARITY Assessment live file. Deterministic slot state machine; Interview live.html stays untouched. -->
 <!doctype html>
 <html lang="de">
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- liveAssessment v1.5 ASSESSMENT_TARGET_ANSWER_GUARD: no early finalization before target answer, deterministic assessment end timers -->
+  <!-- liveAssessment v2.0 DETERMINISTIC_SLOT_ENGINE: fixed assessment slots, target-answer final lock, media stop/export independent from model end_interview -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -2416,6 +2416,291 @@
     }
   }
 
+
+  /* ===== Assessment v2.0 Deterministic Slot Engine =====
+     Product rule for Modul1:
+     - Assessment is not a free interview and not a coaching session.
+     - One fixed slot question -> one participant answer -> next slot.
+     - No follow-ups, no improvement request, no second attempt.
+     - For audio/video: after the target slot answer, immediately lock input and stop recording.
+     - For mix: after the oral target answer, stop media and hand off to chat; chat finishes the remaining slots.
+     This layer deliberately does not touch Interview live.html. */
+  const ASSESSMENT_V2 = {
+    enabled: true,
+    started: false,
+    asked: 0,
+    answered: 0,
+    awaitingAnswer: false,
+    lastAskedNo: 0,
+    finalLock: false,
+    mediaStopped: false,
+    finalInstructionSent: false,
+    nextTimer: null,
+    hardTimer: null,
+    stallTimer: null,
+    lastAssistantAt: 0,
+    lastUserAt: 0,
+    answers: Object.create(null)
+  };
+
+  function assessmentV2IsActive(){
+    try { return ASSESSMENT_V2.enabled && isAssessmentVoiceLive(CTX) && STARTED && !END_CALLED; } catch(_) { return false; }
+  }
+
+  function assessmentV2IsHybrid(){
+    try { return isAssessmentHybridLive(CTX); } catch(_) { return false; }
+  }
+
+  function assessmentV2Target(){
+    try { return Math.max(1, Math.min(50, Number(assessmentLiveQuestionTarget(CTX) || activeStructuredQuestionTarget(CTX) || CTX?.questionCount || 10) || 10)); }
+    catch(_) { return 10; }
+  }
+
+  function assessmentV2TotalTarget(){
+    try { return Math.max(1, Math.min(50, Number(CTX?.totalQuestionCount || CTX?.questionCountTotal || CTX?.questionCount || assessmentV2Target()) || assessmentV2Target())); }
+    catch(_) { return assessmentV2Target(); }
+  }
+
+  function assessmentV2QuestionText(no){
+    const idx = Math.max(1, Math.min(50, Number(no || 1) || 1));
+    try {
+      const plan = currentStructuredQuestionPlan(CTX) || [];
+      const q = String(plan[idx - 1] || '').trim();
+      if (q) return q;
+    } catch(_) {}
+    try { return assessmentDefaultQuestionText(CTX, idx); } catch(_) {}
+    return activeInterviewLang(CTX) === 'de'
+      ? `Bitte beantworten Sie Assessment-Frage ${idx} mit einem konkreten beruflichen Beispiel.`
+      : `Please answer assessment question ${idx} with a concrete professional example.`;
+  }
+
+  function assessmentV2QuestionInstruction(no, source){
+    const lk = activeInterviewLang(CTX);
+    const q = assessmentV2QuestionText(no);
+    const transitionDe = no <= 1 ? '' : 'Danke. Dann kommen wir zur nächsten Assessment-Frage. ';
+    const transitionEn = no <= 1 ? '' : 'Thank you. Let us continue with the next assessment question. ';
+    if (lk === 'de') {
+      return `${transitionDe}Stelle jetzt genau diese eine Frage und danach keine weitere Frage, bis die Person geantwortet hat. Keine Verbesserungsvorschläge, keine Bewertung, keine Coaching-Hinweise, keine zweite Chance. Frage: ${q}`;
+    }
+    return `${transitionEn}Now ask exactly this one question and then do not ask another question until the participant has answered. No improvement suggestions, no evaluation, no coaching, no second attempt. Question: ${q}`;
+  }
+
+  function assessmentV2ClearTimer(name){
+    try { if (ASSESSMENT_V2[name]) clearTimeout(ASSESSMENT_V2[name]); } catch(_) {}
+    ASSESSMENT_V2[name] = null;
+  }
+
+  function assessmentV2Reset(reason = 'reset'){
+    assessmentV2ClearTimer('nextTimer');
+    assessmentV2ClearTimer('hardTimer');
+    assessmentV2ClearTimer('stallTimer');
+    ASSESSMENT_V2.started = true;
+    ASSESSMENT_V2.asked = 0;
+    ASSESSMENT_V2.answered = 0;
+    ASSESSMENT_V2.awaitingAnswer = false;
+    ASSESSMENT_V2.lastAskedNo = 0;
+    ASSESSMENT_V2.finalLock = false;
+    ASSESSMENT_V2.mediaStopped = false;
+    ASSESSMENT_V2.finalInstructionSent = false;
+    ASSESSMENT_V2.lastAssistantAt = 0;
+    ASSESSMENT_V2.lastUserAt = 0;
+    ASSESSMENT_V2.answers = Object.create(null);
+    try { log('[ASSESSMENT_V2] reset', { reason, target: assessmentV2Target(), total: assessmentV2TotalTarget(), mode: assessmentModeName(CTX), hybrid: assessmentV2IsHybrid() }); } catch(_) {}
+  }
+
+  function assessmentV2LooksLikeMainQuestion(text){
+    const raw = String(text || '').trim();
+    if (!raw || looksLikeToolNoise(raw)) return false;
+    if (looksLikeReadyWelcome(raw)) return false;
+    if (finalClosingDetected(raw)) return false;
+    if (!textHasQuestion(raw)) return false;
+    const n = normalizeForMatch(raw);
+    if (!n) return false;
+    const banned = ['mochten sie noch etwas', 'möchten sie noch etwas', 'anything else', 'would you like to add', 'do you want to add', 'noch etwas erganzen', 'noch etwas ergänzen'];
+    if (banned.some(x => n.includes(normalizeForMatch(x)))) return false;
+    return true;
+  }
+
+  function assessmentV2RegisterAskedFromAssistant(text, source = 'assistant'){
+    if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return;
+    if (!assessmentV2LooksLikeMainQuestion(text)) return;
+    const target = assessmentV2Target();
+    let no = Math.max(ASSESSMENT_V2.asked + 1, Number(structuredCurrentQuestionIndex || 0) || 0);
+    if (!Number.isFinite(no) || no <= 0) no = ASSESSMENT_V2.asked + 1;
+    no = Math.max(1, Math.min(target, Math.round(no)));
+    ASSESSMENT_V2.asked = Math.max(ASSESSMENT_V2.asked, no);
+    ASSESSMENT_V2.lastAskedNo = no;
+    ASSESSMENT_V2.awaitingAnswer = true;
+    ASSESSMENT_V2.lastAssistantAt = Date.now();
+    assessmentV2ClearTimer('stallTimer');
+    // Give the participant real time to answer. Only if no answer event arrives after a generous window,
+    // repeat/pull the same missing slot. Never finalize from this timer.
+    ASSESSMENT_V2.stallTimer = setTimeout(() => {
+      if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return;
+      if (ASSESSMENT_V2.awaitingAnswer && ASSESSMENT_V2.lastAskedNo === no && ASSESSMENT_V2.answered < no) {
+        try { log('[ASSESSMENT_V2] answer stall: re-request same slot', { no, source }); } catch(_) {}
+        assessmentV2AskSlot(no, 'answer_stall_same_slot');
+      }
+    }, Math.max(45000, Math.min(90000, Number(Q.get('assessmentV2AnswerStallMs') || 65000) || 65000)));
+    try { postToParent('clarity.assessment.v2.slot_asked', { index:no, target, text:String(text||'').slice(0,220), source, ts:new Date().toISOString() }); } catch(_) {}
+    try { log('[ASSESSMENT_V2] slot asked', { no, target, source, structuredCurrentQuestionIndex }); } catch(_) {}
+  }
+
+  function assessmentV2RegisterUserAnswer(text, source = 'user'){
+    if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return;
+    const clean = String(text || '').trim();
+    if (!clean || clean.length < 2) return;
+    const target = assessmentV2Target();
+    const currentQuestion = Math.max(ASSESSMENT_V2.lastAskedNo || 0, Number(structuredCurrentQuestionIndex || 0) || 0);
+    if (currentQuestion <= 0) return; // readiness answer to welcome is not a slot answer
+    const no = Math.max(1, Math.min(target, Math.round(currentQuestion)));
+    ASSESSMENT_V2.answers[no] = clean;
+    ASSESSMENT_V2.answered = Math.max(ASSESSMENT_V2.answered, no);
+    ASSESSMENT_V2.awaitingAnswer = false;
+    ASSESSMENT_V2.lastUserAt = Date.now();
+    ASSESSMENT_TARGET_ANSWERED = ASSESSMENT_V2.answered >= target;
+    assessmentV2ClearTimer('stallTimer');
+    try { postToParent('clarity.assessment.v2.slot_answered', { index:no, target, text:clean.slice(0,240), source, ts:new Date().toISOString() }); } catch(_) {}
+    try { log('[ASSESSMENT_V2] slot answered', { no, target, source, answered: ASSESSMENT_V2.answered, asked: ASSESSMENT_V2.asked }); } catch(_) {}
+
+    if (no >= target) {
+      assessmentV2Finalize('target_answered');
+      return;
+    }
+
+    assessmentV2ClearTimer('nextTimer');
+    ASSESSMENT_V2.nextTimer = setTimeout(() => {
+      if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return;
+      assessmentV2AskSlot(no + 1, 'after_answer_next_slot');
+    }, Math.max(2200, Math.min(6500, Number(Q.get('assessmentV2NextQuestionDelayMs') || 3600) || 3600)));
+  }
+
+  function assessmentV2AskSlot(no, source = 'ask_slot'){
+    if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return false;
+    const target = assessmentV2Target();
+    const idx = Math.max(1, Math.min(target, Number(no || 1) || 1));
+    if (idx <= ASSESSMENT_V2.answered) return false;
+    try { log('[ASSESSMENT_V2] ask slot', { idx, target, source }); } catch(_) {}
+    return createAssistantAudioResponseFromInstruction(assessmentV2QuestionInstruction(idx, source), `assessment_v2_${source}_${idx}`);
+  }
+
+  function assessmentV2ClosingText(){
+    const lk = activeInterviewLang(CTX);
+    const profile = langProfile(lk);
+    if (assessmentV2IsHybrid()) return assessmentHybridClosingText(CTX, lk, profile);
+    return assessmentFinalClosingText(CTX);
+  }
+
+  function assessmentV2Finalize(source = 'finalize'){
+    if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return false;
+    const target = assessmentV2Target();
+    if (ASSESSMENT_V2.answered < target) {
+      try { log('[ASSESSMENT_V2] finalize blocked: target answer missing', { source, answered: ASSESSMENT_V2.answered, target, asked: ASSESSMENT_V2.asked }); } catch(_) {}
+      assessmentV2AskSlot(Math.max(1, ASSESSMENT_V2.answered + 1), 'finalize_blocked_missing_slot');
+      return false;
+    }
+
+    ASSESSMENT_V2.finalLock = true;
+    ASSESSMENT_TARGET_ANSWERED = true;
+    assessmentV2ClearTimer('nextTimer');
+    assessmentV2ClearTimer('stallTimer');
+    try { if (ASSESSMENT_SLOT_DRIVER_TIMER) clearTimeout(ASSESSMENT_SLOT_DRIVER_TIMER); } catch(_) {}
+    ASSESSMENT_SLOT_DRIVER_TIMER = null;
+    try { if (structuredAutoFinishTimer) clearTimeout(structuredAutoFinishTimer); } catch(_) {}
+    structuredAutoFinishTimer = null;
+    try { if (targetAutoFinishTimer) clearTimeout(targetAutoFinishTimer); } catch(_) {}
+    targetAutoFinishTimer = null;
+
+    const hybrid = assessmentV2IsHybrid();
+    const buffer = hybrid
+      ? Math.max(15000, Math.min(22000, Number(Q.get('assessmentV2HybridHangupMs') || 18000) || 18000))
+      : Math.max(20000, Math.min(28000, Number(Q.get('assessmentV2FinalHangupMs') || 23000) || 23000));
+
+    try {
+      postToParent('clarity.assessment.v2.target_answered', {
+        uid: UID,
+        companyId: COMPANY_ID,
+        source,
+        mode: assessmentModeName(CTX),
+        hybrid,
+        answered: ASSESSMENT_V2.answered,
+        asked: ASSESSMENT_V2.asked,
+        target,
+        bufferMs: buffer,
+        ts: new Date().toISOString()
+      });
+    } catch(_) {}
+
+    try { log('[ASSESSMENT_V2] FINAL_LOCK target answer reached', { source, hybrid, answered: ASSESSMENT_V2.answered, asked: ASSESSMENT_V2.asked, target, buffer }); } catch(_) {}
+
+    setStatus('warn', hybrid ? t('processing') : t('processing'));
+    setStopButtonAvailable(false);
+    avatarSet('processing', 'assessment_v2_final_lock');
+    avatarLevel('user', 0, 'assessment_v2_final_lock');
+    avatarLevel('ai', 0.12, 'assessment_v2_final_lock');
+
+    // Stop candidate input and recording immediately after the final answer. This is the key stability rule:
+    // from here onward, no further participant audio/video can alter the data that is being exported.
+    try { disableMicUplink(); } catch(_) {}
+    try {
+      localStream?.getAudioTracks?.().forEach(track => { track.enabled = false; });
+      // For video-only/mix we can disable the camera track after target completion as well.
+      localStream?.getVideoTracks?.().forEach(track => { try { track.enabled = false; } catch(_) {} });
+    } catch(_) {}
+    try { stopRecording(); ASSESSMENT_V2.mediaStopped = true; } catch(e) { try { log('[ASSESSMENT_V2] stopRecording failed', errMsg(e)); } catch(_) {} }
+
+    const close = assessmentV2ClosingText();
+    if (!ASSESSMENT_V2.finalInstructionSent && close) {
+      ASSESSMENT_V2.finalInstructionSent = true;
+      const lk = activeInterviewLang(CTX);
+      const instruction = lk === 'de'
+        ? `Das Assessment ist technisch abgeschlossen. Stelle keine weitere Frage. Sage jetzt exakt diesen Satz und nichts danach: „${close}“`
+        : `The assessment is technically complete. Do not ask another question. Now say exactly this sentence and nothing after it: “${close}”`;
+      try { createAssistantAudioResponseFromInstruction(instruction, hybrid ? 'assessment_v2_handoff_sentence' : 'assessment_v2_final_sentence'); } catch(e) { try { log('[ASSESSMENT_V2] final instruction failed', errMsg(e)); } catch(_) {} }
+    }
+
+    assessmentV2ClearTimer('hardTimer');
+    ASSESSMENT_V2.hardTimer = setTimeout(() => {
+      try { log('[ASSESSMENT_V2] hard hangup after final lock', { source, buffer }); } catch(_) {}
+      try { hangup(hybrid ? 'assessment_v2_oral_handoff_complete' : 'assessment_v2_complete'); } catch(e) { try { log('[ASSESSMENT_V2] hard hangup failed', errMsg(e)); } catch(_) {} }
+    }, buffer);
+    return true;
+  }
+
+  function assessmentV2LooksLikeCompletionText(text){
+    const n = normalizeForMatch(text);
+    if (!n) return false;
+    const signals = [
+      'assessment ist abgeschlossen', 'analyse ist abgeschlossen', 'daten werden verarbeitet', 'antworten werden verarbeitet', 'bitte bleiben sie', 'fenster nicht schließen', 'fenster nicht schliessen',
+      'spoken part is now complete', 'assessment is complete', 'answers will now be processed', 'please stay on this page', 'do not close this window',
+      'teil ist abgeschlossen', 'schriftliche teil', 'chat erscheint', 'chat appears', 'written part will now follow'
+    ];
+    return finalClosingDetected(text) || signals.some(x => n.includes(normalizeForMatch(x)));
+  }
+
+  function assessmentV2OnTranscript(payload){
+    if (!assessmentV2IsActive()) return;
+    const speaker = String(payload?.speaker || payload?.role || '').toLowerCase();
+    const text = String(payload?.text || payload?.cleanText || payload?.originalText || '').trim();
+    if (!text) return;
+
+    if (speaker === 'assistant') {
+      if (assessmentV2LooksLikeCompletionText(text)) {
+        // If the assistant somehow speaks the final/handoff sentence before the target answer,
+        // do not end. Pull the missing slot instead.
+        if (ASSESSMENT_V2.answered >= assessmentV2Target()) assessmentV2Finalize('assistant_completion_text_detected');
+        else assessmentV2AskSlot(Math.max(1, ASSESSMENT_V2.answered + 1), 'completion_too_early_missing_slot');
+        return;
+      }
+      assessmentV2RegisterAskedFromAssistant(text, payload?.sourceEvent || 'assistant_transcript');
+      return;
+    }
+
+    if (speaker === 'user') {
+      assessmentV2RegisterUserAnswer(text, payload?.sourceEvent || 'user_transcript');
+    }
+  }
+
   applyStaticTexts();
   setStatus('info', t('init'));
   avatarSet('ready', 'live_initialized');
@@ -2473,6 +2758,7 @@
     log('[TRANSCRIPT]', payload);
     postToParent('rt.transcript.partial', payload);
     emitStructuredTurnFromTranscript(payload);
+    try { assessmentV2OnTranscript(payload); } catch(e) { try { log('[ASSESSMENT_V2] transcript hook failed', errMsg(e)); } catch(_) {} }
 
     if (payload.final !== false) {
       if (String(payload.speaker || '').toLowerCase() === 'user') {
@@ -4457,7 +4743,7 @@
     if (lk === 'de') {
       return [
         'Sprich ausschließlich DEUTSCH. Wechsle nie die Sprache.',
-        'Dies ist ein CLARITY Assessment, KEIN klassisches Bewerbungsgespräch und KEIN Interview-Modul.',
+        'Dies ist ein CLARITY Assessment, KEIN klassisches Bewerbungsgespräch und KEIN Interview-Modul. Die technische App steuert die Slot-Reihenfolge; du sprichst nur die jeweils angeforderte Frage.',
         `Analysebereich: ${assessmentAreaLabel(area, lk)}.`,
         assessmentFocusText(area, lk, hasPosition),
         assessmentQuestionPolicyText(ctx, lk),
@@ -4470,7 +4756,7 @@
     }
     return [
       `Speak strictly in ${profile.englishName.toUpperCase()}. Do not switch languages.`,
-      `This is a CLARITY Assessment, NOT a classic job interview and NOT the Interview module.`,
+      `This is a CLARITY Assessment, NOT a classic job interview and NOT the Interview module. The technical app controls the slot order; you only speak the requested question.`,
       `Assessment area: ${assessmentAreaLabel(area, lk)}.`,
       assessmentFocusText(area, lk, hasPosition),
       assessmentQuestionPolicyText(ctx, lk),
@@ -5523,6 +5809,7 @@
     FINAL_MESSAGE_ITEM_ID = '';
     HARD_END_LOCK = false;
     TARGET_FINALIZE_REQUESTED = false;
+    try { if (isAssessmentContext(CTX)) assessmentV2Reset('startInterview'); } catch(_) {}
     try { if (HARD_END_WATCHDOG_TIMER) clearTimeout(HARD_END_WATCHDOG_TIMER); } catch(_) {}
     HARD_END_WATCHDOG_TIMER = null;
     try { if (ABSOLUTE_FINALIZE_TIMER) clearTimeout(ABSOLUTE_FINALIZE_TIMER); } catch(_) {}
