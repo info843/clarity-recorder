@@ -1,10 +1,10 @@
-<!-- liveAssessment.html — v1.0 BASE_FROM_live_v3_12_2_ASSESSMENT_HYBRID_HANDOFF_RESTORE | Dedicated CLARITY Assessment live file. Interview live.html stays untouched. -->
+<!-- liveAssessment.html — v1.3 ASSESSMENT_HANGUP_SLOT_DRIVER | Dedicated CLARITY Assessment live file. Interview live.html stays untouched. -->
 <!doctype html>
 <html lang="de">
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- liveAssessment v1.1 ASSESSMENT_STRICT_TIMERS: separated Assessment live driver, shorter handoff/hangup buffers -->
+  <!-- liveAssessment v1.3 ASSESSMENT_HANGUP_SLOT_DRIVER: hard hangup after handoff/closing + assessment slot progression guard -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -1176,6 +1176,7 @@
   let ABSOLUTE_FINALIZE_TIMER = null;
   let MODEL_END_NO_FINAL_TIMER = null;
   let SLOT_STALL_TIMER = null;
+  let ASSESSMENT_SLOT_DRIVER_TIMER = null;
   const TARGET_QUESTION_ANSWER_GRACE_MS = Math.max(8000, Math.min(60000, Number(Q.get('targetAnswerGraceMs') || 18000) || 18000));
   const TARGET_FOLLOWUP_WAIT_MS = Math.max(6000, Math.min(20000, Number(Q.get('targetFollowupWaitMs') || 11000) || 11000));
   const TARGET_FINALIZE_AFTER_ANSWER_MS = Math.max(1000, Math.min(7000, Number(Q.get('targetFinalizeAfterAnswerMs') || 1800) || 1800));
@@ -2278,7 +2279,7 @@
 
   function inferCandidateStructuredMeta(){
     const q = structuredCurrentQuestionIndex || 0;
-    const target = interviewLiveQuestionTarget(CTX);
+    const target = isAssessmentVoiceLive(CTX) ? assessmentLiveQuestionTarget(CTX) : interviewLiveQuestionTarget(CTX);
     const isFollowUp = structuredLastAssistantTurnType === 'follow_up_question';
     const isMainAnswer = q > 0 && structuredLastAssistantTurnType === 'main_question';
     const isAnswerAddition = q > 0 && isFollowUp;
@@ -2289,6 +2290,16 @@
         // Give the model a short window to ask the one allowed final follow-up.
         // If it does not, close the interview instead of waiting indefinitely.
         scheduleStrictTargetFinalization('target_main_answer_wait_followup', TARGET_FOLLOWUP_WAIT_MS);
+      }
+    }
+
+    if (isMainAnswer && isAssessmentVoiceLive(CTX)) {
+      // Assessment has no follow-up/coaching slot. One answer completes the current slot.
+      structuredAwaitingFollowUpQuestion = false;
+      if (q >= target) {
+        scheduleStrictTargetFinalization('assessment_target_answer_completed', TARGET_FINALIZE_AFTER_ANSWER_MS);
+      } else if (q > 0) {
+        scheduleAssessmentSlotDriver('assessment_candidate_answer_completed', q, Math.max(1200, TARGET_FINALIZE_AFTER_ANSWER_MS));
       }
     }
 
@@ -2449,7 +2460,13 @@
         scheduleInterviewAutoFinishCheck('candidate_transcript_final');
       } else if (String(payload.speaker || '').toLowerCase() === 'assistant') {
         // New assistant activity means the model is still active; defer idle autofinish.
-        if (!finalClosingDetected(payload.text)) scheduleInterviewAutoFinishCheck('assistant_transcript_final');
+        // If the configured final/handoff sentence is actually spoken, start the technical
+        // hangup timer immediately; do not wait for the model to call end_interview.
+        if (finalClosingDetected(payload.text)) {
+          handleDetectedFinalOrHandoffTranscript('assistant_final_or_handoff_transcript', payload.text);
+        } else {
+          scheduleInterviewAutoFinishCheck('assistant_transcript_final');
+        }
       }
     }
   }
@@ -2740,6 +2757,49 @@
     return (targetReached && hasEnoughResponses) || (targetReached && longEnough);
   }
 
+  function finalMediaTargetReachedForHangup(){
+    if (isAssessmentVoiceLive(CTX)) return structuredCurrentQuestionIndex >= assessmentLiveQuestionTarget(CTX);
+    if (isInterviewLiveContext(CTX)) return structuredCurrentQuestionIndex >= interviewLiveQuestionTarget(CTX) || nearCompleteVideoOnlyByRuntime(CTX);
+    return true;
+  }
+
+  function handleDetectedFinalOrHandoffTranscript(source, text){
+    if (END_CALLED || FINAL_HANGUP_TIMER) return false;
+    if (!finalClosingDetected(text)) return false;
+    if (!finalMediaTargetReachedForHangup()) {
+      log('[END] final/handoff text detected before media target; not hanging up yet', {
+        source: source || '',
+        current: structuredCurrentQuestionIndex,
+        assessmentTarget: isAssessmentVoiceLive(CTX) ? assessmentLiveQuestionTarget(CTX) : 0,
+        interviewTarget: isInterviewLiveContext(CTX) ? interviewLiveQuestionTarget(CTX) : 0,
+        textPreview: String(text || '').slice(0, 160)
+      });
+      return false;
+    }
+
+    FINAL_MESSAGE_SPOKEN = true;
+    HARD_END_LOCK = true;
+    TARGET_FINALIZE_REQUESTED = true;
+    try { if (targetAutoFinishTimer) clearTimeout(targetAutoFinishTimer); } catch(_) {}
+    try { if (structuredAutoFinishTimer) clearTimeout(structuredAutoFinishTimer); } catch(_) {}
+    try { if (HARD_END_WATCHDOG_TIMER) clearTimeout(HARD_END_WATCHDOG_TIMER); } catch(_) {}
+    try { if (ASSESSMENT_SLOT_DRIVER_TIMER) clearTimeout(ASSESSMENT_SLOT_DRIVER_TIMER); } catch(_) {}
+    targetAutoFinishTimer = null;
+    structuredAutoFinishTimer = null;
+    HARD_END_WATCHDOG_TIMER = null;
+    ASSESSMENT_SLOT_DRIVER_TIMER = null;
+    lockRealtimeListeningForEnd(source || 'final_handoff_detected');
+    log('[END] final/handoff transcript detected -> final hangup timer', {
+      source: source || '',
+      current: structuredCurrentQuestionIndex,
+      assessmentTarget: isAssessmentVoiceLive(CTX) ? assessmentLiveQuestionTarget(CTX) : 0,
+      bufferMs: effectiveFinalHangupBufferMs(),
+      textPreview: String(text || '').slice(0, 160)
+    });
+    beginFinalHangup(source || 'final_handoff_detected');
+    return true;
+  }
+
   function sendFinalCloseInstruction(source, forced = false){
     if (END_CALLED || FINAL_HANGUP_TIMER) return;
     if (!forced && !shouldAutoFinishInterview()) return;
@@ -2878,6 +2938,38 @@
     VIDEO_DRIVER_TIMER = null;
   }
 
+  function scheduleAssessmentSlotDriver(source, q, delayMs = 1800){
+    if (!isAssessmentVoiceLive(CTX)) return false;
+    if (END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK) return false;
+    const target = assessmentLiveQuestionTarget(CTX);
+    const current = Math.max(0, Number(q || structuredCurrentQuestionIndex || 0));
+    if (current >= target) {
+      scheduleStrictTargetFinalization(source || 'assessment_slot_driver_target_complete', TARGET_FINALIZE_AFTER_ANSWER_MS);
+      return true;
+    }
+    try { if (ASSESSMENT_SLOT_DRIVER_TIMER) clearTimeout(ASSESSMENT_SLOT_DRIVER_TIMER); } catch(_) {}
+    const delay = Math.max(900, Math.min(6000, Number(delayMs) || 1800));
+    ASSESSMENT_SLOT_DRIVER_TIMER = setTimeout(() => {
+      if (END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK) return;
+      const latest = structuredCurrentQuestionIndex || 0;
+      const t = assessmentLiveQuestionTarget(CTX);
+      if (latest >= t) {
+        scheduleStrictTargetFinalization(source || 'assessment_slot_driver_reached_target', TARGET_FINALIZE_AFTER_ANSWER_MS);
+        return;
+      }
+      log('[DRIVER:assessment] requesting next fixed assessment question', {
+        source: source || '',
+        current: latest,
+        next: Math.min(t, latest + 1),
+        target: t,
+        mode: assessmentModeName(CTX)
+      });
+      requestMissingInterviewQuestion(source || 'assessment_slot_driver_next_question');
+    }, delay);
+    log('[DRIVER:assessment] scheduled', { source: source || '', delayMs: delay, current, target });
+    return true;
+  }
+
   function scheduleVideoOnlyDriver(source, delayMs = 1800){
     if (!isVideoOnlyInterview(CTX)) return false;
     if (END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK || VIDEO_DRIVER_FINAL_LOCK) return false;
@@ -2991,22 +3083,28 @@
 
   function scheduleInterviewAutoFinishCheck(source){
     try { if (structuredAutoFinishTimer) clearTimeout(structuredAutoFinishTimer); } catch(_) {}
-    if (!isInterviewLiveContext(CTX)) return;
 
-    // v3.11.7: Hybrid/Mix previously skipped the idle auto-finish path completely.
-    // That meant the model could speak the correct handoff sentence, but if it missed the
-    // end_interview tool call or transcript final event, the recorder stayed open until the
-    // user pressed the fallback button. Hybrid may now auto-finalize ONLY after the spoken
-    // media target is reached; before that it remains protected by the early-end guards.
-    if (isInterviewHybrid(CTX) && structuredCurrentQuestionIndex < interviewLiveQuestionTarget(CTX)) return;
+    const assessmentVoice = isAssessmentVoiceLive(CTX);
+    const interviewVoice = isInterviewLiveContext(CTX);
+    if (!interviewVoice && !assessmentVoice) return;
+
+    const target = assessmentVoice ? assessmentLiveQuestionTarget(CTX) : interviewLiveQuestionTarget(CTX);
+    const hybrid = (assessmentVoice && isAssessmentHybridLive(CTX)) || (interviewVoice && isInterviewHybrid(CTX));
+
+    if (structuredCurrentQuestionIndex < target) {
+      if (assessmentVoice) {
+        scheduleAssessmentSlotDriver(source || 'assessment_idle_before_target', structuredCurrentQuestionIndex || 0, Math.max(1500, TARGET_FINALIZE_AFTER_ANSWER_MS));
+      }
+      return;
+    }
 
     structuredAutoFinishTimer = setTimeout(() => {
-      if (isInterviewHybrid(CTX)) {
-        sendFinalCloseInstruction(source || 'hybrid_idle_after_spoken_target', true);
+      if (assessmentVoice || hybrid) {
+        sendFinalCloseInstruction(source || (assessmentVoice ? 'assessment_idle_after_target' : 'hybrid_idle_after_spoken_target'), true);
       } else {
         requestAutoFinishInterview(source || 'idle_after_candidate_answer');
       }
-    }, isInterviewHybrid(CTX) ? Math.max(3000, TARGET_FINALIZE_AFTER_ANSWER_MS) : STRUCTURED_AUTOFINISH_IDLE_MS);
+    }, hybrid || assessmentVoice ? Math.max(1200, TARGET_FINALIZE_AFTER_ANSWER_MS) : STRUCTURED_AUTOFINISH_IDLE_MS);
   }
 
   function scheduleTargetReachedAutoFinish(source, delayMs){
@@ -3115,12 +3213,12 @@
   }
 
   function effectiveFinalHangupBufferMs(){
-    const base = Math.max(2500, Number(FINAL_HANGUP_BUFFER_MS) || 12000);
-    // liveAssessment.html is Assessment-only. Hybrid/Mix only needs the short handoff sentence
-    // before recorder finish and chat takeover. Audio/video-only gets a slightly longer closing.
-    if (isAssessmentHybridLive(CTX)) return Math.max(9000, Math.min(14000, base));
-    if (isAssessmentVoiceLive(CTX)) return Math.max(11000, Math.min(18000, base));
-    return Math.max(2500, Math.min(18000, base));
+    const base = Math.max(2500, Number(FINAL_HANGUP_BUFFER_MS) || 15000);
+    // liveAssessment.html is Assessment-only. The spoken handoff/closing must not be cut,
+    // but recorder/mic/camera should stop shortly after target completion.
+    if (isAssessmentHybridLive(CTX)) return Math.max(15000, Math.min(20000, base));
+    if (isAssessmentVoiceLive(CTX)) return Math.max(15000, Math.min(20000, base));
+    return Math.max(2500, Math.min(20000, base));
   }
 
   function beginFinalHangup(source){
@@ -5252,6 +5350,8 @@
     ABSOLUTE_FINALIZE_TIMER = null;
     try { if (MODEL_END_NO_FINAL_TIMER) clearTimeout(MODEL_END_NO_FINAL_TIMER); } catch(_) {}
     MODEL_END_NO_FINAL_TIMER = null;
+    try { if (ASSESSMENT_SLOT_DRIVER_TIMER) clearTimeout(ASSESSMENT_SLOT_DRIVER_TIMER); } catch(_) {}
+    ASSESSMENT_SLOT_DRIVER_TIMER = null;
     try { if (SLOT_STALL_TIMER) clearTimeout(SLOT_STALL_TIMER); } catch(_) {}
     SLOT_STALL_TIMER = null;
     try { if (structuredEarlyClosingRecoveryTimer) clearTimeout(structuredEarlyClosingRecoveryTimer); } catch(_) {}
@@ -5364,6 +5464,8 @@
     ABSOLUTE_FINALIZE_TIMER = null;
     try { if (MODEL_END_NO_FINAL_TIMER) clearTimeout(MODEL_END_NO_FINAL_TIMER); } catch(_) {}
     MODEL_END_NO_FINAL_TIMER = null;
+    try { if (ASSESSMENT_SLOT_DRIVER_TIMER) clearTimeout(ASSESSMENT_SLOT_DRIVER_TIMER); } catch(_) {}
+    ASSESSMENT_SLOT_DRIVER_TIMER = null;
     clearHardEndTimers();
 
     if (destroyed && reason !== 'user_fallback_end') return;
