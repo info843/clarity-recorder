@@ -1,10 +1,10 @@
-<!-- liveAssessment.html — v2.0 DETERMINISTIC_SLOT_ENGINE | Dedicated CLARITY Assessment live file. Deterministic slot state machine; Interview live.html stays untouched. -->
+<!-- liveAssessment.html — v2.3 TURN_LOCKED_DEBOUNCED_ANSWER_ENGINE | Dedicated CLARITY Assessment live file. Debounced answer-lock state machine; Interview live.html stays untouched. -->
 <!doctype html>
 <html lang="de">
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- liveAssessment v2.0 DETERMINISTIC_SLOT_ENGINE: fixed assessment slots, target-answer final lock, media stop/export independent from model end_interview -->
+  <!-- liveAssessment v2.3 TURN_LOCKED_DEBOUNCED_ANSWER_ENGINE: fixed assessment slots, debounced participant-answer lock, target-answer final lock, media stop/export independent from model end_interview -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -2417,7 +2417,7 @@
   }
 
 
-  /* ===== Assessment v2.2 Turn-Locked Slot Engine =====
+  /* ===== Assessment v2.3 Turn-Locked Debounced Answer Engine =====
      Product rule for Modul1:
      - Assessment is not a free interview and not a coaching session.
      - One fixed slot question -> one participant answer -> next slot.
@@ -2443,7 +2443,13 @@
     answers: Object.create(null),
     phase: 'idle',
     slotAskedAt: 0,
-    slotListenSince: 0
+    slotListenSince: 0,
+    pendingAnswerText: '',
+    pendingAnswerSlot: 0,
+    pendingAnswerSources: [],
+    pendingAnswerFirstAt: 0,
+    pendingAnswerLastAt: 0,
+    pendingAnswerTimer: null
   };
 
   function assessmentV2IsActive(){
@@ -2497,6 +2503,7 @@
     assessmentV2ClearTimer('nextTimer');
     assessmentV2ClearTimer('hardTimer');
     assessmentV2ClearTimer('stallTimer');
+    assessmentV2ClearTimer('pendingAnswerTimer');
     ASSESSMENT_V2.started = true;
     ASSESSMENT_V2.asked = 0;
     ASSESSMENT_V2.answered = 0;
@@ -2511,6 +2518,11 @@
     ASSESSMENT_V2.phase = 'idle';
     ASSESSMENT_V2.slotAskedAt = 0;
     ASSESSMENT_V2.slotListenSince = 0;
+    ASSESSMENT_V2.pendingAnswerText = '';
+    ASSESSMENT_V2.pendingAnswerSlot = 0;
+    ASSESSMENT_V2.pendingAnswerSources = [];
+    ASSESSMENT_V2.pendingAnswerFirstAt = 0;
+    ASSESSMENT_V2.pendingAnswerLastAt = 0;
     assessmentV2Debug('reset', { reason, target: assessmentV2Target(), total: assessmentV2TotalTarget(), mode: assessmentModeName(CTX), hybrid: assessmentV2IsHybrid() });
   }
 
@@ -2531,9 +2543,9 @@
         extra: data || {},
         ts: new Date().toISOString()
       };
-      log('[ASSESSMENT_V2.2]', payload);
+      log('[ASSESSMENT_V2.3]', payload);
       try { postToParent('clarity.assessment.v2.debug', payload); } catch(_) {}
-    } catch(e) { try { log('[ASSESSMENT_V2.2] debug failed', errMsg(e)); } catch(_) {} }
+    } catch(e) { try { log('[ASSESSMENT_V2.3] debug failed', errMsg(e)); } catch(_) {} }
   }
 
   function assessmentV2LooksLikeMainQuestion(text){
@@ -2580,6 +2592,12 @@
     ASSESSMENT_V2.slotAskedAt = Date.now();
     ASSESSMENT_V2.slotListenSince = Date.now();
     ASSESSMENT_V2.phase = 'listening';
+    assessmentV2ClearTimer('pendingAnswerTimer');
+    ASSESSMENT_V2.pendingAnswerText = '';
+    ASSESSMENT_V2.pendingAnswerSlot = 0;
+    ASSESSMENT_V2.pendingAnswerSources = [];
+    ASSESSMENT_V2.pendingAnswerFirstAt = 0;
+    ASSESSMENT_V2.pendingAnswerLastAt = 0;
     assessmentV2ArmAnswerStall(idx, source);
     try { postToParent('clarity.assessment.v2.slot_asked', { index:idx, target, text:String(text||'').slice(0,220), source, ts:new Date().toISOString() }); } catch(_) {}
     assessmentV2Debug('slot_asked', { no:idx, target, source, questionPreview:String(text||'').slice(0,160) });
@@ -2589,9 +2607,83 @@
   function assessmentV2RegisterAskedFromAssistant(text, source = 'assistant'){
     if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return;
     if (!assessmentV2LooksLikeMainQuestion(text)) return;
-    // v2.2: Assistant transcript is diagnostics only. Slot advancement is driven only by
+    // v2.3: Assistant transcript is diagnostics only. Slot advancement is driven only by
     // explicit assessmentV2AskSlot() calls, never by audio/text fragments from the model.
     assessmentV2Debug('assistant_question_transcript_observed_no_advance', { source, textPreview:String(text||'').slice(0,160) });
+  }
+
+  function assessmentV2AppendText(existing, incoming){
+    const a = String(existing || '').trim();
+    const b = String(incoming || '').trim();
+    if (!a) return b;
+    if (!b) return a;
+    const an = normalizeForMatch(a);
+    const bn = normalizeForMatch(b);
+    if (an && bn) {
+      if (an.includes(bn)) return a;
+      if (bn.includes(an)) return b;
+    }
+    return `${a} ${b}`.replace(/\s+/g, ' ').trim();
+  }
+
+  function assessmentV2CommitBufferedAnswer(slot, source = 'buffer_commit'){
+    if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return false;
+    const target = assessmentV2Target();
+    const no = Math.max(1, Math.min(target, Math.round(Number(slot || ASSESSMENT_V2.pendingAnswerSlot || ASSESSMENT_V2.lastAskedNo) || 1)));
+    const clean = String(ASSESSMENT_V2.pendingAnswerText || '').trim();
+    if (!clean || no <= ASSESSMENT_V2.answered || no !== ASSESSMENT_V2.lastAskedNo || !ASSESSMENT_V2.awaitingAnswer) {
+      assessmentV2Debug('buffer_commit_ignored', { no, source, cleanPreview:clean.slice(0,160), answered:ASSESSMENT_V2.answered, lastAskedNo:ASSESSMENT_V2.lastAskedNo, awaitingAnswer:ASSESSMENT_V2.awaitingAnswer });
+      return false;
+    }
+
+    ASSESSMENT_V2.answers[no] = clean;
+    ASSESSMENT_V2.answered = Math.max(ASSESSMENT_V2.answered, no);
+    ASSESSMENT_V2.awaitingAnswer = false;
+    ASSESSMENT_V2.phase = 'answered';
+    ASSESSMENT_V2.lastUserAt = Date.now();
+    ASSESSMENT_TARGET_ANSWERED = ASSESSMENT_V2.answered >= target;
+    assessmentV2ClearTimer('stallTimer');
+    assessmentV2ClearTimer('pendingAnswerTimer');
+    ASSESSMENT_V2.pendingAnswerText = '';
+    ASSESSMENT_V2.pendingAnswerSlot = 0;
+    ASSESSMENT_V2.pendingAnswerSources = [];
+    ASSESSMENT_V2.pendingAnswerFirstAt = 0;
+    ASSESSMENT_V2.pendingAnswerLastAt = 0;
+
+    try { postToParent('clarity.assessment.v2.slot_answered', { index:no, target, text:clean.slice(0,240), source, ts:new Date().toISOString() }); } catch(_) {}
+    assessmentV2Debug('slot_answered_debounced', { no, target, source, answered: ASSESSMENT_V2.answered, asked: ASSESSMENT_V2.asked, textPreview:clean.slice(0,160) });
+
+    if (no >= target) {
+      assessmentV2Finalize('target_answered_debounced');
+      return true;
+    }
+
+    assessmentV2ClearTimer('nextTimer');
+    const nextDelay = Math.max(5200, Math.min(12000, Number(Q.get('assessmentV2NextQuestionDelayMs') || 7000) || 7000));
+    ASSESSMENT_V2.nextTimer = setTimeout(() => {
+      if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return;
+      assessmentV2AskSlot(no + 1, 'after_debounced_answer_next_slot');
+    }, nextDelay);
+    return true;
+  }
+
+  function assessmentV2ArmBufferedAnswerCommit(slot, source = 'buffer'){
+    assessmentV2ClearTimer('pendingAnswerTimer');
+    const settleMs = Math.max(9000, Math.min(26000, Number(Q.get('assessmentV2AnswerSettleMs') || 14000) || 14000));
+    const minFromAskMs = Math.max(9000, Math.min(26000, Number(Q.get('assessmentV2MinTranscriptAnswerMs') || 12500) || 12500));
+    ASSESSMENT_V2.pendingAnswerTimer = setTimeout(() => {
+      if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return;
+      const nowTs = Date.now();
+      const sinceAsk = nowTs - Math.max(ASSESSMENT_V2.slotListenSince || 0, ASSESSMENT_V2.slotAskedAt || 0);
+      const sinceLast = nowTs - (ASSESSMENT_V2.pendingAnswerLastAt || nowTs);
+      if (sinceAsk < minFromAskMs || sinceLast < settleMs - 250) {
+        assessmentV2Debug('buffer_commit_rescheduled_waiting_for_silence', { slot, source, sinceAsk, sinceLast, settleMs, minFromAskMs });
+        assessmentV2ArmBufferedAnswerCommit(slot, 'rescheduled_waiting_for_silence');
+        return;
+      }
+      assessmentV2CommitBufferedAnswer(slot, source || 'buffer_timer');
+    }, settleMs);
+    assessmentV2Debug('buffer_commit_armed', { slot, source, settleMs, minFromAskMs, textPreview:String(ASSESSMENT_V2.pendingAnswerText||'').slice(0,160) });
   }
 
   function assessmentV2RegisterUserAnswer(text, source = 'user'){
@@ -2603,27 +2695,31 @@
       assessmentV2Debug('user_answer_ignored_no_open_slot', { source, textPreview:clean.slice(0,160) });
       return;
     }
-    const no = Math.max(1, Math.min(target, Math.round(ASSESSMENT_V2.lastAskedNo)));
-    ASSESSMENT_V2.answers[no] = clean;
-    ASSESSMENT_V2.answered = Math.max(ASSESSMENT_V2.answered, no);
-    ASSESSMENT_V2.awaitingAnswer = false;
-    ASSESSMENT_V2.phase = 'answered';
-    ASSESSMENT_V2.lastUserAt = Date.now();
-    ASSESSMENT_TARGET_ANSWERED = ASSESSMENT_V2.answered >= target;
-    assessmentV2ClearTimer('stallTimer');
-    try { postToParent('clarity.assessment.v2.slot_answered', { index:no, target, text:clean.slice(0,240), source, ts:new Date().toISOString() }); } catch(_) {}
-    assessmentV2Debug('slot_answered', { no, target, source, answered: ASSESSMENT_V2.answered, asked: ASSESSMENT_V2.asked, textPreview:clean.slice(0,160) });
 
-    if (no >= target) {
-      assessmentV2Finalize('target_answered');
-      return;
+    const no = Math.max(1, Math.min(target, Math.round(ASSESSMENT_V2.lastAskedNo)));
+    const nowTs = Date.now();
+    const sinceAsk = nowTs - Math.max(ASSESSMENT_V2.slotListenSince || 0, ASSESSMENT_V2.slotAskedAt || 0);
+    const minAcceptMs = Math.max(6000, Math.min(22000, Number(Q.get('assessmentV2MinTranscriptStartMs') || 8000) || 8000));
+
+    // Transcript chunks can arrive while the participant is still speaking. We therefore only buffer here.
+    // The slot is counted after a stable silence window, not at the first transcript fragment.
+    if (sinceAsk < minAcceptMs) {
+      assessmentV2Debug('user_answer_buffered_early_but_not_counted', { no, source, sinceAsk, minAcceptMs, textPreview:clean.slice(0,160) });
     }
 
-    assessmentV2ClearTimer('nextTimer');
-    ASSESSMENT_V2.nextTimer = setTimeout(() => {
-      if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return;
-      assessmentV2AskSlot(no + 1, 'after_answer_next_slot');
-    }, Math.max(3800, Math.min(8500, Number(Q.get('assessmentV2NextQuestionDelayMs') || 5200) || 5200)));
+    if (ASSESSMENT_V2.pendingAnswerSlot !== no) {
+      ASSESSMENT_V2.pendingAnswerText = clean;
+      ASSESSMENT_V2.pendingAnswerSlot = no;
+      ASSESSMENT_V2.pendingAnswerSources = [String(source || 'user')];
+      ASSESSMENT_V2.pendingAnswerFirstAt = nowTs;
+    } else {
+      ASSESSMENT_V2.pendingAnswerText = assessmentV2AppendText(ASSESSMENT_V2.pendingAnswerText, clean);
+      ASSESSMENT_V2.pendingAnswerSources.push(String(source || 'user'));
+    }
+    ASSESSMENT_V2.pendingAnswerLastAt = nowTs;
+    ASSESSMENT_V2.phase = 'answer_buffering';
+    assessmentV2Debug('answer_fragment_buffered', { no, source, sinceAsk, pendingChars:ASSESSMENT_V2.pendingAnswerText.length, textPreview:clean.slice(0,160) });
+    assessmentV2ArmBufferedAnswerCommit(no, source || 'user_transcript');
   }
 
   function assessmentV2AskSlot(no, source = 'ask_slot'){
@@ -2726,23 +2822,12 @@
 
   function assessmentV2RegisterAudioItemAnswer(itemId = '', source = 'user_audio_item'){
     if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return false;
-    if (!ASSESSMENT_V2.awaitingAnswer || !ASSESSMENT_V2.lastAskedNo || ASSESSMENT_V2.lastAskedNo <= ASSESSMENT_V2.answered) return false;
-    const src = String(source || '').toLowerCase();
-    if (!src.includes('done')) {
-      assessmentV2Debug('audio_item_ignored_not_done', { itemId, source });
-      return false;
-    }
-    const elapsed = Date.now() - Math.max(ASSESSMENT_V2.slotListenSince || 0, ASSESSMENT_V2.slotAskedAt || 0);
-    const minMs = Math.max(6500, Math.min(18000, Number(Q.get('assessmentV2MinAudioAnswerMs') || 9500) || 9500));
-    if (elapsed < minMs) {
-      assessmentV2Debug('audio_item_ignored_too_early', { itemId, source, elapsedMs:elapsed, minMs, slot:ASSESSMENT_V2.lastAskedNo });
-      return false;
-    }
-    const slot = ASSESSMENT_V2.lastAskedNo;
-    const controlText = `[audio answer captured for assessment slot ${slot}]`;
-    assessmentV2Debug('control_answer_from_audio_done', { slot, itemId, source, elapsedMs:elapsed });
-    assessmentV2RegisterUserAnswer(controlText, source || 'user_audio_item_done');
-    return true;
+    // v2.3: raw audio item events are diagnostics only. They are too early/noisy to count a slot answer.
+    // A slot answer is locked only from transcript text after a silence/debounce window. If transcript
+    // fails entirely, the backend can still analyze candidate-audio after export, but the live driver
+    // must not advance based on audio fragments alone.
+    assessmentV2Debug('audio_item_observed_no_slot_count_v23', { itemId, source, slot:ASSESSMENT_V2.lastAskedNo, answered:ASSESSMENT_V2.answered });
+    return false;
   }
 
   function assessmentV2LooksLikeCompletionText(text){
