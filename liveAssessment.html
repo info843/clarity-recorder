@@ -1,10 +1,10 @@
-<!-- liveAssessment.html — v1.3 ASSESSMENT_HANGUP_SLOT_DRIVER | Dedicated CLARITY Assessment live file. Interview live.html stays untouched. -->
+<!-- liveAssessment.html — v1.5 ASSESSMENT_TARGET_ANSWER_GUARD | Dedicated CLARITY Assessment live file. Interview live.html stays untouched. -->
 <!doctype html>
 <html lang="de">
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- liveAssessment v1.4 ASSESSMENT_FORCE_FINALIZER: parent-safe hard stop, deterministic assessment end timers -->
+  <!-- liveAssessment v1.5 ASSESSMENT_TARGET_ANSWER_GUARD: no early finalization before target answer, deterministic assessment end timers -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -1178,6 +1178,9 @@
   let SLOT_STALL_TIMER = null;
   let ASSESSMENT_SLOT_DRIVER_TIMER = null;
   let ASSESSMENT_DIRECT_HANGUP_TIMER = null;
+  // Critical guard: Assessment may only finalize after the participant answer for the target slot.
+  // Assistant asking Q10/Q7 is not enough; this prevents early hangup after only a few questions.
+  let ASSESSMENT_TARGET_ANSWERED = false;
   const TARGET_QUESTION_ANSWER_GRACE_MS = Math.max(8000, Math.min(60000, Number(Q.get('targetAnswerGraceMs') || 18000) || 18000));
   const TARGET_FOLLOWUP_WAIT_MS = Math.max(6000, Math.min(20000, Number(Q.get('targetFollowupWaitMs') || 11000) || 11000));
   const TARGET_FINALIZE_AFTER_ANSWER_MS = Math.max(1000, Math.min(7000, Number(Q.get('targetFinalizeAfterAnswerMs') || 1800) || 1800));
@@ -1247,7 +1250,7 @@
   const STRUCTURED_AUTOFINISH_FORCE_MS = Math.max(8000, Math.min(30000, Number(Q.get('autoFinishForceMs') || 16000) || 16000));
   // Assessment safety: once the last required media slot is complete and the final/handoff
   // instruction has been sent, do not depend on a model tool call. Stop media after this window.
-  const ASSESSMENT_DIRECT_HANGUP_MS = Math.max(12000, Math.min(26000, Number(Q.get('assessmentDirectHangupMs') || FINAL_HANGUP_BUFFER_MS || 20000) || 20000));
+  const ASSESSMENT_DIRECT_HANGUP_MS = Math.max(15000, Math.min(30000, Number(Q.get('assessmentDirectHangupMs') || FINAL_HANGUP_BUFFER_MS || 22000) || 22000));
   const ASSESSMENT_ANSWER_STALL_ADVANCE_MS = Math.max(22000, Math.min(60000, Number(Q.get('assessmentAnswerStallAdvanceMs') || 36000) || 36000));
 
 
@@ -2311,6 +2314,8 @@
       // Assessment has no follow-up/coaching slot. One answer completes the current slot.
       structuredAwaitingFollowUpQuestion = false;
       if (q >= target) {
+        ASSESSMENT_TARGET_ANSWERED = true;
+        log('[ASSESSMENT] target slot answered', { q, target, source: 'candidate_main_answer' });
         scheduleStrictTargetFinalization('assessment_target_answer_completed', TARGET_FINALIZE_AFTER_ANSWER_MS);
       } else if (q > 0) {
         scheduleAssessmentSlotDriver('assessment_candidate_answer_completed', q, Math.max(1200, TARGET_FINALIZE_AFTER_ANSWER_MS));
@@ -2737,6 +2742,18 @@
     if (END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK) return;
     const assessmentTarget = isAssessmentVoiceLive(CTX) ? assessmentLiveQuestionTarget(CTX) : 0;
     const isAssessmentTargetReached = isAssessmentVoiceLive(CTX) && structuredCurrentQuestionIndex >= assessmentTarget;
+    if (isAssessmentVoiceLive(CTX)) {
+      if (!isAssessmentTargetReached) return;
+      if (!assessmentTargetAnswerReadyForFinal(source || 'strict_target_finalization')) {
+        log('[HARD-END] assessment finalization blocked until target answer', {
+          source: source || '',
+          current: structuredCurrentQuestionIndex,
+          target: assessmentTarget,
+          targetAnswered: ASSESSMENT_TARGET_ANSWERED
+        });
+        return;
+      }
+    }
     if (!isInterviewLiveContext(CTX) && !isAssessmentTargetReached) return;
     if (isInterviewLiveContext(CTX) && structuredCurrentQuestionIndex < interviewLiveQuestionTarget(CTX) && !nearCompleteVideoOnlyByRuntime(CTX)) return;
 
@@ -2775,8 +2792,16 @@
     return (targetReached && hasEnoughResponses) || (targetReached && longEnough);
   }
 
+  function assessmentTargetAnswerReadyForFinal(source = ''){
+    if (!isAssessmentVoiceLive(CTX)) return true;
+    const src = String(source || '').toLowerCase();
+    // Manual/fallback stop must always be allowed to avoid trapping the user.
+    if (/manual|parent_stop|user_abort|emergency|fallback/.test(src)) return true;
+    return structuredCurrentQuestionIndex >= assessmentLiveQuestionTarget(CTX) && ASSESSMENT_TARGET_ANSWERED === true;
+  }
+
   function finalMediaTargetReachedForHangup(){
-    if (isAssessmentVoiceLive(CTX)) return structuredCurrentQuestionIndex >= assessmentLiveQuestionTarget(CTX);
+    if (isAssessmentVoiceLive(CTX)) return structuredCurrentQuestionIndex >= assessmentLiveQuestionTarget(CTX) && ASSESSMENT_TARGET_ANSWERED === true;
     if (isInterviewLiveContext(CTX)) return structuredCurrentQuestionIndex >= interviewLiveQuestionTarget(CTX) || nearCompleteVideoOnlyByRuntime(CTX);
     return true;
   }
@@ -2820,6 +2845,18 @@
 
   function sendFinalCloseInstruction(source, forced = false){
     if (END_CALLED || FINAL_HANGUP_TIMER) return;
+    if (isAssessmentVoiceLive(CTX) && !assessmentTargetAnswerReadyForFinal(source || 'send_final_close')) {
+      log('[END] assessment final close blocked until target answer', {
+        source: source || '',
+        current: structuredCurrentQuestionIndex,
+        target: assessmentLiveQuestionTarget(CTX),
+        targetAnswered: ASSESSMENT_TARGET_ANSWERED
+      });
+      if ((structuredCurrentQuestionIndex || 0) < assessmentLiveQuestionTarget(CTX)) {
+        scheduleAssessmentSlotDriver('assessment_final_close_blocked_next_question', structuredCurrentQuestionIndex || 0, 1200);
+      }
+      return;
+    }
     if (!forced && !shouldAutoFinishInterview()) return;
 
     if (forced && (isInterviewLiveContext(CTX) || isAssessmentVoiceLive(CTX))) {
@@ -3135,7 +3172,18 @@
     if (!isInterviewLiveContext(CTX) && !assessmentReached) return;
     if (END_CALLED || FINAL_HANGUP_TIMER) return;
     if (isInterviewLiveContext(CTX) && structuredCurrentQuestionIndex < interviewLiveQuestionTarget(CTX) && !nearCompleteVideoOnlyByRuntime(CTX)) return;
-    if (isAssessmentVoiceLive(CTX) && structuredCurrentQuestionIndex < assessmentTarget) return;
+    if (isAssessmentVoiceLive(CTX)) {
+      if (structuredCurrentQuestionIndex < assessmentTarget) return;
+      if (!assessmentTargetAnswerReadyForFinal(source || 'target_reached_autofinish')) {
+        log('[END] assessment target reached timer blocked until target answer', {
+          source: source || '',
+          current: structuredCurrentQuestionIndex,
+          target: assessmentTarget,
+          targetAnswered: ASSESSMENT_TARGET_ANSWERED
+        });
+        return;
+      }
+    }
 
     const delay = Number.isFinite(Number(delayMs)) ? Number(delayMs) : TARGET_QUESTION_ANSWER_GRACE_MS;
     try { if (targetAutoFinishTimer) clearTimeout(targetAutoFinishTimer); } catch(_) {}
@@ -3243,6 +3291,15 @@
   function scheduleAssessmentDirectHangup(source = 'assessment_direct_hangup', delayMs = 0){
     if (!isAssessmentVoiceLive(CTX)) return false;
     if (END_CALLED || destroyed) return false;
+    if (!assessmentTargetAnswerReadyForFinal(source || 'assessment_direct_hangup')) {
+      log('[END] assessment direct hangup blocked until target answer', {
+        source: source || '',
+        current: structuredCurrentQuestionIndex,
+        target: assessmentLiveQuestionTarget(CTX),
+        targetAnswered: ASSESSMENT_TARGET_ANSWERED
+      });
+      return false;
+    }
 
     const delay = Math.max(12000, Math.min(26000, Number(delayMs || ASSESSMENT_DIRECT_HANGUP_MS) || 20000));
     clearAssessmentDirectHangupTimer(source || 'reschedule');
@@ -4066,8 +4123,15 @@
     if (eventType === 'response.done' || eventType === 'response.completed') {
       const assessmentTarget = isAssessmentVoiceLive(CTX) ? assessmentLiveQuestionTarget(CTX) : 0;
       if ((isInterviewLiveContext(CTX) && structuredCurrentQuestionIndex >= interviewLiveQuestionTarget(CTX)) || (assessmentTarget && structuredCurrentQuestionIndex >= assessmentTarget)) {
-        // v3.11.7/v3.12.1: In Hybrid/Mix the spoken target is e.g. 7/10. Once that response is done,
-        // schedule the handoff/finalizer instead of waiting for the full Q10/Q20 count.
+        // For Assessment, response.done after the assistant asked the target question is NOT enough.
+        // Wait until the participant answer for that target question has been captured.
+        if (isAssessmentVoiceLive(CTX) && !ASSESSMENT_TARGET_ANSWERED) {
+          log('[END] assessment response.done after target ignored until candidate answer', {
+            current: structuredCurrentQuestionIndex,
+            target: assessmentTarget
+          });
+          return;
+        }
         const hybridDone = isInterviewHybrid(CTX) || isAssessmentHybridLive(CTX);
         scheduleTargetReachedAutoFinish(hybridDone ? 'hybrid_response_done_after_spoken_target' : (isAssessmentVoiceLive(CTX) ? 'assessment_response_done_after_target' : 'response_done_after_target'), hybridDone ? TARGET_FINALIZE_AFTER_ANSWER_MS : STRUCTURED_AUTOFINISH_IDLE_MS);
       }
