@@ -1311,8 +1311,151 @@
     };
   }
 
+
+  function activeStructuredQuestionTarget(ctx = CTX){
+    if (isAssessmentVoiceLive(ctx)) return assessmentLiveQuestionTarget(ctx);
+    if (isInterviewLiveContext(ctx)) return interviewLiveQuestionTarget(ctx);
+    return interviewMainQuestionTarget(ctx);
+  }
+
+  function assessmentDefaultQuestionText(ctx = CTX, idx = 1){
+    const lk = activeInterviewLang(ctx);
+    const de = lk === 'de';
+    const area = assessmentArea(ctx);
+    const sets = {
+      personality: de ? [
+        'Bitte stellen Sie sich kurz vor und beschreiben Sie Ihre Arbeitsweise in zwei bis drei Sätzen.',
+        'Wie reagieren Sie typischerweise, wenn Sie unter Zeitdruck stehen?',
+        'Wie gehen Sie mit Konflikten oder Spannungen im Team um?',
+        'Wie motivieren Sie sich bei wiederkehrenden oder monotonen Aufgaben?',
+        'Wie würden Kolleginnen oder Kollegen Ihren Kommunikationsstil beschreiben?',
+        'Wie gehen Sie mit kritischem Feedback um?',
+        'Wie organisieren Sie sich, wenn mehrere Aufgaben gleichzeitig wichtig sind?',
+        'Was ist Ihnen in der Zusammenarbeit mit anderen besonders wichtig?',
+        'Wie reagieren Sie, wenn sich Prioritäten kurzfristig ändern?',
+        'Gibt es noch eine Stärke oder ein Verhalten, das für diese Rolle besonders relevant ist?'
+      ] : [
+        'Please briefly introduce yourself and describe your working style in two or three sentences.',
+        'How do you usually react when you are under time pressure?',
+        'How do you handle conflicts or tension within a team?',
+        'How do you motivate yourself during repetitive or monotonous tasks?',
+        'How would colleagues describe your communication style?',
+        'How do you deal with critical feedback?',
+        'How do you organize yourself when several tasks are important at the same time?',
+        'What matters most to you when working with others?',
+        'How do you react when priorities change at short notice?',
+        'Is there one strength or behavior that is especially relevant for this role?'
+      ],
+      aptitude: de ? [
+        'Bitte beschreiben Sie kurz, wie Sie an ein neues Problem herangehen.',
+        'Wie analysieren Sie eine Situation, wenn Informationen fehlen?',
+        'Beschreiben Sie ein Beispiel, in dem Sie logisch priorisieren mussten.',
+        'Wie prüfen Sie, ob Ihre Lösung wirklich funktioniert?',
+        'Wie gehen Sie mit widersprüchlichen Informationen um?',
+        'Wie treffen Sie Entscheidungen unter Zeitdruck?',
+        'Wie erkennen Sie Muster oder Ursachen in komplexen Situationen?',
+        'Wie erklären Sie eine komplexe Lösung verständlich?',
+        'Wann würden Sie Ihre erste Lösung bewusst verwerfen?',
+        'Welche Denkweise hilft Ihnen am meisten bei anspruchsvollen Aufgaben?'
+      ] : [
+        'Please briefly describe how you approach a new problem.',
+        'How do you analyze a situation when information is missing?',
+        'Describe an example where you had to prioritize logically.',
+        'How do you check whether your solution really works?',
+        'How do you handle contradictory information?',
+        'How do you make decisions under time pressure?',
+        'How do you identify patterns or root causes in complex situations?',
+        'How do you explain a complex solution clearly?',
+        'When would you deliberately reject your first solution?',
+        'Which way of thinking helps you most with demanding tasks?'
+      ],
+      skills: de ? [
+        'Bitte beschreiben Sie Ihre wichtigsten fachlichen Fähigkeiten für diese Rolle.',
+        'Welche Tools, Methoden oder Systeme nutzen Sie sicher?',
+        'Nennen Sie ein konkretes Projekt oder Beispiel, in dem Sie Ihre Fähigkeiten eingesetzt haben.',
+        'Wie stellen Sie Qualität in Ihrer Arbeit sicher?',
+        'Welche Fähigkeit möchten Sie als Nächstes vertiefen?',
+        'Wie lernen Sie neue Aufgaben oder Systeme?',
+        'Wie gehen Sie vor, wenn Sie fachlich nicht sofort weiterwissen?',
+        'Welche Arbeitsergebnisse zeigen Ihre Stärke besonders gut?',
+        'Wie holen Sie sich Feedback zu Ihrer fachlichen Leistung?',
+        'Welche Fähigkeit ist aus Ihrer Sicht für diese Position am wichtigsten?'
+      ] : [
+        'Please describe the most important professional skills you bring for this role.',
+        'Which tools, methods, or systems do you use confidently?',
+        'Give a concrete project or example where you used your skills.',
+        'How do you ensure quality in your work?',
+        'Which skill would you like to deepen next?',
+        'How do you learn new tasks or systems?',
+        'What do you do when you cannot solve a technical task immediately?',
+        'Which work results show your strengths especially well?',
+        'How do you ask for feedback on your professional performance?',
+        'Which skill is most important for this position in your view?'
+      ],
+      language: de ? [
+        'Bitte stellen Sie sich kurz in der gewählten Sprache vor.',
+        'Beschreiben Sie Ihre bisherige Erfahrung im Kundenkontakt.',
+        'Wie erklären Sie einem Kunden ein Problem einfach und verständlich?',
+        'Wie reagieren Sie, wenn ein Kunde verärgert ist?',
+        'Bitte beschreiben Sie eine typische berufliche Situation aus Ihrem Alltag.',
+        'Wie stellen Sie sicher, dass Sie Ihr Gegenüber richtig verstanden haben?',
+        'Wie formulieren Sie eine höfliche, aber klare Antwort?',
+        'Welche Begriffe oder Formulierungen nutzen Sie häufig in diesem Arbeitsbereich?',
+        'Wie passen Sie Ihre Sprache an unterschiedliche Gesprächspartner an?',
+        'Bitte fassen Sie kurz zusammen, warum Ihre Kommunikation für diese Rolle geeignet ist.'
+      ] : [
+        'Please briefly introduce yourself in the selected language.',
+        'Describe your previous experience in customer contact.',
+        'How would you explain a problem to a customer in a simple and clear way?',
+        'How do you react when a customer is upset?',
+        'Please describe a typical professional situation from your daily work.',
+        'How do you make sure you have understood the other person correctly?',
+        'How do you formulate a polite but clear response?',
+        'Which terms or phrases do you often use in this work area?',
+        'How do you adapt your language to different conversation partners?',
+        'Please briefly summarize why your communication is suitable for this role.'
+      ]
+    };
+    const list = sets[area] || sets.personality;
+    const i = Math.max(1, Math.min(50, Number(idx) || 1));
+    if (i <= list.length) return list[i - 1];
+    return de ? `Bitte beantworten Sie Assessment-Frage ${i} mit einem konkreten beruflichen Beispiel.` : `Please answer assessment question ${i} with a concrete professional example.`;
+  }
+
+  function buildAssessmentSlotQuestionPlan(ctx = CTX){
+    const target = activeStructuredQuestionTarget(ctx);
+    const seeds = [];
+    const seen = new Set();
+    const add = (q) => {
+      const clean = String(q || '').replace(/\s+/g, ' ').trim();
+      if (!clean) return;
+      const key = normalizeForMatch(clean);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      seeds.push(clean);
+    };
+
+    const explicit = [
+      ctx?.assessmentQuestionSnapshot,
+      ctx?.questionSnapshot,
+      ctx?.questionPlan,
+      ctx?.plannedQuestions,
+      ctx?.finalQuestionsSnapshot,
+      ctx?.finalQuestionsText,
+      ctx?.customQuestionsText,
+      ctx?.questionsText,
+      ctx?.interviewConfig?.customQuestionsText,
+      ctx?.interviewConfig?.questionsText
+    ].map(v => String(v || '').trim()).find(Boolean) || '';
+    if (explicit) parseQuestionLines(explicit).forEach(add);
+
+    for (let i = seeds.length + 1; i <= target; i += 1) add(assessmentDefaultQuestionText(ctx, i));
+
+    return { questions: seeds.slice(0, target), customerCount: 0, source: explicit ? 'assessment_snapshot_first' : 'assessment_default_plan' };
+  }
+
   function refreshStructuredQuestionPlan(ctx = CTX, reason = 'refresh'){
-    const plan = buildSlotQuestionPlan(ctx);
+    const plan = isAssessmentContext(ctx) ? buildAssessmentSlotQuestionPlan(ctx) : buildSlotQuestionPlan(ctx);
     structuredQuestionPlan = plan.questions || [];
     structuredCustomerQuestionCount = Number(plan.customerCount || 0);
     structuredQuestionPlanSource = plan.source || '';
@@ -1336,7 +1479,7 @@
   }
 
   function currentStructuredQuestionPlan(ctx = CTX){
-    if (!structuredQuestionPlan.length && isInterviewLiveContext(ctx)) refreshStructuredQuestionPlan(ctx, 'lazy');
+    if (!structuredQuestionPlan.length && (isInterviewLiveContext(ctx) || isAssessmentContext(ctx))) refreshStructuredQuestionPlan(ctx, 'lazy');
     return structuredQuestionPlan;
   }
 
@@ -1346,7 +1489,7 @@
   }
 
   function plannedMainQuestionMatch(text, ctx = CTX){
-    if (!isInterviewLiveContext(ctx)) return null;
+    if (!isInterviewLiveContext(ctx) && !isAssessmentContext(ctx)) return null;
     const plan = currentStructuredQuestionPlan(ctx);
     if (!plan.length || !structuredQuestionPlanSignatures.length) return null;
 
@@ -1355,7 +1498,7 @@
     if (!normalized || !textHasQuestion(raw)) return null;
 
     const current = structuredCurrentQuestionIndex || 0;
-    const nextExpected = Math.min(interviewMainQuestionTarget(ctx), current + 1);
+    const nextExpected = Math.min(activeStructuredQuestionTarget(ctx), current + 1);
     const future = structuredQuestionPlanSignatures.filter(p => p.number > current);
 
     let best = null;
@@ -1858,10 +2001,13 @@
   }
 
   function shouldBlockEarlyInterviewClosing(){
+    if (isAssessmentVoiceLive(CTX)) {
+      const target = assessmentLiveQuestionTarget(CTX);
+      return structuredCurrentQuestionIndex < target;
+    }
     if (!isInterviewLiveContext(CTX)) return false;
-    // v3.11.5: Video+Chat / Mix must also complete the spoken media target before
-    // any handoff or final processing may be accepted. The parent page sends
-    // maxQuestions as the media-question count for hybrid modes.
+    // Video+Chat / Mix must also complete the spoken media target before
+    // any handoff or final processing may be accepted.
     return !interviewMainQuestionsComplete(CTX);
   }
 
@@ -1893,18 +2039,27 @@
 
     const lk = activeInterviewLang(CTX);
     const profile = langProfile(lk);
-    const target = interviewLiveQuestionTarget(CTX);
+    const target = activeStructuredQuestionTarget(CTX);
     const nextNo = Math.min(target, structuredCurrentQuestionIndex + 1);
 
     const plan = currentStructuredQuestionPlan(CTX);
     const plannedQuestion = String(plan[nextNo - 1] || '').trim();
+    const isAssessmentMissing = isAssessmentContext(CTX);
     const instruction = lk === 'de'
       ? (plannedQuestion
-        ? `Bitte stelle jetzt direkt exakt diese nächste Hauptfrage aus dem Interviewplan. Sage nur die Frage selbst. Erwähne nicht, dass Fragen fehlen, entschuldige dich nicht und wiederhole nicht den Abschlusssatz. Nach der Antwort darfst du genau eine kurze, natürlich formulierte Ergänzungs- oder Vertiefungsfrage stellen: ${plannedQuestion}`
-        : `Bitte stelle jetzt direkt die nächste rollenbezogene Hauptfrage. Sage nur die Frage selbst. Erwähne nicht, dass Fragen fehlen, entschuldige dich nicht und wiederhole nicht den Abschlusssatz. Nach der Antwort darfst du genau eine kurze, natürlich formulierte Ergänzungs- oder Vertiefungsfrage stellen.`)
+        ? (isAssessmentMissing
+          ? `Bitte stelle jetzt direkt exakt diese nächste Assessment-Frage. Sage nur eine kurze natürliche Überleitung und dann genau diese Frage. Keine Verbesserungsvorschläge, keine Zusatzfragen, keine Coaching-Hinweise, keinen Abschlusssatz wiederholen: ${plannedQuestion}`
+          : `Bitte stelle jetzt direkt exakt diese nächste Hauptfrage aus dem Interviewplan. Sage nur die Frage selbst. Erwähne nicht, dass Fragen fehlen, entschuldige dich nicht und wiederhole nicht den Abschlusssatz. Nach der Antwort darfst du genau eine kurze, natürlich formulierte Ergänzungs- oder Vertiefungsfrage stellen: ${plannedQuestion}`)
+        : (isAssessmentMissing
+          ? `Bitte stelle jetzt direkt die nächste Assessment-Hauptfrage. Sage nur eine kurze natürliche Überleitung und dann genau eine Frage. Keine Verbesserungsvorschläge, keine Zusatzfragen, keine Coaching-Hinweise und keinen Abschlusssatz wiederholen.`
+          : `Bitte stelle jetzt direkt die nächste rollenbezogene Hauptfrage. Sage nur die Frage selbst. Erwähne nicht, dass Fragen fehlen, entschuldige dich nicht und wiederhole nicht den Abschlusssatz. Nach der Antwort darfst du genau eine kurze, natürlich formulierte Ergänzungs- oder Vertiefungsfrage stellen.`))
       : (plannedQuestion
-        ? `Please now ask exactly this next main question from the interview plan. Say only the question itself. Do not mention that questions are missing, do not apologize, and do not repeat the closing message. After the answer, you may ask exactly one short, naturally phrased follow-up or deepening question: ${plannedQuestion}`
-        : `Please now ask the next role-specific main question directly. Say only the question itself. Do not mention that questions are missing, do not apologize, and do not repeat the closing message. After the answer, you may ask exactly one short, naturally phrased follow-up or deepening question.`);
+        ? (isAssessmentMissing
+          ? `Please now ask exactly this next assessment question. Say only a short natural transition and then exactly this question. No improvement suggestions, no additional questions, no coaching, and do not repeat the closing message: ${plannedQuestion}`
+          : `Please now ask exactly this next main question from the interview plan. Say only the question itself. Do not mention that questions are missing, do not apologize, and do not repeat the closing message. After the answer, you may ask exactly one short, naturally phrased follow-up or deepening question: ${plannedQuestion}`)
+        : (isAssessmentMissing
+          ? `Please now ask the next assessment main question directly. Say only a short natural transition and then exactly one question. No improvement suggestions, no additional questions, no coaching, and do not repeat the closing message.`
+          : `Please now ask the next role-specific main question directly. Say only the question itself. Do not mention that questions are missing, do not apologize, and do not repeat the closing message. After the answer, you may ask exactly one short, naturally phrased follow-up or deepening question.`));
 
     log('[QLOCK] blocked early closing and requested missing question', {
       source: source || '',
@@ -2996,7 +3151,7 @@
       ts: new Date().toISOString()
     });
 
-    if (isInterviewHybrid(CTX)) {
+    if (isInterviewHybrid(CTX) || isAssessmentHybridLive(CTX)) {
       postToParent('clarity.live.handoff_pending', {
         uid: UID,
         companyId: COMPANY_ID,
@@ -3026,7 +3181,7 @@
         ts: new Date().toISOString()
       });
 
-      if (isInterviewHybrid(CTX)) {
+      if (isInterviewHybrid(CTX) || isAssessmentHybridLive(CTX)) {
         postToParent('clarity.live.handoff_ready', {
           uid: UID,
           companyId: COMPANY_ID,
@@ -3561,7 +3716,7 @@
           log('[END] final/handoff message detected', {
             itemId: FINAL_MESSAGE_ITEM_ID,
             responseId: data.response_id || data.responseId || '',
-            isHybrid: isAssessmentHybrid(CTX) || isInterviewHybrid(CTX),
+            isHybrid: isAssessmentHybridLive(CTX) || isInterviewHybrid(CTX),
             mainQuestions: structuredCurrentQuestionIndex,
             targetQuestions: interviewMainQuestionTarget(CTX)
           });
@@ -3571,7 +3726,7 @@
           // zuverlässig nach. Nach dem vollständig transkribierten Satz starten wir
           // deshalb den Puffer selbst. Der Button bleibt nur Fallback.
           if (!FINAL_HANGUP_TIMER && !END_CALLED) {
-            beginFinalHangup(isAssessmentHybrid(CTX) ? 'hybrid_handoff_audio_done' : (isInterviewHybrid(CTX) ? 'interview_handoff_audio_done' : 'final_audio_transcript_done'));
+            beginFinalHangup(isAssessmentHybridLive(CTX) ? 'hybrid_handoff_audio_done' : (isInterviewHybrid(CTX) ? 'interview_handoff_audio_done' : 'final_audio_transcript_done'));
           }
         }
       }
@@ -3683,7 +3838,7 @@
             });
 
             if (!FINAL_HANGUP_TIMER && !END_CALLED) {
-              beginFinalHangup(isAssessmentHybrid(CTX)
+              beginFinalHangup(isAssessmentHybridLive(CTX)
                 ? 'hybrid_handoff_output_item_done'
                 : (isInterviewHybrid(CTX) ? 'interview_handoff_output_item_done' : 'final_output_item_done'));
             }
@@ -3994,9 +4149,9 @@
     const hybridNoteDe = chatQ > 0 ? ` Dies ist nur der mündliche Teil eines Hybrid-Assessments. Stelle hier GENAU ${maxQ} mündliche Hauptfragen; der restliche schriftliche Teil folgt im Chat. Nach der Antwort auf die letzte mündliche Frage folgt ausschließlich der Übergabesatz, keine weitere Frage.` : '';
     const hybridNoteEn = chatQ > 0 ? ` This is only the spoken part of a hybrid assessment. Ask EXACTLY ${maxQ} spoken main questions here; the remaining written part follows in chat. After the answer to the last spoken question, only say the handoff message and ask no further question.` : '';
     if (lk === 'de') {
-      return `Analysetiefe ${qset}: Stelle maximal ${maxQ} Hauptfragen für die ${assessmentAreaLabel(area, lk)}. Stelle immer nur EINE Frage zur Zeit. Keine kundeneigenen Interviewfragen verwenden. Beende die Analyse erst nach ausreichend Antworten und nach einer klaren Abschlussmeldung.${hybridNoteDe}`;
+      return `Analysetiefe ${qset}: Stelle genau ${maxQ} Hauptfragen für die ${assessmentAreaLabel(area, lk)}. Stelle immer nur EINE Frage zur Zeit. Keine kundeneigenen Interviewfragen verwenden. Beende die Analyse erst nach ausreichend Antworten und nach einer klaren Abschlussmeldung.${hybridNoteDe}`;
     }
-    return `Analysis depth ${qset}: Ask at most ${maxQ} main questions for the ${assessmentAreaLabel(area, lk)}. Ask exactly ONE question at a time. Do not use customer interview questions. End the assessment only after sufficient answers and a clear closing message.${hybridNoteEn}`;
+    return `Analysis depth ${qset}: Ask exactly ${maxQ} main questions for the ${assessmentAreaLabel(area, lk)}. Ask exactly ONE question at a time. Do not use customer interview questions. End the assessment only after sufficient answers and a clear closing message.${hybridNoteEn}`;
   }
 
   function assessmentHybridClosingText(ctx, lk, profile){
