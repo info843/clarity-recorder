@@ -3784,6 +3784,258 @@
   }
 
 
+  /* ===== Assessment v2.5.1 DETERMINISTIC_SLOT_CLOCK_PATCH =====
+     Why this exists:
+     v2.5 correctly separated the conductor role from the model, but it still waited too much for
+     perfect realtime transcript/silence events. In real runs this produced 6-9 structured slots.
+     v2.5.1 makes the browser clock authoritative for oral assessment progress:
+     - fixed question-audio estimate
+     - fixed answer window
+     - transcript used when available, but not required for progress
+     - mic/silence may delay briefly, never block indefinitely
+     - every committed slot emits deterministic report turns
+     - Q10/Q20/Q30 finish is triggered only by committed target slot
+  */
+
+  function assessmentV251Cfg(){
+    const mode = assessmentV25Mode ? assessmentV25Mode() : (AUDIO_ONLY ? 'audio' : 'video');
+    const isAudio = mode === 'audio';
+    return {
+      mode,
+      questionAudioMs: Math.max(5600, Math.min(12000, Number(Q.get('assessmentV251QuestionAudioMs') || (isAudio ? 7600 : 7000)) || (isAudio ? 7600 : 7000))),
+      minAnswerMs: Math.max(10500, Math.min(24000, Number(Q.get('assessmentV251MinAnswerMs') || (isAudio ? 14500 : 13500)) || (isAudio ? 14500 : 13500))),
+      transcriptSettleMs: Math.max(3200, Math.min(9000, Number(Q.get('assessmentV251TranscriptSettleMs') || 5200) || 5200)),
+      micTailMs: Math.max(2500, Math.min(8000, Number(Q.get('assessmentV251MicTailMs') || (isAudio ? 4600 : 3900)) || (isAudio ? 4600 : 3900))),
+      maxAnswerMs: Math.max(22000, Math.min(52000, Number(Q.get('assessmentV251MaxAnswerMs') || (isAudio ? 30500 : 28500)) || (isAudio ? 30500 : 28500))),
+      noInputMs: Math.max(22000, Math.min(52000, Number(Q.get('assessmentV251NoInputMs') || 30000) || 30000)),
+      nextDelayMs: Math.max(1800, Math.min(7000, Number(Q.get('assessmentV251NextQuestionDelayMs') || 3200) || 3200)),
+      tickMs: Math.max(500, Math.min(2000, Number(Q.get('assessmentV251TickMs') || 850) || 850))
+    };
+  }
+
+  function assessmentV251Debug(stage, data = {}){
+    try { assessmentV2Debug('v251_' + String(stage || ''), data || {}); } catch(_) {}
+  }
+
+  function assessmentV2QuestionInstruction(no, source){
+    const lk = activeInterviewLang(CTX);
+    const q = assessmentV2QuestionText(no);
+    const target = assessmentV2Target();
+    if (lk === 'de') {
+      return [
+        'Du bist ausschließlich die neutrale Vorlesestimme eines CLARITY Assessments.',
+        `Dies ist Frage ${no} von ${target}.`,
+        'Sprich exakt eine einzige Frage. Danach absolute Stille und warten.',
+        'Keine Begrüßung, kein Danke, kein Lob, keine Zusammenfassung, keine Bewertung, kein Coaching, keine Folgefrage, kein Abschlusssatz.',
+        'Sprich nur diesen Text:',
+        q
+      ].join(' ');
+    }
+    return [
+      'You are only the neutral reading voice of a CLARITY assessment.',
+      `This is question ${no} of ${target}.`,
+      'Speak exactly one single question. Then be completely silent and wait.',
+      'No greeting, no thank you, no praise, no summary, no evaluation, no coaching, no follow-up question, no closing sentence.',
+      'Speak only this text:',
+      q
+    ].join(' ');
+  }
+
+  function assessmentV24ArmQuestionAudioDoneFallback(no, source = 'ask_slot_v251'){
+    assessmentV2ClearTimer('questionDoneFallbackTimer');
+    const cfg = assessmentV251Cfg();
+    ASSESSMENT_V2.questionDoneFallbackTimer = setTimeout(() => {
+      if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return;
+      if (!ASSESSMENT_V2.awaitingAnswer || ASSESSMENT_V2.lastAskedNo !== no || ASSESSMENT_V2.answered >= no) return;
+      ASSESSMENT_V2.slotQuestionFallbackAt = assessmentV25Now();
+      assessmentV24MarkQuestionAudioDone('v251_question_clock_done_' + String(source || 'slot'), '');
+    }, cfg.questionAudioMs);
+    assessmentV251Debug('question_clock_armed', { no, source, delayMs: cfg.questionAudioMs });
+  }
+
+  function assessmentV2RegisterAskedFromAssistant(text, source = 'assistant'){
+    if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return;
+    const clean = String(text || '').trim();
+    if (!clean) return;
+    if (assessmentV2LooksLikeCompletionText(clean) || finalClosingDetected(clean)) {
+      if (ASSESSMENT_V2.answered >= assessmentV2Target()) assessmentV2Finalize('v251_completion_after_target');
+      else assessmentV251Debug('early_completion_ignored', { source, textPreview: clean.slice(0,180) });
+      return;
+    }
+    if (assessmentV24LooksLikeRoleDrift(clean)) {
+      assessmentV251Debug('role_drift_ignored', { source, textPreview: clean.slice(0,180) });
+      return;
+    }
+    if (!assessmentV2LooksLikeMainQuestion(clean)) return;
+    const no = ASSESSMENT_V2.lastAskedNo;
+    // Do not let assistant transcript timing control the slot. It may arrive too early/late.
+    // We only use it as confirmation and let the fixed question clock open the answer window.
+    assessmentV251Debug('assistant_question_observed_clock_controls_window', { source, no, textPreview: clean.slice(0,160) });
+  }
+
+  function assessmentV2ArmBufferedAnswerCommit(slot, source = 'buffer_v251'){
+    assessmentV2ClearTimer('pendingAnswerTimer');
+    const cfg = assessmentV251Cfg();
+    const no = Math.max(1, Math.min(assessmentV2Target(), Number(slot || ASSESSMENT_V2.pendingAnswerSlot || ASSESSMENT_V2.lastAskedNo || 1) || 1));
+    ASSESSMENT_V2.pendingAnswerTimer = setTimeout(() => {
+      if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return;
+      if (!no || !ASSESSMENT_V2.awaitingAnswer || ASSESSMENT_V2.lastAskedNo !== no || ASSESSMENT_V2.answered >= no) return;
+      const openAt = ASSESSMENT_V2.slotQuestionAudioDoneAt || ASSESSMENT_V2.slotListenSince || ASSESSMENT_V2.slotAskedAt || assessmentV25Now();
+      const sinceOpen = assessmentV25Now() - openAt;
+      const sinceText = assessmentV25Now() - (ASSESSMENT_V2.pendingAnswerLastAt || assessmentV25Now());
+      const localVoiceAt = Math.max(Number(ASSESSMENT_LOCAL_VOICE_LAST_AT || 0), Number(ASSESSMENT_V2.lastLocalVoiceAt || 0));
+      const sinceVoice = assessmentV25Since(localVoiceAt);
+      const hasText = !!String(ASSESSMENT_V2.pendingAnswerText || '').trim();
+      if (!hasText) return assessmentV25ArmProgressWatch(no, 'v251_buffer_no_text_progress');
+
+      // Transcript is evidence; mic silence may delay a little, but never blocks beyond maxAnswerMs.
+      const canCommitByText = sinceOpen >= cfg.minAnswerMs && sinceText >= cfg.transcriptSettleMs && sinceVoice >= cfg.micTailMs;
+      const mustCommitByClock = sinceOpen >= cfg.maxAnswerMs;
+      if (!canCommitByText && !mustCommitByClock) {
+        assessmentV251Debug('buffer_wait', { no, source, sinceOpen, minAnswerMs: cfg.minAnswerMs, sinceText, transcriptSettleMs: cfg.transcriptSettleMs, sinceVoice, micTailMs: cfg.micTailMs, maxAnswerMs: cfg.maxAnswerMs });
+        assessmentV2ArmBufferedAnswerCommit(no, 'v251_wait_stable_or_clock');
+        return;
+      }
+      assessmentV251Debug(mustCommitByClock ? 'buffer_commit_by_clock' : 'buffer_commit_by_text', { no, source, sinceOpen, sinceText, sinceVoice });
+      assessmentV2CommitBufferedAnswer(no, source || 'v251_buffer_commit');
+    }, Math.max(1200, Math.min(5500, cfg.transcriptSettleMs)));
+    assessmentV251Debug('buffer_commit_armed', { slot:no, source, settleMs: cfg.transcriptSettleMs, textPreview: String(ASSESSMENT_V2.pendingAnswerText || '').slice(0,140) });
+  }
+
+  function assessmentV2ArmAnswerStall(no, source = 'stall_v251'){
+    assessmentV2ClearTimer('stallTimer');
+    const cfg = assessmentV251Cfg();
+    ASSESSMENT_V2.stallTimer = setTimeout(() => {
+      if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return;
+      const slot = Number(no || ASSESSMENT_V2.lastAskedNo || 0);
+      if (!slot || !ASSESSMENT_V2.awaitingAnswer || ASSESSMENT_V2.lastAskedNo !== slot || ASSESSMENT_V2.answered >= slot) return;
+      if (String(ASSESSMENT_V2.pendingAnswerText || '').trim()) return assessmentV2ArmBufferedAnswerCommit(slot, 'v251_stall_pending_text');
+      assessmentV251Debug('no_input_timeout_control_commit', { no: slot, source, waitMs: cfg.noInputMs });
+      assessmentV242CommitControlFallback(slot, 'v251_no_input_timeout_control_commit');
+    }, cfg.noInputMs);
+    assessmentV251Debug('answer_stall_armed', { no, source, waitMs: cfg.noInputMs });
+  }
+
+  function assessmentV25ArmProgressWatch(no, source = 'progress_watch_v251'){
+    assessmentV2ClearTimer('progressWatchTimer');
+    const cfg = assessmentV251Cfg();
+    const slot = Math.max(1, Math.min(assessmentV2Target(), Number(no || ASSESSMENT_V2.lastAskedNo || 1) || 1));
+    ASSESSMENT_V2.progressWatchTimer = setTimeout(() => assessmentV25ProgressTick(slot, source), cfg.tickMs);
+    return true;
+  }
+
+  function assessmentV25ProgressTick(slot, source = 'progress_watch_v251'){
+    if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return;
+    const cfg = assessmentV251Cfg();
+    const target = assessmentV2Target();
+    const no = Math.max(1, Math.min(target, Number(slot || ASSESSMENT_V2.lastAskedNo || 1) || 1));
+
+    if (!ASSESSMENT_V2.awaitingAnswer || ASSESSMENT_V2.lastAskedNo !== no || ASSESSMENT_V2.answered >= no) {
+      if (!ASSESSMENT_V2.awaitingAnswer && ASSESSMENT_V2.answered >= target) return assessmentV2Finalize('v251_progress_target_answered');
+      if (!ASSESSMENT_V2.awaitingAnswer && ASSESSMENT_V2.answered < target && ASSESSMENT_V2.asked <= ASSESSMENT_V2.answered) {
+        assessmentV2ClearTimer('nextTimer');
+        const next = ASSESSMENT_V2.answered + 1;
+        ASSESSMENT_V2.nextTimer = setTimeout(() => assessmentV2AskSlot(next, 'v251_progress_next_slot'), cfg.nextDelayMs);
+        assessmentV251Debug('next_slot_armed', { next, delayMs: cfg.nextDelayMs, source });
+      }
+      return;
+    }
+
+    if (!ASSESSMENT_V2.slotQuestionAudioDoneAt) {
+      if (assessmentV25Since(ASSESSMENT_V2.slotAskedAt, 0) >= cfg.questionAudioMs + 900) {
+        assessmentV24MarkQuestionAudioDone('v251_progress_question_clock_done', '');
+      }
+      return assessmentV25ArmProgressWatch(no, 'v251_wait_question_clock');
+    }
+
+    const openAt = ASSESSMENT_V2.slotQuestionAudioDoneAt || ASSESSMENT_V2.slotListenSince || ASSESSMENT_V2.slotAskedAt || assessmentV25Now();
+    const sinceOpen = assessmentV25Now() - openAt;
+    const pending = String(ASSESSMENT_V2.pendingAnswerText || '').trim();
+    if (pending) {
+      assessmentV2ArmBufferedAnswerCommit(no, 'v251_progress_pending_text');
+      return;
+    }
+
+    const localVoiceAt = Math.max(Number(ASSESSMENT_LOCAL_VOICE_LAST_AT || 0), Number(ASSESSMENT_V2.lastLocalVoiceAt || 0));
+    const audioItemAt = Number(ASSESSMENT_V2.lastAudioItemAt || 0);
+    const heardVoice = !!((localVoiceAt && localVoiceAt >= openAt - 900) || (audioItemAt && audioItemAt >= openAt - 900));
+
+    if (heardVoice && sinceOpen >= cfg.maxAnswerMs) {
+      assessmentV251Debug('voice_activity_clock_commit', { no, source, sinceOpen, maxAnswerMs: cfg.maxAnswerMs });
+      assessmentV242CommitControlFallback(no, 'v251_voice_activity_clock_commit');
+      return;
+    }
+    if (!heardVoice && sinceOpen >= cfg.noInputMs) {
+      assessmentV251Debug('silent_slot_clock_commit', { no, source, sinceOpen, noInputMs: cfg.noInputMs });
+      assessmentV242CommitControlFallback(no, 'v251_silent_slot_clock_commit');
+      return;
+    }
+
+    assessmentV25ArmProgressWatch(no, 'v251_tick_' + String(source || 'progress'));
+  }
+
+  function assessmentV2CommitBufferedAnswer(slot, source = 'buffer_commit_v251'){
+    if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return false;
+    const target = assessmentV2Target();
+    const no = Math.max(1, Math.min(target, Math.round(Number(slot || ASSESSMENT_V2.pendingAnswerSlot || ASSESSMENT_V2.lastAskedNo) || 1)));
+    let clean = String(ASSESSMENT_V2.pendingAnswerText || '').trim();
+    if (!clean || no <= ASSESSMENT_V2.answered || no !== ASSESSMENT_V2.lastAskedNo || !ASSESSMENT_V2.awaitingAnswer) {
+      assessmentV251Debug('buffer_commit_ignored', { no, source, cleanPreview: clean.slice(0,160), answered: ASSESSMENT_V2.answered, lastAskedNo: ASSESSMENT_V2.lastAskedNo, awaitingAnswer: ASSESSMENT_V2.awaitingAnswer });
+      return false;
+    }
+
+    if (no === 1) {
+      const stripped = assessmentV25StripReadinessPrefix(clean);
+      if (stripped && stripped !== clean) {
+        assessmentV251Debug('readiness_prefix_removed_from_q1', { before: clean.slice(0,120), after: stripped.slice(0,120) });
+        clean = stripped;
+      }
+    }
+
+    ASSESSMENT_V2.answers[no] = clean;
+    ASSESSMENT_V2.answered = Math.max(ASSESSMENT_V2.answered, no);
+    ASSESSMENT_V2.awaitingAnswer = false;
+    ASSESSMENT_V2.phase = 'ANSWERED';
+    ASSESSMENT_V2.lastUserAt = Date.now();
+    ASSESSMENT_TARGET_ANSWERED = ASSESSMENT_V2.answered >= target;
+    assessmentV2ClearTimer('stallTimer');
+    assessmentV2ClearTimer('pendingAnswerTimer');
+    assessmentV2ClearTimer('controlFallbackTimer');
+    assessmentV2ClearTimer('questionDoneFallbackTimer');
+    assessmentV2ClearTimer('progressWatchTimer');
+    ASSESSMENT_V2.pendingAnswerText = '';
+    ASSESSMENT_V2.pendingAnswerSlot = 0;
+    ASSESSMENT_V2.pendingAnswerSources = [];
+    ASSESSMENT_V2.pendingAnswerFirstAt = 0;
+    ASSESSMENT_V2.pendingAnswerLastAt = 0;
+
+    try { postToParent('clarity.assessment.v2.slot_answered', { index:no, target, text:clean.slice(0,240), source, ts:new Date().toISOString() }); } catch(_) {}
+    try {
+      const isFallbackTurn = !!ASSESSMENT_V2.fallbackAnswers[no] || /^\[(Control note|Kontrollhinweis|Audio answer|Audio-Antwort)/i.test(clean);
+      // v2.5.1 includes fallback turns as technical but still emits them. The audio transcript remains the evidence source.
+      assessmentV244EmitDeterministicTurn('candidate', no, clean, 'assessment_v251_slot_answered_' + String(source || 'answer'), { isFallback:isFallbackTurn });
+    } catch(_) {}
+    assessmentV251Debug('slot_answered_committed', { no, target, source, answered: ASSESSMENT_V2.answered, asked: ASSESSMENT_V2.asked, textPreview: clean.slice(0,160) });
+
+    if (no >= target) {
+      assessmentV2Finalize('v251_target_answered');
+      return true;
+    }
+
+    assessmentV2ClearTimer('nextTimer');
+    const next = no + 1;
+    const cfg = assessmentV251Cfg();
+    ASSESSMENT_V2.nextTimer = setTimeout(() => assessmentV2AskSlot(next, 'v251_after_answer_next_slot'), cfg.nextDelayMs);
+    assessmentV251Debug('next_slot_after_commit_armed', { next, delayMs: cfg.nextDelayMs });
+    return true;
+  }
+
+  function assessmentV243ArmQ10Guard(source = 'v251_guard'){
+    if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return false;
+    return assessmentV25ArmProgressWatch(ASSESSMENT_V2.lastAskedNo || Math.max(1, ASSESSMENT_V2.answered + 1), source || 'v251_guard');
+  }
+
+
   applyStaticTexts();
   setStatus('info', t('init'));
   avatarSet('ready', 'live_initialized');
