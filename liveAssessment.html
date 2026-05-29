@@ -2479,13 +2479,13 @@
       });
       return true;
     } catch(e) {
-      try { log('[ASSESSMENT_V2.4.4] deterministic turn emit failed', errMsg(e)); } catch(_) {}
+      try { log('[ASSESSMENT_V2.5] deterministic turn emit failed', errMsg(e)); } catch(_) {}
       return false;
     }
   }
 
 
-  /* ===== Assessment v2.4.4 Deterministic Turn Export / Final Guard Slot State Machine =====
+  /* ===== Assessment v2.5 App-Controlled Slot Driver =====
      Product rule for Modul1:
      - Assessment is not a free interview and not a coaching session.
      - One fixed slot question -> one participant answer -> next slot.
@@ -2637,9 +2637,9 @@
         extra: data || {},
         ts: new Date().toISOString()
       };
-      log('[ASSESSMENT_V2.4.4]', payload);
+      log('[ASSESSMENT_V2.5]', payload);
       try { postToParent('clarity.assessment.v2.debug', payload); } catch(_) {}
-    } catch(e) { try { log('[ASSESSMENT_V2.4.4] debug failed', errMsg(e)); } catch(_) {} }
+    } catch(e) { try { log('[ASSESSMENT_V2.5] debug failed', errMsg(e)); } catch(_) {} }
   }
 
   function assessmentV2LooksLikeMainQuestion(text){
@@ -2836,7 +2836,7 @@
       if (!assessmentV2IsActive() || ASSESSMENT_V2.finalLock) return;
       if (!(ASSESSMENT_V2.awaitingAnswer && ASSESSMENT_V2.lastAskedNo === no && ASSESSMENT_V2.answered < no)) return;
 
-      try { log('[ASSESSMENT_V2.4.4] answer stall check', { no, source, pendingChars:String(ASSESSMENT_V2.pendingAnswerText||'').length, lastAudioItemAt:ASSESSMENT_V2.lastAudioItemAt || 0, reminders:ASSESSMENT_V2.reminders[no] || 0 }); } catch(_) {}
+      try { log('[ASSESSMENT_V2.5] answer stall check', { no, source, pendingChars:String(ASSESSMENT_V2.pendingAnswerText||'').length, lastAudioItemAt:ASSESSMENT_V2.lastAudioItemAt || 0, reminders:ASSESSMENT_V2.reminders[no] || 0 }); } catch(_) {}
 
       if (String(ASSESSMENT_V2.pendingAnswerText || '').trim()) {
         assessmentV2ArmBufferedAnswerCommit(no, 'answer_stall_pending_text_v242');
@@ -3329,6 +3329,460 @@
       assessmentV2RegisterUserAnswer(text, payload?.sourceEvent || 'user_transcript');
     }
   }
+
+
+  /* ===== Assessment v2.5 APP_CONTROLLED_SLOT_DRIVER overrides =====
+     Core change versus v2.4.x:
+     - The browser/page is the assessment conductor.
+     - Realtime/KI may only speak exactly one fixed slot question.
+     - Slot progress is driven by local app phases and answer windows, not by model initiative.
+     - Audio and Video use the same driver; only media capture differs.
+     - Welcome/readiness is not an assessment answer.
+     - After target slot answer: one silent technical finalization, no duplicate spoken final text.
+  */
+  function assessmentV25IsActive(){
+    try { return ASSESSMENT_V2.enabled && isAssessmentVoiceLive(CTX) && STARTED && !END_CALLED; } catch(_) { return false; }
+  }
+
+  function assessmentV25Mode(){
+    try { return AUDIO_ONLY || String(CTX?.mode || '').toLowerCase().includes('audio') ? 'audio' : 'video'; } catch(_) { return 'video'; }
+  }
+
+  function assessmentV25Now(){ return Date.now(); }
+  function assessmentV25Since(ts, fb = 999999){ const n = Number(ts || 0); return n ? (Date.now() - n) : fb; }
+
+  function assessmentV2Reset(reason = 'reset_v25'){
+    ['nextTimer','hardTimer','stallTimer','pendingAnswerTimer','questionDoneFallbackTimer','controlFallbackTimer','q10GuardTimer','progressWatchTimer','finalForceTimer'].forEach(assessmentV2ClearTimer);
+    ASSESSMENT_V2.started = true;
+    ASSESSMENT_V2.asked = 0;
+    ASSESSMENT_V2.answered = 0;
+    ASSESSMENT_V2.awaitingAnswer = false;
+    ASSESSMENT_V2.lastAskedNo = 0;
+    ASSESSMENT_V2.finalLock = false;
+    ASSESSMENT_V2.mediaStopped = false;
+    ASSESSMENT_V2.finalInstructionSent = false;
+    ASSESSMENT_V2.lastAssistantAt = 0;
+    ASSESSMENT_V2.lastUserAt = 0;
+    ASSESSMENT_V2.answers = Object.create(null);
+    ASSESSMENT_V2.phase = 'IDLE';
+    ASSESSMENT_V2.slotAskedAt = 0;
+    ASSESSMENT_V2.slotListenSince = 0;
+    ASSESSMENT_V2.pendingAnswerText = '';
+    ASSESSMENT_V2.pendingAnswerSlot = 0;
+    ASSESSMENT_V2.pendingAnswerSources = [];
+    ASSESSMENT_V2.pendingAnswerFirstAt = 0;
+    ASSESSMENT_V2.pendingAnswerLastAt = 0;
+    ASSESSMENT_V2.slotQuestionAudioDoneAt = 0;
+    ASSESSMENT_V2.slotQuestionFallbackAt = 0;
+    ASSESSMENT_V2.lastAudioItemAt = 0;
+    ASSESSMENT_V2.lastAudioItemId = '';
+    ASSESSMENT_V2.lastLocalVoiceAt = 0;
+    ASSESSMENT_V2.lastRemoteVoiceAt = 0;
+    ASSESSMENT_V2.fallbackAnswers = Object.create(null);
+    ASSESSMENT_V2.reminders = Object.create(null);
+    ASSESSMENT_TARGET_ANSWERED = false;
+    assessmentV2Debug('v25_reset', { reason, target: assessmentV2Target(), total: assessmentV2TotalTarget(), mode: assessmentV25Mode(), appControlled:true });
+  }
+
+  function assessmentV2Debug(stage, data = {}){
+    try {
+      const payload = {
+        stage: String(stage || ''),
+        phase: ASSESSMENT_V2.phase || '',
+        asked: ASSESSMENT_V2.asked || 0,
+        answered: ASSESSMENT_V2.answered || 0,
+        awaitingAnswer: !!ASSESSMENT_V2.awaitingAnswer,
+        lastAskedNo: ASSESSMENT_V2.lastAskedNo || 0,
+        target: assessmentV2Target(),
+        total: assessmentV2TotalTarget(),
+        finalLock: !!ASSESSMENT_V2.finalLock,
+        mode: assessmentV25Mode(),
+        appControlled: true,
+        extra: data || {},
+        ts: new Date().toISOString()
+      };
+      log('[ASSESSMENT_V2.5]', payload);
+      try { postToParent('clarity.assessment.v2.debug', payload); } catch(_) {}
+    } catch(e) { try { log('[ASSESSMENT_V2.5] debug failed', errMsg(e)); } catch(_) {} }
+  }
+
+  function assessmentV2QuestionInstruction(no, source){
+    const lk = activeInterviewLang(CTX);
+    const q = assessmentV2QuestionText(no);
+    const target = assessmentV2Target();
+    if (lk === 'de') {
+      return [
+        'Du bist die Stimme eines deterministischen CLARITY Assessments.',
+        'WICHTIG: Stelle exakt eine einzige Frage und stoppe danach sofort.',
+        'Keine Begrüßung. Kein Lob. Keine Motivation. Keine Zusammenfassung. Keine Bewertung. Keine Folgefrage. Kein Angebot. Kein Abschlusssatz.',
+        `Dies ist Frage ${no} von ${target}.`,
+        `Sprich jetzt ausschließlich diese Frage: ${q}`
+      ].join(' ');
+    }
+    return [
+      'You are the voice of a deterministic CLARITY assessment.',
+      'IMPORTANT: Ask exactly one single question and stop immediately afterwards.',
+      'No greeting. No praise. No motivation. No summary. No evaluation. No follow-up question. No offer. No closing sentence.',
+      `This is question ${no} of ${target}.`,
+      `Now speak only this question: ${q}`
+    ].join(' ');
+  }
+
+  function assessmentV25IsReadinessSentence(sentence){
+    const n = normalizeForMatch(sentence);
+    if (!n) return false;
+    const signals = [
+      'ich bin bereit','ich bin startklar','bin bereit','startklar','legen sie los','legen sie direkt los','sie konnen beginnen','sie können beginnen','stellen sie mir','stellen sie gerne','guten morgen','guten abend','guten tag','hallo',
+      'i am ready','im ready','i am prepared','go ahead','you can start','start with','good morning','good evening','hello','ready for your questions'
+    ];
+    return signals.some(x => n.includes(normalizeForMatch(x)));
+  }
+
+  function assessmentV25StripReadinessPrefix(text){
+    let raw = String(text || '').trim();
+    if (!raw) return raw;
+    const parts = raw.split(/(?<=[.!?])\s+|\n+/g).map(x => x.trim()).filter(Boolean);
+    if (parts.length <= 1) return raw;
+    const kept = [];
+    let dropping = true;
+    for (const part of parts) {
+      const words = part.split(/\s+/).filter(Boolean).length;
+      if (dropping && words <= 26 && assessmentV25IsReadinessSentence(part)) continue;
+      dropping = false;
+      kept.push(part);
+    }
+    return kept.join(' ').trim() || raw;
+  }
+
+  function assessmentV2MarkSlotAsked(no, text = '', source = 'slot_v25'){
+    if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return false;
+    const target = assessmentV2Target();
+    const idx = Math.max(1, Math.min(target, Math.round(Number(no || 1) || 1)));
+    if (ASSESSMENT_V2.awaitingAnswer && ASSESSMENT_V2.lastAskedNo > ASSESSMENT_V2.answered) {
+      assessmentV2Debug('v25_ask_blocked_awaiting_current_answer', { requested:idx, current:ASSESSMENT_V2.lastAskedNo, answered:ASSESSMENT_V2.answered, source });
+      return false;
+    }
+    ASSESSMENT_V2.asked = Math.max(ASSESSMENT_V2.asked, idx);
+    ASSESSMENT_V2.lastAskedNo = idx;
+    ASSESSMENT_V2.awaitingAnswer = true;
+    ASSESSMENT_V2.lastAssistantAt = assessmentV25Now();
+    ASSESSMENT_V2.slotAskedAt = assessmentV25Now();
+    ASSESSMENT_V2.slotListenSince = 0;
+    ASSESSMENT_V2.slotQuestionAudioDoneAt = 0;
+    ASSESSMENT_V2.slotQuestionFallbackAt = 0;
+    ASSESSMENT_V2.phase = 'SPEAKING_QUESTION';
+    assessmentV2ClearTimer('pendingAnswerTimer');
+    assessmentV2ClearTimer('controlFallbackTimer');
+    assessmentV2ClearTimer('questionDoneFallbackTimer');
+    assessmentV2ClearTimer('stallTimer');
+    assessmentV2ClearTimer('progressWatchTimer');
+    ASSESSMENT_V2.pendingAnswerText = '';
+    ASSESSMENT_V2.pendingAnswerSlot = 0;
+    ASSESSMENT_V2.pendingAnswerSources = [];
+    ASSESSMENT_V2.pendingAnswerFirstAt = 0;
+    ASSESSMENT_V2.pendingAnswerLastAt = 0;
+    try { postToParent('clarity.assessment.v2.slot_asked', { index:idx, target, text:String(text||'').slice(0,220), source:'v25_' + String(source || 'slot'), ts:new Date().toISOString() }); } catch(_) {}
+    try { assessmentV244EmitDeterministicTurn('assistant', idx, text, 'assessment_v25_slot_asked_' + String(source || 'slot')); } catch(_) {}
+    assessmentV24ArmQuestionAudioDoneFallback(idx, source || 'v25_slot_asked');
+    assessmentV2ArmAnswerStall(idx, source || 'v25_slot_asked');
+    assessmentV2Debug('v25_slot_asked', { no:idx, target, source, questionPreview:String(text||'').slice(0,160) });
+    return true;
+  }
+
+  function assessmentV24ArmQuestionAudioDoneFallback(no, source = 'ask_slot_v25'){
+    assessmentV2ClearTimer('questionDoneFallbackTimer');
+    const question = assessmentV2QuestionText(no);
+    const estimatedMs = Math.max(8500, Math.min(18000, 3800 + String(question || '').length * 38));
+    const delayMs = Math.max(7000, Math.min(22000, Number(Q.get('assessmentV25QuestionAudioFallbackMs') || estimatedMs) || estimatedMs));
+    ASSESSMENT_V2.questionDoneFallbackTimer = setTimeout(() => {
+      if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return;
+      if (!ASSESSMENT_V2.awaitingAnswer || ASSESSMENT_V2.lastAskedNo !== no || ASSESSMENT_V2.answered >= no) return;
+      ASSESSMENT_V2.slotQuestionFallbackAt = assessmentV25Now();
+      assessmentV24MarkQuestionAudioDone('v25_question_audio_estimated_done_' + String(source || 'slot'), '');
+    }, delayMs);
+    assessmentV2Debug('v25_question_audio_done_fallback_armed', { no, source, delayMs });
+  }
+
+  function assessmentV24MarkQuestionAudioDone(source = 'question_audio_done_v25', text = ''){
+    if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return false;
+    if (!ASSESSMENT_V2.awaitingAnswer || !ASSESSMENT_V2.lastAskedNo || ASSESSMENT_V2.lastAskedNo <= ASSESSMENT_V2.answered) return false;
+    if (!ASSESSMENT_V2.slotQuestionAudioDoneAt) {
+      ASSESSMENT_V2.slotQuestionAudioDoneAt = assessmentV25Now();
+      ASSESSMENT_V2.slotListenSince = ASSESSMENT_V2.slotQuestionAudioDoneAt;
+      ASSESSMENT_V2.phase = 'LISTENING';
+      assessmentV2Debug('v25_answer_window_open', {
+        source,
+        no: ASSESSMENT_V2.lastAskedNo,
+        textPreview: String(text || '').slice(0, 160)
+      });
+    }
+    assessmentV25ArmProgressWatch(ASSESSMENT_V2.lastAskedNo, source || 'answer_window_open');
+    return true;
+  }
+
+  function assessmentV2RegisterAskedFromAssistant(text, source = 'assistant'){
+    if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return;
+    const clean = String(text || '').trim();
+    if (!clean) return;
+    if (assessmentV2LooksLikeCompletionText(clean) || finalClosingDetected(clean)) {
+      if (ASSESSMENT_V2.answered >= assessmentV2Target()) assessmentV2Finalize('v25_completion_after_target');
+      else assessmentV2Debug('v25_early_completion_ignored_waiting_for_target', { source, textPreview:clean.slice(0,180) });
+      return;
+    }
+    if (assessmentV24LooksLikeRoleDrift(clean)) {
+      assessmentV2Debug('v25_role_drift_ignored', { source, textPreview:clean.slice(0,180) });
+      return;
+    }
+    if (!assessmentV2LooksLikeMainQuestion(clean)) return;
+    const no = ASSESSMENT_V2.lastAskedNo;
+    const bufferMs = Math.max(1600, Math.min(6000, Number(Q.get('assessmentV25QuestionEndBufferMs') || 2800) || 2800));
+    setTimeout(() => {
+      if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return;
+      if (!ASSESSMENT_V2.awaitingAnswer || ASSESSMENT_V2.lastAskedNo !== no || ASSESSMENT_V2.answered >= no) return;
+      assessmentV24MarkQuestionAudioDone(source || 'assistant_question_transcript_done_v25', clean);
+    }, bufferMs);
+    assessmentV2Debug('v25_assistant_question_done_observed_delayed_answer_window', { source, no, bufferMs, textPreview:clean.slice(0,160) });
+  }
+
+  function assessmentV2RegisterUserAnswer(text, source = 'user_v25'){
+    if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return;
+    let clean = String(text || '').trim();
+    if (!clean || clean.length < 2) return;
+    const target = assessmentV2Target();
+    if (!ASSESSMENT_V2.awaitingAnswer || !ASSESSMENT_V2.lastAskedNo || ASSESSMENT_V2.lastAskedNo <= ASSESSMENT_V2.answered) {
+      assessmentV2Debug('v25_user_answer_ignored_no_open_slot', { source, textPreview:clean.slice(0,160) });
+      return;
+    }
+    const no = Math.max(1, Math.min(target, Math.round(ASSESSMENT_V2.lastAskedNo)));
+
+    if (!ASSESSMENT_V2.slotQuestionAudioDoneAt) {
+      const sinceAsk = assessmentV25Since(ASSESSMENT_V2.slotAskedAt, 0);
+      const protectMs = Math.max(5500, Math.min(16000, Number(Q.get('assessmentV25QuestionSpeakProtectMs') || 8500) || 8500));
+      if (sinceAsk < protectMs) {
+        assessmentV2Debug('v25_user_transcript_ignored_while_question_speaking', { no, source, sinceAsk, protectMs, textPreview: clean.slice(0,160) });
+        return;
+      }
+      assessmentV24MarkQuestionAudioDone('v25_user_transcript_after_question_protect', clean);
+    }
+
+    if (no === 1 && ASSESSMENT_V2.answered === 0) {
+      clean = assessmentV25StripReadinessPrefix(clean);
+      if (assessmentV242LooksLikeReadinessOnlyAnswer(clean)) {
+        assessmentV2Debug('v25_readiness_only_answer_ignored_for_q1', { no, source, textPreview: clean.slice(0,160) });
+        assessmentV25ArmProgressWatch(no, 'readiness_only_ignored');
+        return;
+      }
+    }
+
+    const nowTs = assessmentV25Now();
+    if (ASSESSMENT_V2.pendingAnswerSlot !== no) {
+      ASSESSMENT_V2.pendingAnswerText = clean;
+      ASSESSMENT_V2.pendingAnswerSlot = no;
+      ASSESSMENT_V2.pendingAnswerSources = [String(source || 'user')];
+      ASSESSMENT_V2.pendingAnswerFirstAt = nowTs;
+    } else {
+      ASSESSMENT_V2.pendingAnswerText = assessmentV2AppendText(ASSESSMENT_V2.pendingAnswerText, clean);
+      ASSESSMENT_V2.pendingAnswerSources.push(String(source || 'user'));
+    }
+    ASSESSMENT_V2.pendingAnswerLastAt = nowTs;
+    ASSESSMENT_V2.lastUserAt = nowTs;
+    ASSESSMENT_V2.phase = 'CAPTURING_ANSWER';
+    assessmentV2Debug('v25_answer_fragment_buffered', { no, source, pendingChars:ASSESSMENT_V2.pendingAnswerText.length, textPreview:clean.slice(0,160) });
+    assessmentV2ArmBufferedAnswerCommit(no, source || 'user_transcript_v25');
+    assessmentV25ArmProgressWatch(no, 'after_answer_fragment');
+  }
+
+  function assessmentV2ArmBufferedAnswerCommit(slot, source = 'buffer_v25'){
+    assessmentV2ClearTimer('pendingAnswerTimer');
+    const mode = assessmentV25Mode();
+    const settleMs = Math.max(9000, Math.min(26000, Number(Q.get('assessmentV25TranscriptSettleMs') || (mode === 'audio' ? 13500 : 12000)) || (mode === 'audio' ? 13500 : 12000)));
+    ASSESSMENT_V2.pendingAnswerTimer = setTimeout(() => {
+      if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return;
+      const no = Number(slot || ASSESSMENT_V2.pendingAnswerSlot || ASSESSMENT_V2.lastAskedNo || 0);
+      if (!no || !ASSESSMENT_V2.awaitingAnswer || ASSESSMENT_V2.lastAskedNo !== no || ASSESSMENT_V2.answered >= no) return;
+      const nowTs = assessmentV25Now();
+      const openAt = ASSESSMENT_V2.slotQuestionAudioDoneAt || ASSESSMENT_V2.slotListenSince || ASSESSMENT_V2.slotAskedAt;
+      const minWindowMs = Math.max(12000, Math.min(32000, Number(Q.get('assessmentV25MinAnswerWindowMs') || (mode === 'audio' ? 20500 : 18500)) || (mode === 'audio' ? 20500 : 18500)));
+      const localSilenceMs = Math.max(4500, Math.min(13000, Number(Q.get('assessmentV25MicSilenceMs') || (mode === 'audio' ? 9200 : 7800)) || (mode === 'audio' ? 9200 : 7800)));
+      const remoteSilenceMs = Math.max(1200, Math.min(7000, Number(Q.get('assessmentV25AiSilenceMs') || 3500) || 3500));
+      const sinceOpen = nowTs - (openAt || nowTs);
+      const sinceLastTranscript = nowTs - (ASSESSMENT_V2.pendingAnswerLastAt || nowTs);
+      const sinceLocalVoice = assessmentV25Since(Math.max(Number(ASSESSMENT_LOCAL_VOICE_LAST_AT || 0), Number(ASSESSMENT_V2.lastLocalVoiceAt || 0)));
+      const sinceRemoteVoice = assessmentV25Since(Math.max(Number(ASSESSMENT_REMOTE_VOICE_LAST_AT || 0), Number(ASSESSMENT_V2.lastRemoteVoiceAt || 0)));
+      if (sinceOpen < minWindowMs || sinceLastTranscript < settleMs || sinceLocalVoice < localSilenceMs || sinceRemoteVoice < remoteSilenceMs) {
+        assessmentV2Debug('v25_buffer_commit_rescheduled', { slot:no, source, sinceOpen, minWindowMs, sinceLastTranscript, settleMs, sinceLocalVoice, localSilenceMs, sinceRemoteVoice, remoteSilenceMs });
+        assessmentV2ArmBufferedAnswerCommit(no, 'v25_rescheduled_wait_for_stable_answer');
+        return;
+      }
+      assessmentV2CommitBufferedAnswer(no, source || 'v25_transcript_stable');
+    }, settleMs);
+    assessmentV2Debug('v25_buffer_commit_armed', { slot, source, settleMs, textPreview:String(ASSESSMENT_V2.pendingAnswerText||'').slice(0,140) });
+  }
+
+  function assessmentV24ArmControlFallback(no, itemId = '', source = 'audio_item_done_v25'){
+    if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return false;
+    if (!ASSESSMENT_V2.awaitingAnswer || ASSESSMENT_V2.lastAskedNo !== no || ASSESSMENT_V2.answered >= no) return false;
+    ASSESSMENT_V2.lastAudioItemAt = ASSESSMENT_V2.lastAudioItemAt || assessmentV25Now();
+    ASSESSMENT_V2.lastAudioItemId = String(itemId || ASSESSMENT_V2.lastAudioItemId || '');
+    assessmentV25ArmProgressWatch(no, source || 'audio_item_control');
+    assessmentV2Debug('v25_audio_item_progress_watch_armed', { no, source, itemId });
+    return true;
+  }
+
+  function assessmentV2ArmAnswerStall(no, source = 'stall_v25'){
+    assessmentV2ClearTimer('stallTimer');
+    const mode = assessmentV25Mode();
+    const waitMs = Math.max(36000, Math.min(90000, Number(Q.get('assessmentV25NoInputFallbackMs') || (mode === 'audio' ? 62000 : 56000)) || (mode === 'audio' ? 62000 : 56000)));
+    ASSESSMENT_V2.stallTimer = setTimeout(() => {
+      if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return;
+      const slot = Number(no || ASSESSMENT_V2.lastAskedNo || 0);
+      if (!slot || !ASSESSMENT_V2.awaitingAnswer || ASSESSMENT_V2.lastAskedNo !== slot || ASSESSMENT_V2.answered >= slot) return;
+      if (String(ASSESSMENT_V2.pendingAnswerText || '').trim()) {
+        assessmentV2ArmBufferedAnswerCommit(slot, 'v25_stall_pending_text');
+        return;
+      }
+      assessmentV2Debug('v25_no_input_timeout_control_commit', { no:slot, source, waitMs });
+      assessmentV242CommitControlFallback(slot, 'v25_no_input_timeout_control_commit');
+    }, waitMs);
+    assessmentV2Debug('v25_answer_stall_armed', { no, source, waitMs });
+  }
+
+  function assessmentV25ArmProgressWatch(no, source = 'progress_watch'){
+    assessmentV2ClearTimer('progressWatchTimer');
+    const slot = Math.max(1, Math.min(assessmentV2Target(), Number(no || ASSESSMENT_V2.lastAskedNo || 1) || 1));
+    ASSESSMENT_V2.progressWatchTimer = setTimeout(() => assessmentV25ProgressTick(slot, source), 1150);
+    return true;
+  }
+
+  function assessmentV25ProgressTick(slot, source = 'progress_watch'){
+    if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return;
+    const target = assessmentV2Target();
+    const no = Math.max(1, Math.min(target, Number(slot || ASSESSMENT_V2.lastAskedNo || 1) || 1));
+    if (!ASSESSMENT_V2.awaitingAnswer || ASSESSMENT_V2.lastAskedNo !== no || ASSESSMENT_V2.answered >= no) {
+      if (!ASSESSMENT_V2.awaitingAnswer && ASSESSMENT_V2.answered >= target) assessmentV2Finalize('v25_progress_target_answered');
+      else if (!ASSESSMENT_V2.awaitingAnswer && ASSESSMENT_V2.answered < target && ASSESSMENT_V2.asked <= ASSESSMENT_V2.answered) {
+        const delay = Math.max(2500, Math.min(9000, Number(Q.get('assessmentV25NextQuestionDelayMs') || 4200) || 4200));
+        assessmentV2ClearTimer('nextTimer');
+        ASSESSMENT_V2.nextTimer = setTimeout(() => assessmentV2AskSlot(ASSESSMENT_V2.answered + 1, 'v25_progress_next_slot'), delay);
+      }
+      return;
+    }
+    if (!ASSESSMENT_V2.slotQuestionAudioDoneAt) {
+      if (assessmentV25Since(ASSESSMENT_V2.slotAskedAt, 0) > 22000) assessmentV24MarkQuestionAudioDone('v25_progress_question_done_timeout', '');
+      assessmentV25ArmProgressWatch(no, 'waiting_question_done_' + String(source || ''));
+      return;
+    }
+
+    const mode = assessmentV25Mode();
+    const nowTs = assessmentV25Now();
+    const openAt = ASSESSMENT_V2.slotQuestionAudioDoneAt || ASSESSMENT_V2.slotListenSince || nowTs;
+    const sinceOpen = nowTs - openAt;
+    const minWindowMs = Math.max(12000, Math.min(32000, Number(Q.get('assessmentV25MinAnswerWindowMs') || (mode === 'audio' ? 20500 : 18500)) || (mode === 'audio' ? 20500 : 18500)));
+    const localVoiceAt = Math.max(Number(ASSESSMENT_LOCAL_VOICE_LAST_AT || 0), Number(ASSESSMENT_V2.lastLocalVoiceAt || 0));
+    const audioItemAt = Number(ASSESSMENT_V2.lastAudioItemAt || 0);
+    const transcriptAt = Number(ASSESSMENT_V2.pendingAnswerLastAt || 0);
+    const heardVoice = !!((localVoiceAt && localVoiceAt >= openAt - 1200) || (audioItemAt && audioItemAt >= openAt - 1200) || (transcriptAt && transcriptAt >= openAt - 1200));
+    const sinceLocalVoice = assessmentV25Since(localVoiceAt);
+    const sinceAudioItem = assessmentV25Since(audioItemAt);
+    const sinceTranscript = assessmentV25Since(transcriptAt);
+    const localSilenceMs = Math.max(4500, Math.min(13000, Number(Q.get('assessmentV25MicSilenceMs') || (mode === 'audio' ? 9200 : 7800)) || (mode === 'audio' ? 9200 : 7800)));
+    const maxSlotMs = Math.max(38000, Math.min(95000, Number(Q.get('assessmentV25MaxSlotAnswerMs') || (mode === 'audio' ? 52000 : 47000)) || (mode === 'audio' ? 52000 : 47000)));
+
+    if (String(ASSESSMENT_V2.pendingAnswerText || '').trim()) {
+      assessmentV2ArmBufferedAnswerCommit(no, 'v25_progress_pending_text');
+      return;
+    }
+
+    if (heardVoice && sinceOpen >= minWindowMs && sinceLocalVoice >= localSilenceMs && sinceAudioItem >= 6500 && sinceTranscript >= 9000) {
+      assessmentV2Debug('v25_voice_silence_control_commit', { no, source, sinceOpen, minWindowMs, sinceLocalVoice, localSilenceMs, sinceAudioItem, sinceTranscript });
+      assessmentV242CommitControlFallback(no, 'v25_voice_silence_control_commit');
+      return;
+    }
+
+    if (sinceOpen >= maxSlotMs) {
+      assessmentV2Debug('v25_max_slot_time_control_commit', { no, source, sinceOpen, maxSlotMs, heardVoice });
+      assessmentV242CommitControlFallback(no, heardVoice ? 'v25_max_slot_time_after_voice' : 'v25_max_slot_time_no_voice');
+      return;
+    }
+
+    assessmentV25ArmProgressWatch(no, 'tick_' + String(source || 'progress'));
+  }
+
+  function assessmentV243ArmQ10Guard(source = 'v25_guard'){
+    if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return false;
+    const target = assessmentV2Target();
+    if (ASSESSMENT_V2.awaitingAnswer && ASSESSMENT_V2.lastAskedNo > ASSESSMENT_V2.answered) {
+      return assessmentV25ArmProgressWatch(ASSESSMENT_V2.lastAskedNo, source || 'v25_guard_awaiting');
+    }
+    if (ASSESSMENT_V2.answered >= target) return assessmentV2Finalize('v25_guard_target_answered');
+    if (!ASSESSMENT_V2.awaitingAnswer && ASSESSMENT_V2.started && ASSESSMENT_V2.asked <= ASSESSMENT_V2.answered) {
+      assessmentV2ClearTimer('nextTimer');
+      const delay = Math.max(2500, Math.min(9000, Number(Q.get('assessmentV25NextQuestionDelayMs') || 4200) || 4200));
+      ASSESSMENT_V2.nextTimer = setTimeout(() => assessmentV2AskSlot(ASSESSMENT_V2.answered + 1, 'v25_guard_next_slot'), delay);
+      assessmentV2Debug('v25_guard_next_slot_armed', { source, delay, next: ASSESSMENT_V2.answered + 1, target });
+    }
+    return true;
+  }
+
+  function assessmentV2Finalize(source = 'finalize_v25'){
+    if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return false;
+    const target = assessmentV2Target();
+    if (ASSESSMENT_V2.answered < target) {
+      assessmentV2Debug('v25_finalize_blocked_missing_target_slot', { source, answered:ASSESSMENT_V2.answered, target, asked:ASSESSMENT_V2.asked });
+      if (!ASSESSMENT_V2.awaitingAnswer) assessmentV2AskSlot(Math.max(1, ASSESSMENT_V2.answered + 1), 'v25_finalize_blocked_next_slot');
+      else assessmentV25ArmProgressWatch(ASSESSMENT_V2.lastAskedNo, 'v25_finalize_blocked_progress_watch');
+      return false;
+    }
+
+    ASSESSMENT_V2.finalLock = true;
+    ASSESSMENT_TARGET_ANSWERED = true;
+    HARD_END_LOCK = true;
+    TARGET_FINALIZE_REQUESTED = true;
+    FINAL_MESSAGE_SPOKEN = true;
+    END_REQUESTED_BY_MODEL = true;
+    ['nextTimer','stallTimer','pendingAnswerTimer','controlFallbackTimer','questionDoneFallbackTimer','q10GuardTimer','progressWatchTimer','finalForceTimer'].forEach(assessmentV2ClearTimer);
+    try { if (ASSESSMENT_SLOT_DRIVER_TIMER) clearTimeout(ASSESSMENT_SLOT_DRIVER_TIMER); } catch(_) {}
+    ASSESSMENT_SLOT_DRIVER_TIMER = null;
+    try { if (structuredAutoFinishTimer) clearTimeout(structuredAutoFinishTimer); } catch(_) {}
+    structuredAutoFinishTimer = null;
+    try { if (targetAutoFinishTimer) clearTimeout(targetAutoFinishTimer); } catch(_) {}
+    targetAutoFinishTimer = null;
+
+    try {
+      postToParent('clarity.assessment.v2.target_answered', {
+        uid: UID,
+        companyId: COMPANY_ID,
+        source,
+        mode: assessmentV25Mode(),
+        hybrid: assessmentV2IsHybrid(),
+        answered: ASSESSMENT_V2.answered,
+        asked: ASSESSMENT_V2.asked,
+        target,
+        bufferMs: 1600,
+        appControlled: true,
+        ts: new Date().toISOString()
+      });
+    } catch(_) {}
+
+    assessmentV2Debug('v25_final_lock_target_answered_silent_stop', { source, answered:ASSESSMENT_V2.answered, asked:ASSESSMENT_V2.asked, target });
+    setStatus('warn', t('processing'));
+    setStopButtonAvailable(false);
+    avatarSet('processing', 'assessment_v25_final_lock');
+    avatarLevel('user', 0, 'assessment_v25_final_lock');
+    avatarLevel('ai', 0.1, 'assessment_v25_final_lock');
+
+    try { disableMicUplink(); } catch(_) {}
+    try { localStream?.getAudioTracks?.().forEach(track => { try { track.enabled = false; } catch(_) {} }); } catch(_) {}
+    try { localStream?.getVideoTracks?.().forEach(track => { try { track.enabled = false; } catch(_) {} }); } catch(_) {}
+    try { stopRecording(); ASSESSMENT_V2.mediaStopped = true; } catch(e) { try { log('[ASSESSMENT_V2.5] stopRecording failed', errMsg(e)); } catch(_) {} }
+    try { postToParent('clarity.assessment.v2.final_silent_processing', { uid:UID, companyId:COMPANY_ID, source, text:assessmentV2ClosingText(), ts:new Date().toISOString() }); } catch(_) {}
+
+    ASSESSMENT_V2.hardTimer = setTimeout(() => {
+      try { hangup('assessment_v25_complete'); } catch(e) { try { log('[ASSESSMENT_V2.5] final hangup failed', errMsg(e)); } catch(_) {} }
+    }, 1600);
+    return true;
+  }
+
 
   applyStaticTexts();
   setStatus('info', t('init'));
@@ -3895,7 +4349,7 @@
             instructions: String(instruction)
           }
         });
-        log(isAssessmentVoiceLive(CTX) ? '[ASSESSMENT_V2.4] response.instructions sent' : '[DRIVER:video] response.instructions sent', {
+        log(isAssessmentVoiceLive(CTX) ? '[ASSESSMENT_V2.5] response.instructions sent' : '[DRIVER:video] response.instructions sent', {
           source: source || '',
           current: structuredCurrentQuestionIndex,
           target: interviewMainQuestionTarget(CTX),
