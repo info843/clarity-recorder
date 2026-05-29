@@ -1,10 +1,10 @@
-<!-- liveAssessment.html — v2.4.4 DETERMINISTIC_TURN_EXPORT_FINAL_GUARD | Dedicated CLARITY Assessment live file. Conservative slot state machine with stronger assessment role-lock, no-coaching/no-summary guard, question-audio lock, transcript debounce, mic-silence validation, and control fallback. Interview live.html stays untouched. -->
+<!-- liveAssessment.html — v2.5.2 TARGET_NORMALIZED_SLOT_CLOCK | Dedicated CLARITY Assessment live file. Conservative slot state machine with stronger assessment role-lock, no-coaching/no-summary guard, question-audio lock, transcript debounce, mic-silence validation, and control fallback. Interview live.html stays untouched. -->
 <!doctype html>
 <html lang="de">
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- liveAssessment v2.4.4 DETERMINISTIC_TURN_EXPORT_FINAL_GUARD: fixed assessment slots, readiness-answer filter, longer answer settle windows, transcript-independent stall fallback, Q10 failsafe finalization, media stop/export independent from model end_interview -->
+  <!-- liveAssessment v2.5.2 TARGET_NORMALIZED_SLOT_CLOCK: fixed assessment slots, readiness-answer filter, longer answer settle windows, transcript-independent stall fallback, Q10 failsafe finalization, media stop/export independent from model end_interview -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -4035,6 +4035,179 @@
     return assessmentV25ArmProgressWatch(ASSESSMENT_V2.lastAskedNo || Math.max(1, ASSESSMENT_V2.answered + 1), source || 'v251_guard');
   }
 
+
+
+
+  /* ===== Assessment v2.5.2 TARGET_NORMALIZATION_QUESTION_PLAN_FIX =====
+     Narrow corrective patch after real tests:
+     - v2.5.1 restored automatic hangup/processing, but video could finish at 9
+       because a readiness/welcome prompt was treated as an assessment slot.
+     - Some snapshots also contained duplicate questions, which shifted answers.
+     - This patch normalizes spoken targets to valid product counts, filters ready/welcome
+       prompts out of the spoken plan, de-duplicates questions, and fills missing Q9/Q10
+       from the deterministic fallback set. Backend/PDF remains untouched. */
+
+  function assessmentV252Debug(stage, data = {}){
+    try { assessmentV2Debug('v252_' + String(stage || ''), data || {}); } catch(_) {}
+  }
+
+  function assessmentV252AllowedTarget(n, fb = 10){
+    const x = Math.max(1, Math.min(50, Math.round(Number(n) || Number(fb) || 10)));
+    if (x <= 10) return 10;
+    if (x <= 20) return 20;
+    if (x <= 30) return 30;
+    if (x <= 40) return 40;
+    return 50;
+  }
+
+  function assessmentV2Target(){
+    let direct = 0;
+    try {
+      direct = Number(
+        CTX?.totalQuestionCount ||
+        CTX?.questionCountTotal ||
+        CTX?.questionCount ||
+        CTX?.maxQuestions ||
+        CTX?.interviewConfig?.maxQuestions ||
+        0
+      );
+    } catch(_) { direct = 0; }
+
+    if (!Number.isFinite(direct) || direct <= 0) {
+      try {
+        const rawSet = String(CTX?.questionSet || CTX?.questionsSet || CTX?.interviewConfig?.questionSet || '').toUpperCase();
+        const m = rawSet.match(/(10|20|30|40|50)/);
+        if (m) direct = Number(m[1]);
+      } catch(_) {}
+    }
+
+    if (!Number.isFinite(direct) || direct <= 0) {
+      try { direct = assessmentLiveQuestionTarget(CTX) || activeStructuredQuestionTarget(CTX) || 10; } catch(_) { direct = 10; }
+    }
+
+    const normalized = assessmentV252AllowedTarget(direct, 10);
+    const mode = (typeof assessmentV25Mode === 'function') ? assessmentV25Mode() : (AUDIO_ONLY ? 'audio' : 'video');
+    // Launch rule: pure spoken assessment supports Q10/Q20/Q30. Q40/Q50 remains chat/hybrid/future.
+    const cap = (mode === 'audio' || mode === 'video') ? 30 : 50;
+    const out = Math.max(10, Math.min(cap, normalized));
+    if (out !== direct) assessmentV252Debug('target_normalized', { direct, normalized:out, mode });
+    return out;
+  }
+
+  function assessmentV252QuestionKey(text){
+    return normalizeForMatch(String(text || ''))
+      .replace(/\b(frage|question|pregunta|domanda|questao|questão)\s*\d{1,2}\b/g, '')
+      .replace(/[^a-z0-9äöüßáéíóúñçàèìòùâêîôûãõ ]/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function assessmentV252LooksLikeReadyPrompt(text){
+    const raw = String(text || '').trim();
+    if (!raw) return true;
+    const n = assessmentV252QuestionKey(raw);
+    const words = n.split(/\s+/).filter(Boolean).length;
+    const readySignals = [
+      'bitte sagen sie kurz bereit', 'sagen sie kurz bereit', 'sind sie bereit', 'bist du bereit', 'bereit zu starten', 'bereit dann starten wir',
+      'please say ready', 'say ready', 'are you ready', 'ready to begin', 'ready to start',
+      'diga listo', 'esta listo', 'está listo', 'estas listo', 'estás listo', 'listo para empezar',
+      'etes vous pret', 'êtes vous prêt', 'pret a commencer', 'prêt à commencer',
+      'sei pronto', 'e pronto', 'è pronto', 'pronto per iniziare',
+      'welcome to clarity', 'willkommen bei clarity', 'herzlich willkommen', 'assessment wird', 'ich werde ihnen nun'
+    ];
+    if (readySignals.some(sig => n.includes(assessmentV252QuestionKey(sig)))) return true;
+    if (words <= 9 && /\b(bereit|ready|listo|pronto|pret|prêt)\b/i.test(n)) return true;
+    return false;
+  }
+
+  function assessmentV252QuestionPlan(ctx = CTX){
+    let rawPlan = [];
+    try { rawPlan = currentStructuredQuestionPlan(ctx) || []; } catch(_) { rawPlan = []; }
+    const out = [];
+    const seen = new Set();
+    const target = assessmentV2Target();
+    for (const q0 of rawPlan) {
+      const q = String(q0 || '').replace(/^\s*(?:frage|question|pregunta|domanda|quest[aã]o)\s*\d{1,2}\s*[:.)\-–—]?\s*/i, '').replace(/\s+/g, ' ').trim();
+      if (!q) continue;
+      if (assessmentV252LooksLikeReadyPrompt(q)) {
+        assessmentV252Debug('ready_or_welcome_question_removed', { questionPreview:q.slice(0,180) });
+        continue;
+      }
+      const key = assessmentV252QuestionKey(q);
+      if (!key || seen.has(key)) {
+        assessmentV252Debug('duplicate_question_removed', { questionPreview:q.slice(0,180) });
+        continue;
+      }
+      seen.add(key);
+      out.push(q);
+      if (out.length >= target) break;
+    }
+    for (let i = out.length + 1; i <= target; i += 1) {
+      let fb = '';
+      try { fb = assessmentDefaultQuestionText(ctx, i); } catch(_) {}
+      fb = String(fb || '').replace(/\s+/g, ' ').trim();
+      const key = assessmentV252QuestionKey(fb);
+      if (fb && key && !seen.has(key) && !assessmentV252LooksLikeReadyPrompt(fb)) {
+        seen.add(key);
+        out.push(fb);
+        assessmentV252Debug('fallback_question_added', { index:i, questionPreview:fb.slice(0,180) });
+      }
+    }
+    return out.slice(0, target);
+  }
+
+  function assessmentV2QuestionText(no){
+    const idx = Math.max(1, Math.min(50, Number(no || 1) || 1));
+    try {
+      const plan = assessmentV252QuestionPlan(CTX);
+      const q = String(plan[idx - 1] || '').trim();
+      if (q) return q;
+    } catch(e) { try { assessmentV252Debug('question_plan_failed', { message: errMsg(e), idx }); } catch(_) {} }
+    try { return assessmentDefaultQuestionText(CTX, idx); } catch(_) {}
+    return activeInterviewLang(CTX) === 'de'
+      ? `Bitte beantworten Sie Assessment-Frage ${idx} mit einem konkreten beruflichen Beispiel.`
+      : `Please answer assessment question ${idx} with a concrete professional example.`;
+  }
+
+  function assessmentV251Cfg(){
+    const mode = assessmentV25Mode ? assessmentV25Mode() : (AUDIO_ONLY ? 'audio' : 'video');
+    const isAudio = mode === 'audio';
+    return {
+      mode,
+      questionAudioMs: Math.max(4600, Math.min(10500, Number(Q.get('assessmentV251QuestionAudioMs') || (isAudio ? 6200 : 5800)) || (isAudio ? 6200 : 5800))),
+      minAnswerMs: Math.max(9000, Math.min(22000, Number(Q.get('assessmentV251MinAnswerMs') || (isAudio ? 13500 : 12500)) || (isAudio ? 13500 : 12500))),
+      transcriptSettleMs: Math.max(2600, Math.min(8000, Number(Q.get('assessmentV251TranscriptSettleMs') || 4300) || 4300)),
+      micTailMs: Math.max(2200, Math.min(7500, Number(Q.get('assessmentV251MicTailMs') || (isAudio ? 4100 : 3400)) || (isAudio ? 4100 : 3400))),
+      maxAnswerMs: Math.max(20000, Math.min(47000, Number(Q.get('assessmentV251MaxAnswerMs') || (isAudio ? 29200 : 26000)) || (isAudio ? 29200 : 26000))),
+      noInputMs: Math.max(20000, Math.min(47000, Number(Q.get('assessmentV251NoInputMs') || (isAudio ? 29200 : 26000)) || (isAudio ? 29200 : 26000))),
+      nextDelayMs: Math.max(1600, Math.min(6500, Number(Q.get('assessmentV251NextQuestionDelayMs') || 2500) || 2500)),
+      tickMs: Math.max(450, Math.min(1800, Number(Q.get('assessmentV251TickMs') || 750) || 750))
+    };
+  }
+
+  function assessmentV2QuestionInstruction(no, source){
+    const lk = activeInterviewLang(CTX);
+    const q = assessmentV2QuestionText(no);
+    const target = assessmentV2Target();
+    if (lk === 'de') {
+      return [
+        'Du bist ausschließlich die neutrale Vorlesestimme eines CLARITY Assessments.',
+        `Dies ist Frage ${no} von ${target}.`,
+        'Sprich exakt eine einzige Frage. Danach absolute Stille und warten.',
+        'Keine Begrüßung, kein Danke, kein Lob, keine Zusammenfassung, keine Bewertung, kein Coaching, keine Folgefrage, kein Abschlusssatz.',
+        'Sprich nur diesen Text:',
+        q
+      ].join(' ');
+    }
+    return [
+      'You are only the neutral reading voice of a CLARITY assessment.',
+      `This is question ${no} of ${target}.`,
+      'Speak exactly one single question. Then be completely silent and wait.',
+      'No greeting, no thank you, no praise, no summary, no evaluation, no coaching, no follow-up question, no closing sentence.',
+      'Speak only this text:',
+      q
+    ].join(' ');
+  }
 
   applyStaticTexts();
   setStatus('info', t('init'));
