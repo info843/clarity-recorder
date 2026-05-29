@@ -1,10 +1,10 @@
-<!-- liveAssessment.html — v2.5.3 TARGET_SLOT_FINALIZE_GUARD | Dedicated CLARITY Assessment live file. Conservative slot state machine with stronger assessment role-lock, no-coaching/no-summary guard, question-audio lock, transcript debounce, mic-silence validation, and control fallback. Interview live.html stays untouched. -->
+<!-- liveAssessment.html — v2.5.4 SLOT_HEARTBEAT_FINALIZE | Dedicated CLARITY Assessment live file. Conservative slot state machine with stronger assessment role-lock, no-coaching/no-summary guard, question-audio lock, transcript debounce, mic-silence validation, and control fallback. Interview live.html stays untouched. -->
 <!doctype html>
 <html lang="de">
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- liveAssessment v2.5.3 TARGET_SLOT_FINALIZE_GUARD: fixed assessment slots, readiness-answer filter, longer answer settle windows, transcript-independent stall fallback, Q10 failsafe finalization, media stop/export independent from model end_interview -->
+  <!-- liveAssessment v2.5.4 SLOT_HEARTBEAT_FINALIZE: fixed assessment slots, readiness-answer filter, longer answer settle windows, transcript-independent stall fallback, Q10 failsafe finalization, media stop/export independent from model end_interview -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -4210,171 +4210,198 @@
   }
 
 
-  /* ===== Assessment v2.5.3 TARGET_SLOT_FINALIZE_GUARD =====
-     Real-test corrective patch after v2.5.2:
-     - PDF can show Q10 while Auto-Hangup does not fire because the live driver did not
-       internally commit the target slot before the user/manual finish.
-     - The final/closing phase must never become an additional question/answer gate.
-     - Once the target slot was asked, a deterministic target-finish watchdog commits the
-       final slot from live text when present, or as a technical control marker when Realtime
-       transcript is missing. Candidate-only audio remains the real evidence for the report.
-     - Pure audio/video finalization is silent: no spoken closing sentence, no extra model turn. */
+  /* ===== Assessment v2.5.4 SLOT_HEARTBEAT_FINALIZE =====
+     Built from the better v2.5.2 base, not from v2.5.3.
+     Purpose:
+     - Keep the normalized question plan from v2.5.2.
+     - Add an independent slot heartbeat so the driver cannot stall before Q10.
+     - Commit the current slot by bounded clock if transcript/silence events are incomplete.
+     - If target is reached internally, finalize immediately and silently.
+     - Do not treat closing/processing text as Q11 or a new answer window. */
 
-  function assessmentV253Debug(stage, data = {}){
-    try { assessmentV2Debug('v253_' + String(stage || ''), data || {}); } catch(_) {}
+  const ASSESSMENT_V254 = {
+    timer: null,
+    lastTickAt: 0,
+    tickCount: 0,
+    lastForcedSlot: 0,
+    finalWatchArmed: false
+  };
+
+  function assessmentV254Debug(stage, data = {}){
+    try { assessmentV2Debug('v254_' + String(stage || ''), data || {}); } catch(_) {}
   }
 
-  function assessmentV253Mode(){
-    try { return assessmentV25Mode ? assessmentV25Mode() : (AUDIO_ONLY ? 'audio' : 'video'); }
-    catch(_) { return AUDIO_ONLY ? 'audio' : 'video'; }
+  function assessmentV254ClearHeartbeat(){
+    try { if (ASSESSMENT_V254.timer) clearTimeout(ASSESSMENT_V254.timer); } catch(_) {}
+    ASSESSMENT_V254.timer = null;
   }
 
-  function assessmentV253TargetSlotDelayMs(){
-    const mode = assessmentV253Mode();
+  function assessmentV254Cfg(){
+    const mode = (typeof assessmentV25Mode === 'function') ? assessmentV25Mode() : (AUDIO_ONLY ? 'audio' : 'video');
     const isAudio = mode === 'audio';
-    const base = isAudio ? 46000 : 42000;
-    return Math.max(26000, Math.min(72000, Number(Q.get('assessmentV253TargetSlotFinalizeMs') || base) || base));
+    return {
+      mode,
+      heartbeatMs: Math.max(700, Math.min(2200, Number(Q.get('assessmentV254HeartbeatMs') || 950) || 950)),
+      questionAudioMs: Math.max(3800, Math.min(9000, Number(Q.get('assessmentV254QuestionAudioMs') || (isAudio ? 5600 : 5200)) || (isAudio ? 5600 : 5200))),
+      // This is a hard slot budget. The candidate can still speak naturally; candidate-only audio remains evidence.
+      hardSlotMs: Math.max(20000, Math.min(42000, Number(Q.get('assessmentV254HardSlotMs') || (isAudio ? 27800 : 25800)) || (isAudio ? 27800 : 25800))),
+      // Near target we finish slightly more decisively so Q10 cannot become an extra waiting state.
+      targetHardSlotMs: Math.max(18000, Math.min(38000, Number(Q.get('assessmentV254TargetHardSlotMs') || (isAudio ? 25200 : 23800)) || (isAudio ? 25200 : 23800))),
+      nextDelayMs: Math.max(1000, Math.min(4500, Number(Q.get('assessmentV254NextDelayMs') || 1700) || 1700)),
+      firstKickMs: Math.max(1200, Math.min(7000, Number(Q.get('assessmentV254FirstKickMs') || 2600) || 2600))
+    };
   }
 
-  function assessmentV253ClearFinalForce(){
-    try { if (ASSESSMENT_V2.finalForceTimer) clearTimeout(ASSESSMENT_V2.finalForceTimer); } catch(_) {}
-    ASSESSMENT_V2.finalForceTimer = null;
-  }
-
-  function assessmentV253TargetWasAsked(){
-    const target = assessmentV2Target();
-    return !!(ASSESSMENT_V2.started && ASSESSMENT_V2.lastAskedNo >= target && ASSESSMENT_V2.asked >= target);
-  }
-
-  function assessmentV253QuestionOrClosingMustNotCount(text = ''){
-    const raw = String(text || '').trim();
-    if (!raw) return true;
-    if (assessmentV252LooksLikeReadyPrompt(raw)) return true;
-    if (finalClosingDetected(raw) || assessmentV2LooksLikeCompletionText(raw)) return true;
-    return false;
-  }
-
-  function assessmentV253ForceCommitTarget(source = 'v253_force_commit_target'){
-    if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return false;
-    const target = assessmentV2Target();
-    if (ASSESSMENT_V2.answered >= target) return true;
-    if (!assessmentV253TargetWasAsked()) {
-      assessmentV253Debug('force_commit_rejected_target_not_asked', { source, answered:ASSESSMENT_V2.answered, asked:ASSESSMENT_V2.asked, lastAskedNo:ASSESSMENT_V2.lastAskedNo, target });
-      return false;
-    }
-
-    let clean = String(ASSESSMENT_V2.pendingAnswerText || '').trim();
-    let isFallback = false;
-
-    // Never use a final/closing sentence or readiness-only fragment as the target answer.
-    if (!clean || assessmentV253QuestionOrClosingMustNotCount(clean)) {
-      clean = assessmentV24ControlFallbackText(target, 'v253_target_slot_control_commit');
-      isFallback = true;
-      try { ASSESSMENT_V2.fallbackAnswers[target] = true; } catch(_) {}
-    }
-
-    ASSESSMENT_V2.answers[target] = clean;
-    ASSESSMENT_V2.answered = target;
-    ASSESSMENT_V2.awaitingAnswer = false;
-    ASSESSMENT_V2.phase = 'ANSWERED_TARGET_FORCED';
-    ASSESSMENT_TARGET_ANSWERED = true;
-    ASSESSMENT_V2.lastUserAt = Date.now();
-
-    assessmentV2ClearTimer('stallTimer');
-    assessmentV2ClearTimer('pendingAnswerTimer');
-    assessmentV2ClearTimer('controlFallbackTimer');
-    assessmentV2ClearTimer('questionDoneFallbackTimer');
-    assessmentV2ClearTimer('progressWatchTimer');
-    assessmentV253ClearFinalForce();
-
-    ASSESSMENT_V2.pendingAnswerText = '';
-    ASSESSMENT_V2.pendingAnswerSlot = 0;
-    ASSESSMENT_V2.pendingAnswerSources = [];
-    ASSESSMENT_V2.pendingAnswerFirstAt = 0;
-    ASSESSMENT_V2.pendingAnswerLastAt = 0;
-
-    try { postToParent('clarity.assessment.v2.slot_answered', { index:target, target, text:clean.slice(0,240), source, forced:true, isFallback, ts:new Date().toISOString() }); } catch(_) {}
-    try { assessmentV244EmitDeterministicTurn('candidate', target, clean, 'assessment_v253_target_slot_answered_' + String(source || 'forced'), { isFallback }); } catch(_) {}
-    assessmentV253Debug('target_slot_force_committed', { source, target, isFallback, textPreview:clean.slice(0,160), asked:ASSESSMENT_V2.asked, lastAskedNo:ASSESSMENT_V2.lastAskedNo });
+  function assessmentV254ArmHeartbeat(source = 'heartbeat'){
+    if (!assessmentV25IsActive || !assessmentV25IsActive()) return false;
+    if (ASSESSMENT_V2.finalLock || END_CALLED) return false;
+    assessmentV254ClearHeartbeat();
+    const cfg = assessmentV254Cfg();
+    ASSESSMENT_V254.timer = setTimeout(() => assessmentV254Tick(source), cfg.heartbeatMs);
     return true;
   }
 
-  function assessmentV253ArmTargetSlotFinalize(source = 'target_slot_asked'){
-    if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return false;
+  function assessmentV254SlotTextForCommit(slot, source){
+    const pending = String(ASSESSMENT_V2.pendingAnswerText || '').trim();
+    if (pending) return pending;
+    const lang = activeInterviewLang(CTX);
+    const de = lang === 'de';
+    if (de) return `[Kontrollhinweis: Für Assessment-Frage ${slot} wurde eine mündliche Antwort aufgenommen. Die Auswertung verwendet die Candidate-Audio-Transkription als primäre Evidenz.]`;
+    return `[Control note: A spoken answer was recorded for assessment question ${slot}. The report uses the candidate-audio transcription as primary evidence.]`;
+  }
+
+  function assessmentV254ForceCommitCurrent(slot, source = 'v254_heartbeat_force_commit'){
+    if (!assessmentV25IsActive || !assessmentV25IsActive()) return false;
+    if (ASSESSMENT_V2.finalLock) return false;
     const target = assessmentV2Target();
-    if (!assessmentV253TargetWasAsked() || ASSESSMENT_V2.answered >= target) return false;
-    assessmentV253ClearFinalForce();
-    const delayMs = assessmentV253TargetSlotDelayMs();
-    ASSESSMENT_V2.finalForceTimer = setTimeout(() => {
-      if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return;
-      const t = assessmentV2Target();
-      if (ASSESSMENT_V2.answered >= t) return assessmentV2Finalize('v253_target_already_answered_watchdog');
-      if (!assessmentV253TargetWasAsked()) return;
-      assessmentV253Debug('target_slot_finalize_watchdog_fire', { source, delayMs, answered:ASSESSMENT_V2.answered, asked:ASSESSMENT_V2.asked, lastAskedNo:ASSESSMENT_V2.lastAskedNo, target:t, pendingPreview:String(ASSESSMENT_V2.pendingAnswerText||'').slice(0,140) });
-      if (assessmentV253ForceCommitTarget('v253_target_slot_watchdog')) {
-        setTimeout(() => assessmentV2Finalize('v253_target_slot_watchdog_finalized'), 80);
-      }
-    }, delayMs);
-    assessmentV253Debug('target_slot_finalize_watchdog_armed', { source, delayMs, answered:ASSESSMENT_V2.answered, asked:ASSESSMENT_V2.asked, lastAskedNo:ASSESSMENT_V2.lastAskedNo, target });
+    const no = Math.max(1, Math.min(target, Number(slot || ASSESSMENT_V2.lastAskedNo || ASSESSMENT_V2.answered + 1) || 1));
+    if (ASSESSMENT_V2.answered >= no) return false;
+
+    ASSESSMENT_V2.pendingAnswerSlot = no;
+    ASSESSMENT_V2.pendingAnswerText = assessmentV254SlotTextForCommit(no, source);
+    ASSESSMENT_V2.pendingAnswerSources = [String(source || 'v254_force_commit')];
+    ASSESSMENT_V2.pendingAnswerFirstAt = ASSESSMENT_V2.pendingAnswerFirstAt || Date.now();
+    ASSESSMENT_V2.pendingAnswerLastAt = Date.now();
+    ASSESSMENT_V2.awaitingAnswer = true;
+    ASSESSMENT_V2.lastAskedNo = Math.max(ASSESSMENT_V2.lastAskedNo || 0, no);
+    ASSESSMENT_V2.asked = Math.max(ASSESSMENT_V2.asked || 0, no);
+    ASSESSMENT_V2.fallbackAnswers[no] = !String(ASSESSMENT_V2.pendingAnswerText || '').trim() || /^\[/.test(ASSESSMENT_V2.pendingAnswerText);
+
+    assessmentV254Debug('force_commit_current_slot', { no, target, source, textPreview:String(ASSESSMENT_V2.pendingAnswerText||'').slice(0,160) });
+    return assessmentV2CommitBufferedAnswer(no, source || 'v254_force_commit');
+  }
+
+  function assessmentV254MaybeAskNext(source = 'v254_ask_next'){
+    if (!assessmentV25IsActive || !assessmentV25IsActive()) return false;
+    if (ASSESSMENT_V2.finalLock) return false;
+    const target = assessmentV2Target();
+    if (ASSESSMENT_V2.answered >= target) return assessmentV2Finalize('v254_target_reached_ask_next_guard');
+    if (ASSESSMENT_V2.awaitingAnswer && ASSESSMENT_V2.lastAskedNo > ASSESSMENT_V2.answered) return false;
+    const next = Math.max(1, Math.min(target, ASSESSMENT_V2.answered + 1));
+    if (ASSESSMENT_V2.asked >= next && ASSESSMENT_V2.lastAskedNo >= next) return false;
+    const cfg = assessmentV254Cfg();
+    assessmentV2ClearTimer('nextTimer');
+    ASSESSMENT_V2.nextTimer = setTimeout(() => {
+      try { assessmentV2AskSlot(next, source); } catch(e) { try { log('[ASSESSMENT_V2.5.4] ask next failed', errMsg(e)); } catch(_) {} }
+      assessmentV254ArmHeartbeat('after_ask_next');
+    }, cfg.nextDelayMs);
+    assessmentV254Debug('ask_next_armed', { next, target, source, delayMs:cfg.nextDelayMs });
     return true;
   }
 
-  // Override ask-slot once more: keep v2.5.2 question normalization, but arm a hard target-slot
-  // finalization watchdog as soon as the true target question is asked. This avoids the state where
-  // the PDF can reconstruct Q10 from audio, but the live driver keeps waiting for another internal commit.
-  function assessmentV2AskSlot(no, source = 'ask_slot_v253'){
-    if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return false;
-    const target = assessmentV2Target();
-    const idx = Math.max(1, Math.min(target, Number(no || 1) || 1));
-    if (idx <= ASSESSMENT_V2.answered) return false;
-    if (ASSESSMENT_V2.awaitingAnswer && ASSESSMENT_V2.lastAskedNo > ASSESSMENT_V2.answered && ASSESSMENT_V2.lastAskedNo !== idx) {
-      try { log('[ASSESSMENT_V2.5.3] ask slot blocked while awaiting previous answer', { requested:idx, awaiting:ASSESSMENT_V2.lastAskedNo, answered:ASSESSMENT_V2.answered, source }); } catch(_) {}
-      return false;
-    }
-    const questionText = assessmentV2QuestionText(idx);
-    if (assessmentV253QuestionOrClosingMustNotCount(questionText)) {
-      assessmentV253Debug('blocked_non_assessment_question_text', { idx, source, questionPreview:String(questionText||'').slice(0,180) });
-      return assessmentV2AskSlot(Math.min(target, idx + 1), 'v253_skip_non_assessment_question');
-    }
-    const marked = assessmentV2MarkSlotAsked(idx, questionText, source || 'ask_slot_v253');
-    if (!marked) {
-      assessmentV253Debug('ask_slot_not_sent_mark_blocked', { idx, target, source });
-      return false;
-    }
-    try { log('[ASSESSMENT_V2.5.3] ask slot', { idx, target, source }); } catch(_) {}
-    const sent = createAssistantAudioResponseFromInstruction(assessmentV2QuestionInstruction(idx, source), `assessment_v253_${source}_${idx}`);
-    if (idx >= target) assessmentV253ArmTargetSlotFinalize('target_question_asked_' + String(source || 'ask'));
-    return sent;
-  }
+  function assessmentV254Tick(source = 'heartbeat_tick'){
+    if (!assessmentV25IsActive || !assessmentV25IsActive()) return;
+    if (ASSESSMENT_V2.finalLock || END_CALLED) return;
+    ASSESSMENT_V254.lastTickAt = Date.now();
+    ASSESSMENT_V254.tickCount += 1;
 
-  // Override finalize guard narrowly: when the target question has already been asked, missing
-  // internal answer state is force-committed instead of asking a phantom extra slot or waiting for
-  // a closing-message response. Then the original silent stop path is executed.
-  const assessmentV253_originalFinalize = assessmentV2Finalize;
-  function assessmentV2Finalize(source = 'finalize_v253'){
-    if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return false;
     const target = assessmentV2Target();
-    if (ASSESSMENT_V2.answered < target && assessmentV253TargetWasAsked()) {
-      assessmentV253Debug('finalize_forcing_target_before_silent_stop', { source, answered:ASSESSMENT_V2.answered, asked:ASSESSMENT_V2.asked, lastAskedNo:ASSESSMENT_V2.lastAskedNo, target });
-      assessmentV253ForceCommitTarget('v253_finalize_missing_target_commit');
-    }
-    return assessmentV253_originalFinalize(source || 'v253_finalize');
-  }
+    const cfg = assessmentV254Cfg();
 
-  // If any completion/final text appears after target was asked, treat it as a finish signal only.
-  // It must not become a question and must not open another answer window.
-  const assessmentV253_originalOnTranscript = assessmentV2OnTranscript;
-  function assessmentV2OnTranscript(payload){
-    const speaker = String(payload?.speaker || payload?.role || '').toLowerCase();
-    const text = String(payload?.text || payload?.cleanText || payload?.originalText || '').trim();
-    if (speaker === 'assistant' && text && assessmentV2LooksLikeCompletionText(text) && assessmentV253TargetWasAsked()) {
-      assessmentV253Debug('assistant_completion_after_target_forces_silent_finish', { textPreview:text.slice(0,180), answered:ASSESSMENT_V2.answered, target:assessmentV2Target() });
-      if (ASSESSMENT_V2.answered < assessmentV2Target()) assessmentV253ForceCommitTarget('v253_completion_text_after_target');
-      assessmentV2Finalize('v253_completion_text_after_target');
+    if (ASSESSMENT_V2.answered >= target) {
+      assessmentV254Debug('target_reached_finalize_from_heartbeat', { answered:ASSESSMENT_V2.answered, asked:ASSESSMENT_V2.asked, target, source });
+      assessmentV2Finalize('v254_heartbeat_target_reached');
       return;
     }
-    return assessmentV253_originalOnTranscript(payload);
+
+    if (!ASSESSMENT_V2.awaitingAnswer) {
+      // Start or continue the deterministic slot sequence.
+      assessmentV254MaybeAskNext('v254_heartbeat_no_open_answer');
+      assessmentV254ArmHeartbeat('no_open_answer');
+      return;
+    }
+
+    const slot = Math.max(1, Math.min(target, Number(ASSESSMENT_V2.lastAskedNo || ASSESSMENT_V2.answered + 1) || 1));
+    const askedAt = Number(ASSESSMENT_V2.slotAskedAt || 0);
+    const now = Date.now();
+    if (!askedAt) {
+      assessmentV254ArmHeartbeat('missing_asked_at');
+      return;
+    }
+
+    if (!ASSESSMENT_V2.slotQuestionAudioDoneAt && now - askedAt >= cfg.questionAudioMs) {
+      try { assessmentV24MarkQuestionAudioDone('v254_question_audio_clock_done', ''); } catch(_) {}
+      assessmentV254Debug('question_audio_clock_done', { slot, elapsed:now - askedAt, questionAudioMs:cfg.questionAudioMs });
+    }
+
+    const budget = slot >= target ? cfg.targetHardSlotMs : cfg.hardSlotMs;
+    const elapsed = now - askedAt;
+    if (elapsed >= budget) {
+      ASSESSMENT_V254.lastForcedSlot = slot;
+      assessmentV254Debug(slot >= target ? 'target_slot_clock_commit' : 'slot_clock_commit', {
+        slot, target, elapsed, budget, answered:ASSESSMENT_V2.answered, asked:ASSESSMENT_V2.asked,
+        pendingPreview:String(ASSESSMENT_V2.pendingAnswerText||'').slice(0,120)
+      });
+      assessmentV254ForceCommitCurrent(slot, slot >= target ? 'v254_target_slot_clock_commit' : 'v254_slot_clock_commit');
+      assessmentV254ArmHeartbeat('after_clock_commit');
+      return;
+    }
+
+    assessmentV254ArmHeartbeat('continue_waiting_slot');
   }
+
+  // Save originals from v2.5.2 and wrap narrowly.
+  const assessmentV254_originalReset = assessmentV2Reset;
+  function assessmentV2Reset(reason = 'reset_v254'){
+    assessmentV254ClearHeartbeat();
+    const r = assessmentV254_originalReset(reason || 'reset_v254');
+    ASSESSMENT_V254.finalWatchArmed = false;
+    const cfg = assessmentV254Cfg();
+    setTimeout(() => assessmentV254ArmHeartbeat('reset_first_kick'), cfg.firstKickMs);
+    assessmentV254Debug('reset_heartbeat_armed', { reason, firstKickMs:cfg.firstKickMs });
+    return r;
+  }
+
+  const assessmentV254_originalAskSlot = assessmentV2AskSlot;
+  function assessmentV2AskSlot(no, source = 'ask_slot_v254'){
+    const r = assessmentV254_originalAskSlot(no, source || 'ask_slot_v254');
+    assessmentV254ArmHeartbeat('after_ask_slot');
+    return r;
+  }
+
+  const assessmentV254_originalCommit = assessmentV2CommitBufferedAnswer;
+  function assessmentV2CommitBufferedAnswer(slot, source = 'buffer_commit_v254'){
+    const r = assessmentV254_originalCommit(slot, source || 'buffer_commit_v254');
+    if (!ASSESSMENT_V2.finalLock) assessmentV254ArmHeartbeat('after_commit');
+    return r;
+  }
+
+  const assessmentV254_originalFinalize = assessmentV2Finalize;
+  function assessmentV2Finalize(source = 'finalize_v254'){
+    const target = assessmentV2Target();
+    if (assessmentV25IsActive && assessmentV25IsActive() && !ASSESSMENT_V2.finalLock && ASSESSMENT_V2.answered < target) {
+      assessmentV254Debug('finalize_blocked_force_current_or_continue', { source, answered:ASSESSMENT_V2.answered, asked:ASSESSMENT_V2.asked, lastAskedNo:ASSESSMENT_V2.lastAskedNo, target, awaiting:ASSESSMENT_V2.awaitingAnswer });
+      if (ASSESSMENT_V2.awaitingAnswer && ASSESSMENT_V2.lastAskedNo) assessmentV254ForceCommitCurrent(ASSESSMENT_V2.lastAskedNo, 'v254_finalize_force_current_before_block');
+      if (ASSESSMENT_V2.answered < target) {
+        assessmentV254MaybeAskNext('v254_finalize_blocked_continue_to_target');
+        assessmentV254ArmHeartbeat('finalize_blocked_continue');
+        return false;
+      }
+    }
+    assessmentV254ClearHeartbeat();
+    return assessmentV254_originalFinalize(source || 'finalize_v254');
+  }
+
 
   applyStaticTexts();
   setStatus('info', t('init'));
