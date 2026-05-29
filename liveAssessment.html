@@ -1,10 +1,10 @@
-<!-- liveAssessment.html — v2.5.2 TARGET_NORMALIZED_SLOT_CLOCK | Dedicated CLARITY Assessment live file. Conservative slot state machine with stronger assessment role-lock, no-coaching/no-summary guard, question-audio lock, transcript debounce, mic-silence validation, and control fallback. Interview live.html stays untouched. -->
+<!-- liveAssessment.html — v2.5.3 TARGET_SLOT_FINALIZE_GUARD | Dedicated CLARITY Assessment live file. Conservative slot state machine with stronger assessment role-lock, no-coaching/no-summary guard, question-audio lock, transcript debounce, mic-silence validation, and control fallback. Interview live.html stays untouched. -->
 <!doctype html>
 <html lang="de">
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- liveAssessment v2.5.2 TARGET_NORMALIZED_SLOT_CLOCK: fixed assessment slots, readiness-answer filter, longer answer settle windows, transcript-independent stall fallback, Q10 failsafe finalization, media stop/export independent from model end_interview -->
+  <!-- liveAssessment v2.5.3 TARGET_SLOT_FINALIZE_GUARD: fixed assessment slots, readiness-answer filter, longer answer settle windows, transcript-independent stall fallback, Q10 failsafe finalization, media stop/export independent from model end_interview -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -4207,6 +4207,173 @@
       'Speak only this text:',
       q
     ].join(' ');
+  }
+
+
+  /* ===== Assessment v2.5.3 TARGET_SLOT_FINALIZE_GUARD =====
+     Real-test corrective patch after v2.5.2:
+     - PDF can show Q10 while Auto-Hangup does not fire because the live driver did not
+       internally commit the target slot before the user/manual finish.
+     - The final/closing phase must never become an additional question/answer gate.
+     - Once the target slot was asked, a deterministic target-finish watchdog commits the
+       final slot from live text when present, or as a technical control marker when Realtime
+       transcript is missing. Candidate-only audio remains the real evidence for the report.
+     - Pure audio/video finalization is silent: no spoken closing sentence, no extra model turn. */
+
+  function assessmentV253Debug(stage, data = {}){
+    try { assessmentV2Debug('v253_' + String(stage || ''), data || {}); } catch(_) {}
+  }
+
+  function assessmentV253Mode(){
+    try { return assessmentV25Mode ? assessmentV25Mode() : (AUDIO_ONLY ? 'audio' : 'video'); }
+    catch(_) { return AUDIO_ONLY ? 'audio' : 'video'; }
+  }
+
+  function assessmentV253TargetSlotDelayMs(){
+    const mode = assessmentV253Mode();
+    const isAudio = mode === 'audio';
+    const base = isAudio ? 46000 : 42000;
+    return Math.max(26000, Math.min(72000, Number(Q.get('assessmentV253TargetSlotFinalizeMs') || base) || base));
+  }
+
+  function assessmentV253ClearFinalForce(){
+    try { if (ASSESSMENT_V2.finalForceTimer) clearTimeout(ASSESSMENT_V2.finalForceTimer); } catch(_) {}
+    ASSESSMENT_V2.finalForceTimer = null;
+  }
+
+  function assessmentV253TargetWasAsked(){
+    const target = assessmentV2Target();
+    return !!(ASSESSMENT_V2.started && ASSESSMENT_V2.lastAskedNo >= target && ASSESSMENT_V2.asked >= target);
+  }
+
+  function assessmentV253QuestionOrClosingMustNotCount(text = ''){
+    const raw = String(text || '').trim();
+    if (!raw) return true;
+    if (assessmentV252LooksLikeReadyPrompt(raw)) return true;
+    if (finalClosingDetected(raw) || assessmentV2LooksLikeCompletionText(raw)) return true;
+    return false;
+  }
+
+  function assessmentV253ForceCommitTarget(source = 'v253_force_commit_target'){
+    if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return false;
+    const target = assessmentV2Target();
+    if (ASSESSMENT_V2.answered >= target) return true;
+    if (!assessmentV253TargetWasAsked()) {
+      assessmentV253Debug('force_commit_rejected_target_not_asked', { source, answered:ASSESSMENT_V2.answered, asked:ASSESSMENT_V2.asked, lastAskedNo:ASSESSMENT_V2.lastAskedNo, target });
+      return false;
+    }
+
+    let clean = String(ASSESSMENT_V2.pendingAnswerText || '').trim();
+    let isFallback = false;
+
+    // Never use a final/closing sentence or readiness-only fragment as the target answer.
+    if (!clean || assessmentV253QuestionOrClosingMustNotCount(clean)) {
+      clean = assessmentV24ControlFallbackText(target, 'v253_target_slot_control_commit');
+      isFallback = true;
+      try { ASSESSMENT_V2.fallbackAnswers[target] = true; } catch(_) {}
+    }
+
+    ASSESSMENT_V2.answers[target] = clean;
+    ASSESSMENT_V2.answered = target;
+    ASSESSMENT_V2.awaitingAnswer = false;
+    ASSESSMENT_V2.phase = 'ANSWERED_TARGET_FORCED';
+    ASSESSMENT_TARGET_ANSWERED = true;
+    ASSESSMENT_V2.lastUserAt = Date.now();
+
+    assessmentV2ClearTimer('stallTimer');
+    assessmentV2ClearTimer('pendingAnswerTimer');
+    assessmentV2ClearTimer('controlFallbackTimer');
+    assessmentV2ClearTimer('questionDoneFallbackTimer');
+    assessmentV2ClearTimer('progressWatchTimer');
+    assessmentV253ClearFinalForce();
+
+    ASSESSMENT_V2.pendingAnswerText = '';
+    ASSESSMENT_V2.pendingAnswerSlot = 0;
+    ASSESSMENT_V2.pendingAnswerSources = [];
+    ASSESSMENT_V2.pendingAnswerFirstAt = 0;
+    ASSESSMENT_V2.pendingAnswerLastAt = 0;
+
+    try { postToParent('clarity.assessment.v2.slot_answered', { index:target, target, text:clean.slice(0,240), source, forced:true, isFallback, ts:new Date().toISOString() }); } catch(_) {}
+    try { assessmentV244EmitDeterministicTurn('candidate', target, clean, 'assessment_v253_target_slot_answered_' + String(source || 'forced'), { isFallback }); } catch(_) {}
+    assessmentV253Debug('target_slot_force_committed', { source, target, isFallback, textPreview:clean.slice(0,160), asked:ASSESSMENT_V2.asked, lastAskedNo:ASSESSMENT_V2.lastAskedNo });
+    return true;
+  }
+
+  function assessmentV253ArmTargetSlotFinalize(source = 'target_slot_asked'){
+    if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return false;
+    const target = assessmentV2Target();
+    if (!assessmentV253TargetWasAsked() || ASSESSMENT_V2.answered >= target) return false;
+    assessmentV253ClearFinalForce();
+    const delayMs = assessmentV253TargetSlotDelayMs();
+    ASSESSMENT_V2.finalForceTimer = setTimeout(() => {
+      if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return;
+      const t = assessmentV2Target();
+      if (ASSESSMENT_V2.answered >= t) return assessmentV2Finalize('v253_target_already_answered_watchdog');
+      if (!assessmentV253TargetWasAsked()) return;
+      assessmentV253Debug('target_slot_finalize_watchdog_fire', { source, delayMs, answered:ASSESSMENT_V2.answered, asked:ASSESSMENT_V2.asked, lastAskedNo:ASSESSMENT_V2.lastAskedNo, target:t, pendingPreview:String(ASSESSMENT_V2.pendingAnswerText||'').slice(0,140) });
+      if (assessmentV253ForceCommitTarget('v253_target_slot_watchdog')) {
+        setTimeout(() => assessmentV2Finalize('v253_target_slot_watchdog_finalized'), 80);
+      }
+    }, delayMs);
+    assessmentV253Debug('target_slot_finalize_watchdog_armed', { source, delayMs, answered:ASSESSMENT_V2.answered, asked:ASSESSMENT_V2.asked, lastAskedNo:ASSESSMENT_V2.lastAskedNo, target });
+    return true;
+  }
+
+  // Override ask-slot once more: keep v2.5.2 question normalization, but arm a hard target-slot
+  // finalization watchdog as soon as the true target question is asked. This avoids the state where
+  // the PDF can reconstruct Q10 from audio, but the live driver keeps waiting for another internal commit.
+  function assessmentV2AskSlot(no, source = 'ask_slot_v253'){
+    if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return false;
+    const target = assessmentV2Target();
+    const idx = Math.max(1, Math.min(target, Number(no || 1) || 1));
+    if (idx <= ASSESSMENT_V2.answered) return false;
+    if (ASSESSMENT_V2.awaitingAnswer && ASSESSMENT_V2.lastAskedNo > ASSESSMENT_V2.answered && ASSESSMENT_V2.lastAskedNo !== idx) {
+      try { log('[ASSESSMENT_V2.5.3] ask slot blocked while awaiting previous answer', { requested:idx, awaiting:ASSESSMENT_V2.lastAskedNo, answered:ASSESSMENT_V2.answered, source }); } catch(_) {}
+      return false;
+    }
+    const questionText = assessmentV2QuestionText(idx);
+    if (assessmentV253QuestionOrClosingMustNotCount(questionText)) {
+      assessmentV253Debug('blocked_non_assessment_question_text', { idx, source, questionPreview:String(questionText||'').slice(0,180) });
+      return assessmentV2AskSlot(Math.min(target, idx + 1), 'v253_skip_non_assessment_question');
+    }
+    const marked = assessmentV2MarkSlotAsked(idx, questionText, source || 'ask_slot_v253');
+    if (!marked) {
+      assessmentV253Debug('ask_slot_not_sent_mark_blocked', { idx, target, source });
+      return false;
+    }
+    try { log('[ASSESSMENT_V2.5.3] ask slot', { idx, target, source }); } catch(_) {}
+    const sent = createAssistantAudioResponseFromInstruction(assessmentV2QuestionInstruction(idx, source), `assessment_v253_${source}_${idx}`);
+    if (idx >= target) assessmentV253ArmTargetSlotFinalize('target_question_asked_' + String(source || 'ask'));
+    return sent;
+  }
+
+  // Override finalize guard narrowly: when the target question has already been asked, missing
+  // internal answer state is force-committed instead of asking a phantom extra slot or waiting for
+  // a closing-message response. Then the original silent stop path is executed.
+  const assessmentV253_originalFinalize = assessmentV2Finalize;
+  function assessmentV2Finalize(source = 'finalize_v253'){
+    if (!assessmentV25IsActive() || ASSESSMENT_V2.finalLock) return false;
+    const target = assessmentV2Target();
+    if (ASSESSMENT_V2.answered < target && assessmentV253TargetWasAsked()) {
+      assessmentV253Debug('finalize_forcing_target_before_silent_stop', { source, answered:ASSESSMENT_V2.answered, asked:ASSESSMENT_V2.asked, lastAskedNo:ASSESSMENT_V2.lastAskedNo, target });
+      assessmentV253ForceCommitTarget('v253_finalize_missing_target_commit');
+    }
+    return assessmentV253_originalFinalize(source || 'v253_finalize');
+  }
+
+  // If any completion/final text appears after target was asked, treat it as a finish signal only.
+  // It must not become a question and must not open another answer window.
+  const assessmentV253_originalOnTranscript = assessmentV2OnTranscript;
+  function assessmentV2OnTranscript(payload){
+    const speaker = String(payload?.speaker || payload?.role || '').toLowerCase();
+    const text = String(payload?.text || payload?.cleanText || payload?.originalText || '').trim();
+    if (speaker === 'assistant' && text && assessmentV2LooksLikeCompletionText(text) && assessmentV253TargetWasAsked()) {
+      assessmentV253Debug('assistant_completion_after_target_forces_silent_finish', { textPreview:text.slice(0,180), answered:ASSESSMENT_V2.answered, target:assessmentV2Target() });
+      if (ASSESSMENT_V2.answered < assessmentV2Target()) assessmentV253ForceCommitTarget('v253_completion_text_after_target');
+      assessmentV2Finalize('v253_completion_text_after_target');
+      return;
+    }
+    return assessmentV253_originalOnTranscript(payload);
   }
 
   applyStaticTexts();
