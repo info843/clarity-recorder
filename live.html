@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v4.0 CONTROLLED_INTERVIEW_DRIVER_MVP: based on v3.12.2; keeps Assessment/Mix untouched and adds app-controlled standalone Interview slot driver -->
+  <!-- v4.0.1 FINAL_CLOSE_Q10_GUARD: based on v4.0; keeps controlled Interview driver, restores audible final close and protects Q9/Q10 completion -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -1240,7 +1240,7 @@
   let VIDEO_DRIVER_LAST_AT = 0;
   let VIDEO_DRIVER_FINAL_LOCK = false;
 
-  // v4.0 CONTROLLED_INTERVIEW_DRIVER_MVP
+  // v4.0.1 FINAL_CLOSE_Q10_GUARD
   // Standalone Interview audio/video uses the app as slot driver:
   // fixed main question -> candidate answer -> max. one follow-up -> candidate addition -> next fixed main question.
   // Hybrid/Mix and Assessment remain on their existing isolated paths.
@@ -1249,7 +1249,12 @@
   let CONTROLLED_DRIVER_LAST_AT = 0;
   const CONTROLLED_FOLLOWUP_DELAY_MS = Math.max(4500, Math.min(16000, Number(Q.get('controlledFollowupDelayMs') || 6200) || 6200));
   const CONTROLLED_NEXT_MAIN_DELAY_MS = Math.max(2200, Math.min(12000, Number(Q.get('controlledNextDelayMs') || 3600) || 3600));
+  const CONTROLLED_LATE_NEXT_MAIN_DELAY_MS = Math.max(1200, Math.min(7000, Number(Q.get('controlledLateNextDelayMs') || 2100) || 2100));
   const CONTROLLED_IDLE_RECOVERY_MS = Math.max(7000, Math.min(30000, Number(Q.get('controlledIdleRecoveryMs') || 12500) || 12500));
+  // v4.0.1: The controlled interview closing text is long and premium-user-facing.
+  // The old hard-end watchdog could force the recorder into processing before the
+  // final sentence became audible. Give controlled audio/video enough time to speak it.
+  const CONTROLLED_FINAL_CLOSE_WATCHDOG_MS = Math.max(28000, Math.min(65000, Number(Q.get('controlledFinalCloseWatchdogMs') || 42000) || 42000));
 
   const STRUCTURED_AUTOFINISH_IDLE_MS = Math.max(12000, Math.min(45000, Number(Q.get('autoFinishIdleMs') || 22000) || 22000));
   const STRUCTURED_AUTOFINISH_FORCE_MS = Math.max(8000, Math.min(30000, Number(Q.get('autoFinishForceMs') || 16000) || 16000));
@@ -1744,6 +1749,29 @@
     return isAudioOnlyInterview(ctx) ? 'controlled_audio' : 'controlled_video';
   }
 
+  function controlledInterviewFollowUpAllowed(questionIndex, target = interviewMainQuestionTarget(CTX)){
+    if (!controlledInterviewDriverEnabled(CTX) && !isVideoOnlyInterview(CTX)) return true;
+    const q = Math.max(0, Number(questionIndex || 0));
+    const t = Math.max(1, Number(target || 1));
+    if (!q || q >= t) return false;
+    // v4.0.1: Q9/Q10 in Q10 interviews must be protected for completion.
+    // Q1-Q8 may still get one natural follow-up; Q9/Q10 prioritize finishing the plan.
+    return q < Math.max(1, t - 1);
+  }
+
+  function controlledInterviewLatePhase(questionIndex, target = interviewMainQuestionTarget(CTX)){
+    const q = Math.max(0, Number(questionIndex || 0));
+    const t = Math.max(1, Number(target || 1));
+    return q >= Math.max(1, t - 2);
+  }
+
+  function controlledFinalCloseWatchdogMs(){
+    if (controlledInterviewDriverEnabled(CTX) && isInterviewLiveContext(CTX) && !isInterviewHybrid(CTX) && !isAssessmentVoiceLive(CTX)) {
+      return CONTROLLED_FINAL_CLOSE_WATCHDOG_MS;
+    }
+    return HARD_END_WATCHDOG_MS;
+  }
+
   function interviewMainQuestionTarget(ctx = CTX){
     return Math.max(1, Math.min(30, interviewMaxQuestions(ctx)));
   }
@@ -2152,11 +2180,13 @@
     const isAnswerAddition = q > 0 && isFollowUp;
 
     if (isMainAnswer && isInterviewLiveContext(CTX)) {
-      structuredAwaitingFollowUpQuestion = true;
+      structuredAwaitingFollowUpQuestion = controlledInterviewFollowUpAllowed(q, target);
       if (q >= target) {
-        // Give the model a short window to ask the one allowed final follow-up.
-        // If it does not, close the interview instead of waiting indefinitely.
-        scheduleStrictTargetFinalization('target_main_answer_wait_followup', TARGET_FOLLOWUP_WAIT_MS);
+        // v4.0.1: Final main answer is enough. Do not wait for another Q10 follow-up.
+        scheduleStrictTargetFinalization('target_main_answer_completed', TARGET_FINALIZE_AFTER_ANSWER_MS);
+      } else if (!controlledInterviewFollowUpAllowed(q, target) && controlledInterviewDriverEnabled(CTX)) {
+        // Late phase: protect Q9/Q10 completion by moving straight to the next fixed main question.
+        scheduleVideoOnlyDriver('late_phase_main_answer_skip_followup', CONTROLLED_LATE_NEXT_MAIN_DELAY_MS);
       }
     }
 
@@ -2170,9 +2200,13 @@
 
     if (isInterviewLiveContext(CTX) && !isInterviewHybrid(CTX) && q > 0 && q < target) {
       if (isMainAnswer) {
-        const d = isVideoOnlyInterview(CTX) ? Math.min(SLOT_FOLLOWUP_STALL_MS, 6500) : SLOT_FOLLOWUP_STALL_MS;
-        scheduleSlotStallRecovery('followup', q, d, 'candidate_main_answer_completed');
-        if (controlledInterviewDriverEnabled(CTX) || isVideoOnlyInterview(CTX)) scheduleVideoOnlyDriver('candidate_main_answer_completed', Math.min(d + 600, CONTROLLED_FOLLOWUP_DELAY_MS));
+        if (controlledInterviewFollowUpAllowed(q, target)) {
+          const d = isVideoOnlyInterview(CTX) ? Math.min(SLOT_FOLLOWUP_STALL_MS, 6500) : SLOT_FOLLOWUP_STALL_MS;
+          scheduleSlotStallRecovery('followup', q, d, 'candidate_main_answer_completed');
+          if (controlledInterviewDriverEnabled(CTX) || isVideoOnlyInterview(CTX)) scheduleVideoOnlyDriver('candidate_main_answer_completed', Math.min(d + 600, CONTROLLED_FOLLOWUP_DELAY_MS));
+        } else if (controlledInterviewDriverEnabled(CTX) || isVideoOnlyInterview(CTX)) {
+          scheduleVideoOnlyDriver('candidate_main_answer_completed_late_skip_followup', CONTROLLED_LATE_NEXT_MAIN_DELAY_MS);
+        }
       } else if (isAnswerAddition) {
         const d = isVideoOnlyInterview(CTX) ? Math.min(SLOT_NEXT_MAIN_STALL_MS, 3200) : SLOT_NEXT_MAIN_STALL_MS;
         scheduleSlotStallRecovery('next_main', q, d, 'candidate_followup_answer_completed');
@@ -2521,13 +2555,18 @@
         : finalClosingText({ ...CTX, lang: lk });
       const isAssessmentEnd = isAssessmentVoiceLive(CTX);
       const isHybridEnd = isAssessmentHybridLive(CTX);
+      const controlledStandaloneFinal = controlledInterviewDriverEnabled(CTX) && isInterviewLiveContext(CTX) && !isInterviewHybrid(CTX) && !isAssessmentEnd && !isHybridEnd;
       const instruction = lk === 'de'
-        ? (isHybridEnd
-          ? `Der mündliche Teil ist jetzt abgeschlossen. Stelle keine weitere mündliche Frage. Sage jetzt exakt diesen Übergabesatz ohne zusätzliche Erklärungen: „${finalClose}“ Danach rufe end_interview auf.`
-          : `${isAssessmentEnd ? 'Das Assessment' : 'Das Interview'} ist jetzt endgültig abgeschlossen. Stelle keine weitere Frage. Sage jetzt exakt diesen Abschluss ohne zusätzliche Erklärungen: „${finalClose}“ Danach rufe end_interview auf.`)
-        : (isHybridEnd
-          ? `The spoken part is now complete. Do not ask another spoken question. Now say exactly this handoff message without additional explanation: “${finalClose}” Then call end_interview.`
-          : `The ${isAssessmentEnd ? 'assessment' : 'interview'} is now definitively complete. Do not ask another question. Now say exactly this closing message without additional explanation: “${finalClose}” Then call end_interview.`);
+        ? (controlledStandaloneFinal
+          ? `Das Interview ist jetzt endgültig abgeschlossen. Stelle keine weitere Frage. Sage jetzt exakt diesen Abschluss ohne zusätzliche Erklärungen und ohne Meta-Kommentar: „${finalClose}“ Rufe end_interview nicht in derselben Antwort auf; die App beendet das Interview automatisch, nachdem der Abschluss hörbar gesprochen wurde.`
+          : (isHybridEnd
+            ? `Der mündliche Teil ist jetzt abgeschlossen. Stelle keine weitere mündliche Frage. Sage jetzt exakt diesen Übergabesatz ohne zusätzliche Erklärungen: „${finalClose}“ Danach rufe end_interview auf.`
+            : `${isAssessmentEnd ? 'Das Assessment' : 'Das Interview'} ist jetzt endgültig abgeschlossen. Stelle keine weitere Frage. Sage jetzt exakt diesen Abschluss ohne zusätzliche Erklärungen: „${finalClose}“ Danach rufe end_interview auf.`))
+        : (controlledStandaloneFinal
+          ? `The interview is now definitively complete. Do not ask another question. Now say exactly this closing message without additional explanation or meta commentary: “${finalClose}” Do not call end_interview in the same response; the app will end the interview automatically after the closing message has been spoken.`
+          : (isHybridEnd
+            ? `The spoken part is now complete. Do not ask another spoken question. Now say exactly this handoff message without additional explanation: “${finalClose}” Then call end_interview.`
+            : `The ${isAssessmentEnd ? 'assessment' : 'interview'} is now definitively complete. Do not ask another question. Now say exactly this closing message without additional explanation: “${finalClose}” Then call end_interview.`));
 
       try {
         if (controlledInterviewDriverEnabled(CTX) || isVideoOnlyInterview(CTX)) {
@@ -2555,16 +2594,19 @@
     }
 
     try { if (HARD_END_WATCHDOG_TIMER) clearTimeout(HARD_END_WATCHDOG_TIMER); } catch(_) {}
+    const finalWatchdogMs = controlledFinalCloseWatchdogMs();
     HARD_END_WATCHDOG_TIMER = setTimeout(() => {
       if (END_CALLED || FINAL_HANGUP_TIMER) return;
       log('[HARD-END] watchdog -> force hangup/upload', {
         source: source || '',
         mainQuestions: structuredCurrentQuestionIndex,
-        targetQuestions: interviewMainQuestionTarget(CTX)
+        targetQuestions: interviewMainQuestionTarget(CTX),
+        finalWatchdogMs,
+        controlled: controlledInterviewDriverEnabled(CTX)
       });
       FINAL_MESSAGE_SPOKEN = true;
       beginFinalHangup(source || 'hard_end_watchdog');
-    }, HARD_END_WATCHDOG_MS);
+    }, finalWatchdogMs);
   }
 
   function scheduleStrictTargetFinalization(source, delayMs){
@@ -2638,13 +2680,18 @@
       : (isInterviewHybrid(CTX)
         ? (interviewHybridClosingText(CTX, lk, profile) || finalClosingText({ ...CTX, lang: lk }))
         : finalClosingText({ ...CTX, lang: lk }));
+    const controlledStandaloneFinal = controlledInterviewDriverEnabled(CTX) && isInterviewLiveContext(CTX) && !isInterviewHybrid(CTX) && !isAssessmentEnd && !isHybridEnd;
     const instruction = lk === 'de'
-      ? (isHybridEnd
-        ? `Der mündliche Teil ist jetzt abgeschlossen. Stelle keine weitere mündliche Frage. Sage jetzt exakt diesen Übergabesatz ohne zusätzliche Erklärungen: „${finalClose}“ Danach rufe end_interview auf.`
-        : `${isAssessmentEnd ? 'Das Assessment' : 'Das Interview'} ist jetzt abgeschlossen. Stelle keine weitere Frage. Sage jetzt exakt diesen Abschluss ohne zusätzliche Erklärungen: „${finalClose}“ Danach rufe end_interview auf.`)
-      : (isHybridEnd
-        ? `The spoken part is now complete. Do not ask another spoken question. Now say exactly this handoff message without additional explanation: “${finalClose}” Then call end_interview.`
-        : `The ${isAssessmentEnd ? 'assessment' : 'interview'} is now complete. Do not ask another question. Now say exactly this closing message without additional explanation: “${finalClose}” Then call end_interview.`);
+      ? (controlledStandaloneFinal
+        ? `Das Interview ist jetzt abgeschlossen. Stelle keine weitere Frage. Sage jetzt exakt diesen Abschluss ohne zusätzliche Erklärungen und ohne Meta-Kommentar: „${finalClose}“ Rufe end_interview nicht in derselben Antwort auf; die App beendet das Interview automatisch, nachdem der Abschluss hörbar gesprochen wurde.`
+        : (isHybridEnd
+          ? `Der mündliche Teil ist jetzt abgeschlossen. Stelle keine weitere mündliche Frage. Sage jetzt exakt diesen Übergabesatz ohne zusätzliche Erklärungen: „${finalClose}“ Danach rufe end_interview auf.`
+          : `${isAssessmentEnd ? 'Das Assessment' : 'Das Interview'} ist jetzt abgeschlossen. Stelle keine weitere Frage. Sage jetzt exakt diesen Abschluss ohne zusätzliche Erklärungen: „${finalClose}“ Danach rufe end_interview auf.`))
+      : (controlledStandaloneFinal
+        ? `The interview is now complete. Do not ask another question. Now say exactly this closing message without additional explanation or meta commentary: “${finalClose}” Do not call end_interview in the same response; the app will end the interview automatically after the closing message has been spoken.`
+        : (isHybridEnd
+          ? `The spoken part is now complete. Do not ask another spoken question. Now say exactly this handoff message without additional explanation: “${finalClose}” Then call end_interview.`
+          : `The ${isAssessmentEnd ? 'assessment' : 'interview'} is now complete. Do not ask another question. Now say exactly this closing message without additional explanation: “${finalClose}” Then call end_interview.`));
 
     log('[END] autofinish requested', {
       source: source || '',
@@ -2678,12 +2725,15 @@
     }
 
     try { if (HARD_END_WATCHDOG_TIMER) clearTimeout(HARD_END_WATCHDOG_TIMER); } catch(_) {}
+    const finalWatchdogMs = controlledStandaloneFinal
+      ? CONTROLLED_FINAL_CLOSE_WATCHDOG_MS
+      : (forced ? HARD_END_WATCHDOG_MS : STRUCTURED_AUTOFINISH_FORCE_MS);
     HARD_END_WATCHDOG_TIMER = setTimeout(() => {
       if (END_CALLED || FINAL_HANGUP_TIMER) return;
-      log('[END] autofinish force hangup after missing model tool/final audio');
+      log('[END] autofinish force hangup after missing model tool/final audio', { finalWatchdogMs, controlledStandaloneFinal });
       FINAL_MESSAGE_SPOKEN = true;
       beginFinalHangup('autofinish_force_timeout');
-    }, forced ? HARD_END_WATCHDOG_MS : STRUCTURED_AUTOFINISH_FORCE_MS);
+    }, finalWatchdogMs);
   }
 
   function requestAutoFinishInterview(source){
@@ -2780,15 +2830,20 @@
         return;
       }
 
-      // After a main answer, ask exactly one natural follow-up. The app, not the model,
-      // decides whether the follow-up is still allowed for the current slot.
-      if (q > 0 && structuredLastCandidateTurnType === 'answer' && !structuredFollowUpAskedForQuestion[q]) {
-        log('[DRIVER:controlled] requesting one controlled follow-up', { source: source || '', q, target: t, mode: controlledDriverLabel(CTX) });
+      // After a main answer, ask exactly one natural follow-up only while it cannot endanger completion.
+      // v4.0.1: From Q9/Q10 in Q10 interviews, skip follow-ups and move directly to the next main/final close.
+      if (q > 0 && structuredLastCandidateTurnType === 'answer' && !structuredFollowUpAskedForQuestion[q] && controlledInterviewFollowUpAllowed(q, t)) {
+        log('[DRIVER:controlled] requesting one controlled follow-up', { source: source || '', q, target: t, mode: controlledDriverLabel(CTX), latePhase: controlledInterviewLatePhase(q, t) });
         requestSlotFollowUp(source || 'controlled_driver_followup');
         return;
       }
 
-      // After the follow-up answer, or if no active slot exists yet, progress to the next fixed main question.
+      if (q > 0 && structuredLastCandidateTurnType === 'answer' && !controlledInterviewFollowUpAllowed(q, t)) {
+        log('[DRIVER:controlled] late phase: follow-up skipped to protect Q10 completion', { source: source || '', q, target: t, mode: controlledDriverLabel(CTX) });
+      }
+
+      // After the follow-up answer, after a late-phase main answer, or if no active slot exists yet,
+      // progress to the next fixed main question.
       log('[DRIVER:controlled] requesting next fixed main question', { source: source || '', current: q, next: Math.min(t, q + 1), target: t, mode: controlledDriverLabel(CTX) });
       requestNextPlannedMainQuestion(source || 'controlled_driver_next_main');
     }, Math.max(500, Number(delayMs) || 1800));
@@ -2800,14 +2855,21 @@
   function requestSlotFollowUp(source){
     if (!isInterviewLiveContext(CTX) || isInterviewHybrid(CTX)) return false;
     const q = structuredCurrentQuestionIndex || 0;
-    if (q <= 0 || q >= interviewMainQuestionTarget(CTX)) return false;
+    const target = interviewMainQuestionTarget(CTX);
+    if (q <= 0 || q >= target) return false;
+    if (!controlledInterviewFollowUpAllowed(q, target)) return false;
     if (structuredFollowUpAskedForQuestion[q]) return false;
     if (END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK) return false;
 
     const lk = activeInterviewLang(CTX);
+    const late = controlledInterviewLatePhase(q, target);
     const instruction = lk === 'de'
-      ? 'Bitte stelle jetzt genau eine kurze, natürliche Nachfrage oder Ergänzungsmöglichkeit zur letzten Antwort. Stelle keine neue Hauptfrage und verwende keine spätere Kundenfrage. Warte danach auf die Ergänzungsantwort.'
-      : 'Please now ask exactly one short, natural follow-up or addition opportunity about the last answer. Do not ask a new main question and do not use a later customer question. Then wait for the addition answer.';
+      ? (late
+        ? 'Bitte stelle jetzt genau eine sehr kurze, natürliche Vertiefungsfrage zur letzten Antwort. Maximal ein Satz. Stelle keine neue Hauptfrage, verwende keine spätere Kundenfrage und leite danach zügig zur nächsten Hauptfrage weiter, sobald die Ergänzungsantwort abgeschlossen ist.'
+        : 'Bitte stelle jetzt genau eine kurze, natürliche Nachfrage oder Ergänzungsmöglichkeit zur letzten Antwort. Stelle keine neue Hauptfrage und verwende keine spätere Kundenfrage. Warte danach auf die Ergänzungsantwort.')
+      : (late
+        ? 'Please now ask exactly one very short, natural deepening question about the last answer. One sentence maximum. Do not ask a new main question, do not use a later customer question, and move on quickly to the next main question once the addition answer is complete.'
+        : 'Please now ask exactly one short, natural follow-up or addition opportunity about the last answer. Do not ask a new main question and do not use a later customer question. Then wait for the addition answer.');
 
     return createAssistantAudioResponseFromInstruction(instruction, source || 'slot_followup_stall');
   }
@@ -2844,8 +2906,10 @@
       if (END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK) return;
       if ((structuredCurrentQuestionIndex || 0) !== q) return;
       if (kind === 'followup') {
-        if (structuredLastAssistantTurnType === 'main_question' && !structuredFollowUpAskedForQuestion[q]) {
+        if (structuredLastAssistantTurnType === 'main_question' && !structuredFollowUpAskedForQuestion[q] && controlledInterviewFollowUpAllowed(q, target)) {
           requestSlotFollowUp(source || 'slot_followup_stall');
+        } else if (structuredLastAssistantTurnType === 'main_question' && !controlledInterviewFollowUpAllowed(q, target)) {
+          scheduleVideoOnlyDriver('slot_followup_stall_late_skip_followup', CONTROLLED_LATE_NEXT_MAIN_DELAY_MS);
         }
         return;
       }
