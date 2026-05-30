@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v3.12.2 ASSESSMENT_HYBRID_HANDOFF_RESTORE: based on v3.12.0; keeps assessment auto-end lock and restores hybrid spoken-to-chat handoff text -->
+  <!-- v4.0 CONTROLLED_INTERVIEW_DRIVER_MVP: based on v3.12.2; keeps Assessment/Mix untouched and adds app-controlled standalone Interview slot driver -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -1240,6 +1240,17 @@
   let VIDEO_DRIVER_LAST_AT = 0;
   let VIDEO_DRIVER_FINAL_LOCK = false;
 
+  // v4.0 CONTROLLED_INTERVIEW_DRIVER_MVP
+  // Standalone Interview audio/video uses the app as slot driver:
+  // fixed main question -> candidate answer -> max. one follow-up -> candidate addition -> next fixed main question.
+  // Hybrid/Mix and Assessment remain on their existing isolated paths.
+  let CONTROLLED_DRIVER_TIMER = null;
+  let CONTROLLED_DRIVER_LAST_KEY = '';
+  let CONTROLLED_DRIVER_LAST_AT = 0;
+  const CONTROLLED_FOLLOWUP_DELAY_MS = Math.max(4500, Math.min(16000, Number(Q.get('controlledFollowupDelayMs') || 6200) || 6200));
+  const CONTROLLED_NEXT_MAIN_DELAY_MS = Math.max(2200, Math.min(12000, Number(Q.get('controlledNextDelayMs') || 3600) || 3600));
+  const CONTROLLED_IDLE_RECOVERY_MS = Math.max(7000, Math.min(30000, Number(Q.get('controlledIdleRecoveryMs') || 12500) || 12500));
+
   const STRUCTURED_AUTOFINISH_IDLE_MS = Math.max(12000, Math.min(45000, Number(Q.get('autoFinishIdleMs') || 22000) || 22000));
   const STRUCTURED_AUTOFINISH_FORCE_MS = Math.max(8000, Math.min(30000, Number(Q.get('autoFinishForceMs') || 16000) || 16000));
 
@@ -1720,6 +1731,19 @@
     return liveInterviewDriverMode(ctx) === 'mix';
   }
 
+  function controlledInterviewDriverEnabled(ctx = CTX){
+    if (!isInterviewLiveContext(ctx)) return false;
+    if (isInterviewHybrid(ctx)) return false;
+    if (isAssessmentContext(ctx) || looksAssessmentContext(ctx)) return false;
+    const raw = String(ctx?.controlledInterviewDriver ?? ctx?.appControlledInterview ?? 'true').trim().toLowerCase();
+    return !['0','false','no','off','disabled'].includes(raw);
+  }
+
+  function controlledDriverLabel(ctx = CTX){
+    if (!controlledInterviewDriverEnabled(ctx)) return 'legacy';
+    return isAudioOnlyInterview(ctx) ? 'controlled_audio' : 'controlled_video';
+  }
+
   function interviewMainQuestionTarget(ctx = CTX){
     return Math.max(1, Math.min(30, interviewMaxQuestions(ctx)));
   }
@@ -2036,11 +2060,11 @@
       // the next planned main question nor the allowed follow-up, keep it out of
       // the report and immediately steer back to the fixed slot plan. This prevents
       // Q8/Q9 drift into normal GPT chat.
-      if (isVideoOnlyInterview(CTX) && structuredCurrentQuestionIndex < target) {
+      if ((controlledInterviewDriverEnabled(CTX) || isVideoOnlyInterview(CTX)) && structuredCurrentQuestionIndex < target) {
         structuredLastAssistantTurnType = 'system';
         structuredAwaitingFollowUpQuestion = false;
         scheduleVideoOnlyDriver('unplanned_video_question_detected', 900);
-        log('[DRIVER:video] unplanned assistant question suppressed', {
+        log('[DRIVER:controlled] unplanned assistant question suppressed', {
           currentQuestion: structuredCurrentQuestionIndex,
           targetQuestions: target,
           textPreview: clean.slice(0, 180)
@@ -2148,11 +2172,11 @@
       if (isMainAnswer) {
         const d = isVideoOnlyInterview(CTX) ? Math.min(SLOT_FOLLOWUP_STALL_MS, 6500) : SLOT_FOLLOWUP_STALL_MS;
         scheduleSlotStallRecovery('followup', q, d, 'candidate_main_answer_completed');
-        if (isVideoOnlyInterview(CTX)) scheduleVideoOnlyDriver('candidate_main_answer_completed', d + 600);
+        if (controlledInterviewDriverEnabled(CTX) || isVideoOnlyInterview(CTX)) scheduleVideoOnlyDriver('candidate_main_answer_completed', Math.min(d + 600, CONTROLLED_FOLLOWUP_DELAY_MS));
       } else if (isAnswerAddition) {
         const d = isVideoOnlyInterview(CTX) ? Math.min(SLOT_NEXT_MAIN_STALL_MS, 3200) : SLOT_NEXT_MAIN_STALL_MS;
         scheduleSlotStallRecovery('next_main', q, d, 'candidate_followup_answer_completed');
-        if (isVideoOnlyInterview(CTX)) scheduleVideoOnlyDriver('candidate_followup_answer_completed', d + 500);
+        if (controlledInterviewDriverEnabled(CTX) || isVideoOnlyInterview(CTX)) scheduleVideoOnlyDriver('candidate_followup_answer_completed', Math.min(d + 500, CONTROLLED_NEXT_MAIN_DELAY_MS));
       }
     }
 
@@ -2390,6 +2414,7 @@
   function clearHardEndTimers(){
     try { if (targetAutoFinishTimer) clearTimeout(targetAutoFinishTimer); } catch(_) {}
     try { if (targetExtraQuestionAutoFinishTimer) clearTimeout(targetExtraQuestionAutoFinishTimer); } catch(_) {}
+    try { if (CONTROLLED_DRIVER_TIMER) clearTimeout(CONTROLLED_DRIVER_TIMER); } catch(_) {}
     try { if (structuredAutoFinishTimer) clearTimeout(structuredAutoFinishTimer); } catch(_) {}
     try { if (SLOT_STALL_TIMER) clearTimeout(SLOT_STALL_TIMER); } catch(_) {}
     targetAutoFinishTimer = null;
@@ -2505,7 +2530,7 @@
           : `The ${isAssessmentEnd ? 'assessment' : 'interview'} is now definitively complete. Do not ask another question. Now say exactly this closing message without additional explanation: “${finalClose}” Then call end_interview.`);
 
       try {
-        if (isVideoOnlyInterview(CTX)) {
+        if (controlledInterviewDriverEnabled(CTX) || isVideoOnlyInterview(CTX)) {
           dcSend({
             type: 'response.create',
             response: {
@@ -2632,7 +2657,7 @@
     });
 
     try {
-      if (isVideoOnlyInterview(CTX)) {
+      if (controlledInterviewDriverEnabled(CTX) || isVideoOnlyInterview(CTX)) {
         dcSend({
           type: 'response.create',
           response: {
@@ -2678,10 +2703,10 @@
   function createAssistantAudioResponseFromInstruction(instruction, source){
     if (!instruction || !dcSend || END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK) return false;
     try {
-      // v3.12.0: Video-only control must not be injected as fake user messages.
-      // Those messages polluted the conversation and made the assistant drift into normal GPT chat.
-      // Audio-only and Mix keep the older path because they were stable in testing.
-      if (isVideoOnlyInterview(CTX)) {
+      // v4.0: controlled standalone Interview audio/video must not inject driver instructions
+      // as fake candidate/user messages. response.instructions keeps the conversation cleaner.
+      // Hybrid/Mix keeps the older isolated path for now.
+      if (controlledInterviewDriverEnabled(CTX) || isVideoOnlyInterview(CTX)) {
         try { dcSend({ type: 'response.cancel' }); } catch(_) {}
         dcSend({
           type: 'response.create',
@@ -2691,8 +2716,9 @@
             instructions: String(instruction)
           }
         });
-        log('[DRIVER:video] response.instructions sent', {
+        log('[DRIVER:controlled] response.instructions sent', {
           source: source || '',
+          mode: controlledDriverLabel(CTX),
           current: structuredCurrentQuestionIndex,
           target: interviewMainQuestionTarget(CTX),
           instructionPreview: String(instruction).slice(0, 180)
@@ -2720,23 +2746,28 @@
   function clearVideoDriverTimer(){
     try { if (VIDEO_DRIVER_TIMER) clearTimeout(VIDEO_DRIVER_TIMER); } catch(_) {}
     VIDEO_DRIVER_TIMER = null;
+    try { if (CONTROLLED_DRIVER_TIMER) clearTimeout(CONTROLLED_DRIVER_TIMER); } catch(_) {}
+    CONTROLLED_DRIVER_TIMER = null;
   }
 
   function scheduleVideoOnlyDriver(source, delayMs = 1800){
-    if (!isVideoOnlyInterview(CTX)) return false;
+    // Historical name kept for compatibility. v4.0 now drives standalone audio and video.
+    if (!controlledInterviewDriverEnabled(CTX) && !isVideoOnlyInterview(CTX)) return false;
     if (END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK || VIDEO_DRIVER_FINAL_LOCK) return false;
 
     const target = interviewMainQuestionTarget(CTX);
     const current = structuredCurrentQuestionIndex || 0;
-    const key = `${source || 'video_driver'}|${current}|${target}|${structuredLastAssistantTurnType}|${structuredLastCandidateTurnType}`;
+    const key = `${source || 'controlled_driver'}|${controlledDriverLabel(CTX)}|${current}|${target}|${structuredLastAssistantTurnType}|${structuredLastCandidateTurnType}|${!!structuredFollowUpAskedForQuestion[current || 0]}`;
     const now = Date.now();
-    if (VIDEO_DRIVER_LAST_KEY === key && now - VIDEO_DRIVER_LAST_AT < 2500) return false;
+    if (CONTROLLED_DRIVER_LAST_KEY === key && now - CONTROLLED_DRIVER_LAST_AT < 1800) return false;
+    CONTROLLED_DRIVER_LAST_KEY = key;
+    CONTROLLED_DRIVER_LAST_AT = now;
     VIDEO_DRIVER_LAST_KEY = key;
     VIDEO_DRIVER_LAST_AT = now;
 
     clearVideoDriverTimer();
-    VIDEO_DRIVER_TIMER = setTimeout(() => {
-      if (!isVideoOnlyInterview(CTX)) return;
+    CONTROLLED_DRIVER_TIMER = setTimeout(() => {
+      if (!controlledInterviewDriverEnabled(CTX) && !isVideoOnlyInterview(CTX)) return;
       if (END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK || VIDEO_DRIVER_FINAL_LOCK) return;
 
       const q = structuredCurrentQuestionIndex || 0;
@@ -2744,24 +2775,25 @@
 
       if (q >= t) {
         VIDEO_DRIVER_FINAL_LOCK = true;
-        log('[DRIVER:video] target complete -> hard finalization', { source: source || '', q, target: t });
-        requestHardEnd(source || 'video_driver_target_complete', { speakFinal: true, cancelActive: true });
+        log('[DRIVER:controlled] target complete -> hard finalization', { source: source || '', q, target: t, mode: controlledDriverLabel(CTX) });
+        requestHardEnd(source || 'controlled_driver_target_complete', { speakFinal: true, cancelActive: true });
         return;
       }
 
-      // If a main answer was captured and no follow-up has been accepted, allow exactly one follow-up.
-      if (q > 0 && structuredLastAssistantTurnType === 'main_question' && !structuredFollowUpAskedForQuestion[q]) {
-        log('[DRIVER:video] requesting one controlled follow-up', { source: source || '', q, target: t });
-        requestSlotFollowUp(source || 'video_driver_followup');
+      // After a main answer, ask exactly one natural follow-up. The app, not the model,
+      // decides whether the follow-up is still allowed for the current slot.
+      if (q > 0 && structuredLastCandidateTurnType === 'answer' && !structuredFollowUpAskedForQuestion[q]) {
+        log('[DRIVER:controlled] requesting one controlled follow-up', { source: source || '', q, target: t, mode: controlledDriverLabel(CTX) });
+        requestSlotFollowUp(source || 'controlled_driver_followup');
         return;
       }
 
-      // Otherwise progress to the next fixed main question from the snapshot/slot plan.
-      log('[DRIVER:video] requesting next fixed main question', { source: source || '', current: q, next: Math.min(t, q + 1), target: t });
-      requestNextPlannedMainQuestion(source || 'video_driver_next_main');
+      // After the follow-up answer, or if no active slot exists yet, progress to the next fixed main question.
+      log('[DRIVER:controlled] requesting next fixed main question', { source: source || '', current: q, next: Math.min(t, q + 1), target: t, mode: controlledDriverLabel(CTX) });
+      requestNextPlannedMainQuestion(source || 'controlled_driver_next_main');
     }, Math.max(500, Number(delayMs) || 1800));
 
-    log('[DRIVER:video] scheduled', { source: source || '', delayMs: Math.max(500, Number(delayMs) || 1800), current, target });
+    log('[DRIVER:controlled] scheduled', { source: source || '', delayMs: Math.max(500, Number(delayMs) || 1800), current, target, mode: controlledDriverLabel(CTX) });
     return true;
   }
 
@@ -2910,10 +2942,10 @@
       const delay = structuredFollowUpAskedForQuestion[q] ? TARGET_FINALIZE_AFTER_ANSWER_MS : TARGET_FOLLOWUP_WAIT_MS;
       if (assessmentReached) scheduleTargetReachedAutoFinish('assessment_candidate_audio_after_target', delay);
       else scheduleStrictTargetFinalization('candidate_audio_after_target', delay);
-      if (isVideoOnlyInterview(CTX)) scheduleVideoOnlyDriver('candidate_audio_after_target', delay + 500);
+      if (controlledInterviewDriverEnabled(CTX) || isVideoOnlyInterview(CTX)) scheduleVideoOnlyDriver('candidate_audio_after_target', delay + 500);
     } else {
       scheduleInterviewAutoFinishCheck('candidate_audio_item');
-      if (isVideoOnlyInterview(CTX)) scheduleVideoOnlyDriver('candidate_audio_item', 7000);
+      if (controlledInterviewDriverEnabled(CTX) || isVideoOnlyInterview(CTX)) scheduleVideoOnlyDriver('candidate_audio_item', CONTROLLED_IDLE_RECOVERY_MS);
     }
   }
 
@@ -4062,6 +4094,7 @@
       return [
         'Sprich ausschließlich DEUTSCH. Wechsle nie die Sprache.',
         'Führe ein strukturiertes Job-Interview mit festem Slot-Plan: nur EINE Hauptfrage zur Zeit, danach genau eine kurze natürliche Anschlussfrage oder Ergänzungsmöglichkeit. Bleibe strikt am Jobprofil und stelle nie zwei Hauptfragen in einer Nachricht.',
+        'WICHTIG: Die App steuert Reihenfolge, nächste Hauptfrage, Nachfragen-Limit und Ende. Wenn du eine konkrete Driver-Anweisung erhältst, sprich genau die dort genannte Frage/Nachfrage/Abschlussbotschaft und entscheide NICHT selbst über spätere Hauptfragen oder das Interviewende.',
         questionPolicyText(ctx),
         'Ablauf pro Slot: 1) stelle die Hauptfrage aus dem Plan, 2) warte die Antwort vollständig ab, 3) stelle genau eine kurze Anschlussreaktion. Diese darf natürlich variieren: konkrete Vertiefungsfrage, kurze Ergänzungsmöglichkeit oder Angebot zum Fortfahren. Verwende nicht immer dieselbe Formulierung. 4) warte diese Ergänzungsantwort ab, 5) erst dann nächste Hauptfrage aus dem Plan. Diese Anschlussfrage zählt NICHT als Hauptfrage und darf keine spätere geplante Hauptfrage vorwegnehmen. Sprich natürlich und professionell, nicht mechanisch oder nummeriert.',
         'Nach jeder Frage geduldig warten, bis die Kandidatin/der Kandidat wirklich fertig ist. Kurze Atemgeräusche, Füllwörter, ein kurzer Satz oder eine kurze Pause zählen NICHT sofort als vollständige Antwort. Lass nach einer Antwort einen natürlichen Moment für Ergänzungen, bevor du fortfährst.',
@@ -4076,6 +4109,7 @@
       `Speak strictly in ${profile.englishName.toUpperCase()}. Do not switch languages.`,
       `The full interview, welcome messages, questions, follow-ups, candidate-facing explanations, and closing message must be spoken in ${profile.englishName}.`,
       'Conduct a structured job interview with a fixed slot plan: one main question at a time, then exactly one short follow-up opportunity. Stick to the job profile and never ask two main questions in one message.',
+      'IMPORTANT: The app controls the sequence, next main question, follow-up limit and end of the interview. When you receive a concrete driver instruction, say exactly the requested question/follow-up/closing message and do NOT decide later main questions or the interview ending yourself.',
       questionPolicyText(ctx),
       'Flow per slot: 1) ask the planned main question, 2) wait for the complete answer, 3) ask exactly one short follow-up. It may be a concrete deepening question, a short opportunity to add something, or an offer to continue. Vary the wording naturally. 4) wait for the addition answer, 5) only then ask the next planned main question. This follow-up does NOT count as a main question and must not preview a later planned main question. Speak naturally and professionally, never mechanically or with spoken question numbering.',
       'After each question, wait patiently until the candidate has truly finished. Breathing, filler words, one short sentence, or a short pause do NOT immediately count as a complete answer. Leave a natural moment after each answer so the candidate can add more, then continue.',
@@ -4384,7 +4418,7 @@
 
     const firstInstruction = firstQuestionInstruction(first, lk);
 
-    if (isVideoOnlyInterview(CTX)) {
+    if (controlledInterviewDriverEnabled(CTX) || isVideoOnlyInterview(CTX)) {
       dcSend({
         type: 'response.create',
         response: {
@@ -4419,6 +4453,7 @@
       lang: lk,
       assessment: isAssessmentContext(CTX),
       driverMode: liveInterviewDriverMode(CTX),
+      controlledInterviewDriver: controlledInterviewDriverEnabled(CTX),
       productType: CTX.productType || '',
       moduleArea: CTX.moduleArea || '',
       questionCount: interviewMaxQuestions(CTX),
