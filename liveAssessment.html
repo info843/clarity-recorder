@@ -58,7 +58,7 @@
   const DEBUG_LOGS = Q.get('debug') === '1' || Q.get('debugLive') === '1' || DEBUG_UI;
   if (AUDIO_ONLY) document.body.classList.add('audio-only'); if (DEBUG_UI) document.body.classList.add('debug-ui');
 
-  const TOKENLESS_VERSION = 'v2.6.5_FINAL_CLOSE_RESTORE_QA_EXPORT';
+  const TOKENLESS_VERSION = 'v2.6.6_FINAL_SPEECH_BEFORE_STOP';
   const MUX_UPLOAD_URL = `${API_BASE}/api/mux-upload`;
   const MUX_ASSET_URL = `${API_BASE}/api/mux-asset`;
   // Premium TTS is optional and server-proxied. If it fails, the deterministic v2.6 flow continues with browser voice.
@@ -343,18 +343,22 @@
     if (lk === 'it') return 'Grazie. L’assessment viene ora elaborato. La preghiamo di restare ancora un momento su questa pagina.';
     return 'Thank you. The assessment is now being processed. Please stay on this page for a moment.';
   }
-  async function speakFinalAfterRecordingStopped(){
+  function stopCandidateOnlyCapture(){
+    try { if (candidateRecorder && candidateRecorder.state !== 'inactive') candidateRecorder.stop(); } catch(e){ debug('v266_candidate_only_stop_failed', { message:errMsg(e) }); }
+    try { localStream?.getAudioTracks?.().forEach(t => { try { t.enabled = false; } catch(_) {} }); } catch(_) {}
+  }
+
+  async function speakFinalBeforeRecorderStop(){
     const text = finalSpokenCloseText();
-    // v2.6.5: The final message must be audible to the candidate but must not be recorded
-    // as assessment evidence. Therefore it is spoken only after mic/camera/recorders have
-    // been stopped, and before parent UI receives processing_started/live.ended that may
-    // visually hide the iframe.
+    // v2.6.6: Speak the final message before the mixed recorder is stopped so it is
+    // reliably audible and included in the review recording. Candidate-only capture is
+    // stopped / muted first, so the final system text is not used as assessment evidence.
     try {
-      debug('v265_final_spoken_close_start', { textPreview: text.slice(0, 80) });
-      await speak(text, { reason:'final_after_stop', rate:0.94 });
-      debug('v265_final_spoken_close_done', {});
+      debug('v266_final_spoken_close_start', { textPreview: text.slice(0, 80) });
+      await speak(text, { reason:'final_before_mixed_stop', rate:0.94 });
+      debug('v266_final_spoken_close_done', {});
     } catch(e) {
-      debug('v265_final_spoken_close_failed', { message: errMsg(e) });
+      debug('v266_final_spoken_close_failed', { message: errMsg(e) });
     }
   }
 
@@ -369,12 +373,16 @@
     debug('v265_finish_assessment', { reason, currentSlot, targetSlots });
     try { speechSynthesis?.cancel?.(); } catch(_){}
     timer(async ()=>{
-      stopRecorders();
-      // Allow MediaRecorder stop events to fire, but keep iframe visible/audible for final TTS.
-      await new Promise(r => setTimeout(r, 450));
-      await speakFinalAfterRecordingStopped();
+      // First stop/mute candidate-only evidence capture, but keep the mixed review recorder alive.
+      // This restores the audible final close while keeping analysis audio clean.
+      stopCandidateOnlyCapture();
+      await new Promise(r => setTimeout(r, 250));
+      await speakFinalBeforeRecorderStop();
       finalSent = true;
       postToParent('clarity.live.final_message_done', { reason, version:TOKENLESS_VERSION });
+      // Now stop mixed recording, camera and all remaining media tracks.
+      stopRecorders();
+      await new Promise(r => setTimeout(r, 450));
       postToParent('clarity.live.processing_started', { reason, version:TOKENLESS_VERSION });
       postToParent('clarity.live.ended', { reason, version:TOKENLESS_VERSION });
     }, timing().finalStopMs);
