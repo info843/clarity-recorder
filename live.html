@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v4.0.1 FINAL_CLOSE_Q10_GUARD: based on v4.0; keeps controlled Interview driver, restores audible final close and protects Q9/Q10 completion -->
+  <!-- v4.0.2 AUTO_HANGUP_AUDIO_END_GUARD: based on v4.0.1; faster reliable controlled final hangup after closing speech + manual parent stop support -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -1254,7 +1254,7 @@
   // v4.0.1: The controlled interview closing text is long and premium-user-facing.
   // The old hard-end watchdog could force the recorder into processing before the
   // final sentence became audible. Give controlled audio/video enough time to speak it.
-  const CONTROLLED_FINAL_CLOSE_WATCHDOG_MS = Math.max(28000, Math.min(65000, Number(Q.get('controlledFinalCloseWatchdogMs') || 42000) || 42000));
+  const CONTROLLED_FINAL_CLOSE_WATCHDOG_MS = Math.max(16000, Math.min(45000, Number(Q.get('controlledFinalCloseWatchdogMs') || 26000) || 26000));
 
   const STRUCTURED_AUTOFINISH_IDLE_MS = Math.max(12000, Math.min(45000, Number(Q.get('autoFinishIdleMs') || 22000) || 22000));
   const STRUCTURED_AUTOFINISH_FORCE_MS = Math.max(8000, Math.min(30000, Number(Q.get('autoFinishForceMs') || 16000) || 16000));
@@ -3056,10 +3056,18 @@
 
   function effectiveFinalHangupBufferMs(){
     const base = Math.max(2500, Number(FINAL_HANGUP_BUFFER_MS) || 55000);
-    // Interview closing text is intentionally long and candidate-facing. Keep assessment on its
-    // established value, but give interviews enough time so the final sentence is not cut off.
-    // Video/Audio/Mix share this buffer only after the driver has already reached its final state.
-    if (isInterviewLiveContext(CTX)) return Math.max(52000, Math.min(65000, base));
+
+    // v4.0.2: Controlled standalone Interview already waits for the final spoken closing
+    // through CONTROLLED_FINAL_CLOSE_WATCHDOG_MS or final-audio detection. After that signal,
+    // only a short safety tail is needed before stopping mic/video/recorder. The old 52s+
+    // buffer made successful Q10 runs look like a missing auto-hangup.
+    if (controlledInterviewDriverEnabled(CTX) && isInterviewLiveContext(CTX) && !isInterviewHybrid(CTX)) {
+      return Math.max(4500, Math.min(12000, Number(Q.get('controlledFinalHangupBufferMs') || 6500) || 6500));
+    }
+
+    // Hybrid handoff and legacy interview modes keep a longer buffer because their final/handoff
+    // speech can be detected earlier by Realtime transcript events.
+    if (isInterviewLiveContext(CTX)) return Math.max(18000, Math.min(42000, base));
     return Math.max(2500, Math.min(36000, base));
   }
 
@@ -5424,9 +5432,17 @@
     }
 
     else if (type === 'clarity.live.stop' || type === 'clarity.live.hangup'){
+      const d = msg.data || {};
       setStopButtonAvailable(false);
       setStatus('warn', t('fallbackEnd'));
-      hangup('parent_stop');
+      log('[PARENT] manual stop/hangup received', {
+        type,
+        reason: d.reason || '',
+        force: d.force === true,
+        manualAudioEnd: d.manualAudioEnd === true,
+        manualVideoEnd: d.manualVideoEnd === true
+      });
+      hangup(d.reason || 'parent_stop');
     }
   });
 
