@@ -1,4 +1,4 @@
-<!-- liveAssessment.html — v2.6.1 DETERMINISTIC_ORAL_RECORDER_PREMIUM_TTS | CLARITY Assessment only. Fixed app-controlled question slots + optional OpenAI TTS proxy voice + local media recorder + Mux upload. -->
+<!-- liveAssessment.html — v2.6.2 DETERMINISTIC_ORAL_RECORDER_PREMIUM_TTS_STABLE_EXPORT | CLARITY Assessment only. No Realtime question driver. Fixed app-controlled question slots + local media recorder + Mux upload. -->
 <!doctype html>
 <html lang="de">
 <head>
@@ -58,15 +58,15 @@
   const DEBUG_LOGS = Q.get('debug') === '1' || Q.get('debugLive') === '1' || DEBUG_UI;
   if (AUDIO_ONLY) document.body.classList.add('audio-only'); if (DEBUG_UI) document.body.classList.add('debug-ui');
 
-  const TOKENLESS_VERSION = 'v2.6.1_DETERMINISTIC_ORAL_RECORDER_PREMIUM_TTS';
+  const TOKENLESS_VERSION = 'v2.6.2_DETERMINISTIC_ORAL_RECORDER_PREMIUM_TTS_STABLE_EXPORT';
   const MUX_UPLOAD_URL = `${API_BASE}/api/mux-upload`;
   const MUX_ASSET_URL = `${API_BASE}/api/mux-asset`;
-  // Premium TTS is request-based, not Realtime-driven: the app still owns the slot order.
-  // This endpoint must be a server-side proxy. Never expose OPENAI_API_KEY in this HTML file.
+  // Premium TTS is optional and server-proxied. If it fails, the deterministic v2.6 flow continues with browser voice.
   const PREMIUM_TTS_ENABLED = Q.get('premiumTts') !== '0' && Q.get('browserVoiceOnly') !== '1';
-  const TTS_URL = (Q.get('tts') || Q.get('ttsEndpoint') || `${API_BASE}/api/tts`).trim();
+  const TTS_URL = (Q.get('ttsEndpoint') || Q.get('tts') || '').trim();
   const TTS_MODEL = (Q.get('ttsModel') || 'gpt-4o-mini-tts').trim();
-  const TTS_VOICE_FALLBACK = (Q.get('ttsVoice') || Q.get('voice') || 'verse').trim();
+  const TTS_VOICE_FALLBACK = (Q.get('ttsVoice') || Q.get('voice') || 'marin').trim();
+  const TTS_DIAGNOSTIC = Q.get('ttsDiagnostic') === '1' || Q.get('debugTts') === '1' || DEBUG_LOGS;
   const TTS_CACHE = new Map();
   let ttsFailureCount = 0;
   const MAX_TTS_FAILURES = 2;
@@ -147,81 +147,84 @@
   function timing(){ const audio = AUDIO_ONLY; const target = targetSlots; return { introMs: 900, afterQuestionBufferMs: audio ? 1200 : 1000, minAnswerMs: audio ? 15500 : 14500, silenceMs: audio ? 7200 : 6500, maxAnswerMs: target > 10 ? (audio ? 32000 : 30000) : (audio ? 35500 : 33500), nextQuestionMs: audio ? 2800 : 2400, finalStopMs: 1200, absoluteMaxSessionMs: Math.max(180000, target * (audio ? 48000 : 45000)) }; }
 
   function pickVoice(lang){ try { const voices = speechSynthesis.getVoices() || []; const lk = langKey(lang); const pref = voices.find(v => lower(v.lang).startsWith(lk)); return pref || voices.find(v => lower(v.lang).startsWith('en')) || voices[0] || null; } catch(_) { return null; } }
-  function effectiveTtsVoice(){ return clean(CTX.voice || CTX.ttsVoice || TTS_VOICE_FALLBACK || 'verse') || 'verse'; }
+  function effectiveTtsVoice(){ const v = clean(CTX.ttsVoice || CTX.voice || TTS_VOICE_FALLBACK || 'marin').toLowerCase(); return v === 'verse' ? 'marin' : (v || 'marin'); }
   function ttsInstructions(){
     const lk = activeLang();
-    const langName = lk === 'de' ? 'German' : lk === 'es' ? 'Spanish' : lk === 'fr' ? 'French' : lk === 'it' ? 'Italian' : 'English';
-    return `You are the premium CLARITY Assessment voice. Speak in ${langName}. Use a calm, professional, warm female-presenting assessment tone. Read only the provided sentence/question. Do not add greetings, comments, explanations, encouragement, summaries, or extra words. Keep a natural pace with clear articulation.`;
+    if (lk === 'de') return 'Sprich als professionelle, freundliche weibliche Assessment-Stimme. Natürlich, ruhig, klar, wertschätzend und premium. Lies nur den gegebenen Text vor. Keine zusätzlichen Sätze, kein Coaching, kein Lob, keine Rückfragen.';
+    if (lk === 'es') return 'Habla con una voz femenina profesional, amable y clara para un assessment. Natural, calmada y premium. Lee solo el texto proporcionado. No añadas frases, coaching, elogios ni preguntas adicionales.';
+    if (lk === 'fr') return 'Parlez avec une voix féminine professionnelle, chaleureuse et claire pour une évaluation. Naturelle, calme et premium. Lisez uniquement le texte fourni. N’ajoutez aucune phrase, aucun coaching, aucun compliment ni aucune question.';
+    if (lk === 'it') return 'Parla con una voce femminile professionale, amichevole e chiara per un assessment. Naturale, calma e premium. Leggi solo il testo fornito. Non aggiungere frasi, coaching, elogi o domande.';
+    return 'Speak as a professional, friendly female assessment voice. Natural, calm, clear, respectful, and premium. Read only the provided text. Do not add sentences, coaching, praise, or follow-up questions.';
   }
+  function postTtsStatus(stage, data={}){ const payload = { stage, enabled:PREMIUM_TTS_ENABLED, endpointPresent:!!TTS_URL, voice:effectiveTtsVoice(), model:TTS_MODEL, failures:ttsFailureCount, ts:new Date().toISOString(), ...data }; postToParent('clarity.assessment.tts.status', payload); if (TTS_DIAGNOSTIC) debug(`v262_tts_${stage}`, payload); }
   async function playAudioBlob(blob, reason='tts'){
     return new Promise((resolve) => {
       let done = false;
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
-      const finish = (why) => { if (done) return; done = true; try { audio.pause(); } catch(_){} try { URL.revokeObjectURL(url); } catch(_){} debug('v261_tts_audio_finished', { reason, why }); resolve(); };
+      const finish = (why) => { if (done) return; done = true; try { audio.pause(); } catch(_){} try { URL.revokeObjectURL(url); } catch(_){} postTtsStatus('audio_finished', { reason, why, bytes:blob.size || 0 }); resolve(); };
       audio.preload = 'auto';
       audio.onended = () => finish('ended');
-      audio.onerror = () => finish('error');
-      audio.onpause = () => { if (audio.ended) finish('pause_ended'); };
-      audio.play().catch((e) => {
-        debug('v261_tts_audio_play_blocked', { message: errMsg(e), reason });
-        finish('play_blocked');
-      });
+      audio.onerror = () => finish('audio_error');
+      audio.play().catch((e) => finish(`play_blocked:${errMsg(e)}`));
       timer(() => finish('fallback_timer'), Math.max(7000, (blob.size || 0) / 28 + 6500));
     });
   }
   async function fetchPremiumTts(text, reason='question'){
     const raw = clean(text);
-    if (!raw || !PREMIUM_TTS_ENABLED || !TTS_URL || ttsFailureCount >= MAX_TTS_FAILURES) return null;
+    if (!raw || !PREMIUM_TTS_ENABLED || !TTS_URL || ttsFailureCount >= MAX_TTS_FAILURES) {
+      if (raw && PREMIUM_TTS_ENABLED && !TTS_URL) postTtsStatus('disabled_no_endpoint', { reason });
+      return null;
+    }
     const voice = effectiveTtsVoice();
     const key = `${TTS_MODEL}|${voice}|${activeLang()}|${raw}`;
     if (TTS_CACHE.has(key)) return TTS_CACHE.get(key);
     try {
-      debug('v261_tts_fetch_start', { reason, voice, model:TTS_MODEL, lang:activeLang(), chars:raw.length });
+      postTtsStatus('fetch_start', { reason, chars:raw.length });
       const res = await fetch(TTS_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: raw,
-          input: raw,
-          model: TTS_MODEL,
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body:JSON.stringify({
+          text:raw,
+          input:raw,
+          model:TTS_MODEL,
           voice,
-          lang: activeLang(),
-          language: activeLang(),
-          response_format: 'mp3',
-          instructions: ttsInstructions(),
-          speed: Number(Q.get('ttsSpeed') || CTX.ttsSpeed || 1.0) || 1.0,
+          lang:activeLang(),
+          language:activeLang(),
+          response_format:'mp3',
+          instructions:ttsInstructions(),
           uid: UID || CTX.uid || CTX.linkId || '',
+          linkId: UID || CTX.uid || CTX.linkId || '',
           companyId: COMPANY_ID || CTX.companyId || '',
-          productType: 'modul1'
+          productType:'modul1'
         })
       });
       if (!res.ok) throw new Error(`tts_http_${res.status}`);
       const ct = res.headers.get('content-type') || '';
-      let blob;
+      let blob = null;
       if (ct.includes('application/json')) {
         const j = await res.json();
+        if (!j?.ok) throw new Error(j?.error || j?.message || 'tts_json_not_ok');
         const dataUrl = j.dataUrl || j.audioDataUrl || '';
-        if (!dataUrl) throw new Error(j.message || j.error || 'tts_json_missing_audio');
+        if (!dataUrl) throw new Error('tts_json_missing_audio');
         blob = await (await fetch(dataUrl)).blob();
       } else {
         blob = await res.blob();
       }
       if (!blob || !blob.size) throw new Error('tts_empty_audio');
       TTS_CACHE.set(key, blob);
-      debug('v261_tts_fetch_ok', { reason, voice, bytes:blob.size });
+      postTtsStatus('fetch_ok', { reason, bytes:blob.size });
       return blob;
-    } catch(e){
+    } catch(e) {
       ttsFailureCount += 1;
-      debug('v261_tts_fetch_failed_fallback_browser_voice', { reason, message:errMsg(e), failures:ttsFailureCount });
+      postTtsStatus('fetch_failed_browser_fallback', { reason, message:errMsg(e) });
       return null;
     }
   }
   function speakBrowser(text, opts={}){ return new Promise(resolve => { const raw = clean(text); if (!raw || !('speechSynthesis' in window)) { timer(resolve, estimateSpeechMs(raw)); return; }
-      let done = false;
-      const finish = (why) => { if (done) return; done = true; debug('v261_browser_speech_finished', { why, chars:raw.length }); resolve(); };
+      let done = false; const finish = (why) => { if (done) return; done = true; debug('v262_browser_tts_done', { why, textPreview: raw.slice(0,80) }); resolve(); };
       try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(raw); const lk = activeLang(); u.lang = lk === 'de' ? 'de-DE' : lk === 'es' ? 'es-ES' : lk === 'fr' ? 'fr-FR' : lk === 'it' ? 'it-IT' : 'en-US'; const v = pickVoice(u.lang); if (v) u.voice = v; u.rate = opts.rate || 0.94; u.pitch = 1; u.volume = 1; u.onend = () => finish('onend'); u.onerror = (e) => finish(`onerror_${e?.error || 'unknown'}`); speechSynthesis.speak(u); timer(()=>finish('fallback_timer'), Math.max(6000, estimateSpeechMs(raw)+3500)); }
-      catch(e){ debug('v261_browser_speech_error', { message:errMsg(e) }); timer(resolve, estimateSpeechMs(raw)); }
+      catch(e){ debug('v262_browser_tts_failed', { message: errMsg(e) }); timer(resolve, estimateSpeechMs(raw)); }
     }); }
   async function speak(text, opts={}){
     const raw = clean(text);
@@ -232,7 +235,7 @@
     await speakBrowser(raw, opts);
   }
 
-  function postTurn(role, text, slot, turnType){ postToParent('clarity.live.turn', { productType:'modul1', role, speaker: role === 'assistant' ? 'assistant' : 'user', turnType, questionIndex: slot, questionNo: slot, qIndex: slot, slot, index: slot, sequenceNo: slot, subTurnIndex:0, text: clean(text), cleanText: clean(text), originalText: clean(text), sourceEvent:'v26_deterministic_oral_recorder', ts:new Date().toISOString(), uid: UID || CTX.uid || CTX.linkId || '', linkId: UID || CTX.uid || CTX.linkId || '', companyId: COMPANY_ID || CTX.companyId || '', sessionId: CTX.sessionId || UID || '' }); }
+  function postTurn(role, text, slot, turnType){ postToParent('clarity.live.turn', { productType:'modul1', role, speaker: role === 'assistant' ? 'assistant' : 'user', turnType, questionIndex: slot, questionNo:slot, qIndex:slot, slot, index:slot, sequenceNo:slot, subTurnIndex:0, text: clean(text), cleanText: clean(text), originalText: clean(text), sourceEvent:'v26_deterministic_oral_recorder', ts:new Date().toISOString(), uid: UID || CTX.uid || CTX.linkId || '', linkId: UID || CTX.uid || CTX.linkId || '', companyId: COMPANY_ID || CTX.companyId || '', sessionId: CTX.sessionId || UID || '' }); }
 
   async function setupLocalMedia(){ const constraints = { audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true }, video: AUDIO_ONLY ? false : { width:{ideal:1280}, height:{ideal:720} } }; try { localStream = await navigator.mediaDevices.getUserMedia(constraints); if (!AUDIO_ONLY && localStream) $localVideo.srcObject = localStream; setupMicAnalyser(); } catch(e){ setStatus('err', isGerman() ? 'Mikrofon oder Kamera konnten nicht gestartet werden.' : 'Microphone or camera could not be started.'); postToParent('clarity.live.error', { code:'media_permission_error', message:errMsg(e) }); throw e; } }
   function setupMicAnalyser(){ try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const src = ctx.createMediaStreamSource(localStream); micAnalyser = ctx.createAnalyser(); micAnalyser.fftSize = 512; micBuf = new Uint8Array(micAnalyser.frequencyBinCount); src.connect(micAnalyser); const tick = () => { if (destroyed || !micAnalyser) return; micAnalyser.getByteTimeDomainData(micBuf); let dev=0; for(let i=0;i<micBuf.length;i++) dev=Math.max(dev, Math.abs(micBuf[i]-128)); const pct = Math.min(100, dev*2.2); $mic.style.width = pct + '%'; const active = dev > 8; voiceActive = active; if (active && phase !== 'SPEAKING_QUESTION') lastVoiceAt = Date.now(); if (active) postToParent('clarity.avatar.level', { source:'user', value:Math.max(0, Math.min(1, (dev-2)/34)), reason:'v26_mic' }); requestAnimationFrame(tick); }; tick(); } catch(e){ debug('v26_mic_analyser_failed', { message:errMsg(e) }); } }
@@ -261,7 +264,7 @@
   function finishAssessment(reason='finish'){ if (finishing) return; finishing = true; clearSlotTimers(); setPhase('FINISHING', t('processing')); setStatus('warn', t('processing')); $hint.textContent = t('processing'); postToParent('clarity.assessment.v2.target_answered', { slot:Math.max(currentSlot,targetSlots), target:targetSlots, reason, version:TOKENLESS_VERSION }); postToParent('clarity.live.processing_started', { reason, version:TOKENLESS_VERSION }); debug('v26_finish_assessment', { reason, currentSlot, targetSlots }); try { speechSynthesis?.cancel?.(); } catch(_){} timer(()=>{ stopRecorders(); postToParent('clarity.live.ended', { reason, version:TOKENLESS_VERSION }); }, timing().finalStopMs); }
   function manualStop(reason='manual_stop'){ debug('v26_manual_stop', { reason, currentSlot }); finishAssessment(reason); }
 
-  function handleMessage(ev){ let msg = ev?.data; try { if (typeof msg === 'string') msg = JSON.parse(msg); } catch(_){} if (!msg || typeof msg !== 'object') return; const type = msg.type; const data = msg.data || msg.payload || {}; if (type === 'clarity.live.context' || type === 'clarity.live.prime'){ CTX = { ...CTX, ...(data||{}) }; CTX.lang = firstNonEmpty(CTX.userCommLang, CTX.interviewLang, CTX.interviewLanguage, CTX.lang, Q.get('lang'), 'en'); CTX.reportLang = firstNonEmpty(CTX.reportLang, CTX.reportLanguage, Q.get('reportLang'), CTX.lang); $btnStop.textContent = t('endBtn'); setStatus('info', t('init')); debug('v26_context_received', { mode:CTX.mode, moduleArea:CTX.moduleArea, questionCount:CTX.questionCount, totalQuestionCount:CTX.totalQuestionCount, lang:CTX.lang }); return; } if (type === 'clarity.live.record'){ recordEnabled = data?.enabled !== false; debug('v26_record_enabled', { recordEnabled, prepared }); if (recordEnabled && prepared && !recordingStartedAt) beginAssessmentFlow(); return; } if (type === 'clarity.live.start'){ startAssessment(); return; } if (type === 'clarity.live.hangup' || type === 'clarity.live.stop' || type === 'recorder:stop'){ manualStop(type); return; } }
+  function handleMessage(ev){ let msg = ev?.data; try { if (typeof msg === 'string') msg = JSON.parse(msg); } catch(_){} if (!msg || typeof msg !== 'object') return; const type = msg.type; const data = msg.data || msg.payload || {}; if (type === 'clarity.live.context' || type === 'clarity.live.prime'){ CTX = { ...CTX, ...(data||{}) }; CTX.lang = firstNonEmpty(CTX.userCommLang, CTX.interviewLang, CTX.interviewLanguage, CTX.lang, Q.get('lang'), 'en'); CTX.reportLang = firstNonEmpty(CTX.reportLang, CTX.reportLanguage, Q.get('reportLang'), CTX.lang); CTX.ttsVoice = firstNonEmpty(CTX.ttsVoice, data.ttsVoice, Q.get('ttsVoice'), Q.get('voice'), 'marin'); $btnStop.textContent = t('endBtn'); setStatus('info', t('init')); debug('v26_context_received', { mode:CTX.mode, moduleArea:CTX.moduleArea, questionCount:CTX.questionCount, totalQuestionCount:CTX.totalQuestionCount, lang:CTX.lang }); return; } if (type === 'clarity.live.record'){ recordEnabled = data?.enabled !== false; debug('v26_record_enabled', { recordEnabled, prepared }); if (recordEnabled && prepared && !recordingStartedAt) beginAssessmentFlow(); return; } if (type === 'clarity.live.start'){ startAssessment(); return; } if (type === 'clarity.live.hangup' || type === 'clarity.live.stop' || type === 'recorder:stop'){ manualStop(type); return; } }
   window.addEventListener('message', handleMessage);
   $btnStop.addEventListener('click', () => manualStop('local_button'));
 
