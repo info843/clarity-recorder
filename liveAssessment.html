@@ -63,7 +63,13 @@
   const MUX_ASSET_URL = `${API_BASE}/api/mux-asset`;
   // Premium TTS is optional and server-proxied. If it fails, the deterministic v2.6 flow continues with browser voice.
   const PREMIUM_TTS_ENABLED = Q.get('premiumTts') !== '0' && Q.get('browserVoiceOnly') !== '1';
-  const TTS_URL = (Q.get('ttsEndpoint') || Q.get('tts') || '').trim();
+  const TTS_URL_RAW = (Q.get('ttsEndpoint') || Q.get('tts') || '').trim();
+  const TTS_URL_ALT = (Q.get('ttsEndpoint2') || Q.get('tts2') || '').trim();
+  const TTS_DEFAULT_WIX_URL = 'https://www.clarity-nvl.com/_functions/tts';
+  const TTS_URLS = [TTS_URL_RAW, TTS_URL_ALT, TTS_DEFAULT_WIX_URL]
+    .map(x => String(x || '').trim())
+    .filter((x, i, arr) => x && arr.indexOf(x) === i);
+  const TTS_URL = TTS_URLS[0] || '';
   const TTS_MODEL = (Q.get('ttsModel') || 'gpt-4o-mini-tts').trim();
   const TTS_VOICE_FALLBACK = (Q.get('ttsVoice') || Q.get('voice') || 'marin').trim();
   const TTS_DIAGNOSTIC = Q.get('ttsDiagnostic') === '1' || Q.get('debugTts') === '1' || DEBUG_LOGS;
@@ -172,54 +178,61 @@
   }
   async function fetchPremiumTts(text, reason='question'){
     const raw = clean(text);
-    if (!raw || !PREMIUM_TTS_ENABLED || !TTS_URL || ttsFailureCount >= MAX_TTS_FAILURES) {
-      if (raw && PREMIUM_TTS_ENABLED && !TTS_URL) postTtsStatus('disabled_no_endpoint', { reason });
+    if (!raw || !PREMIUM_TTS_ENABLED || !TTS_URLS.length || ttsFailureCount >= MAX_TTS_FAILURES) {
+      if (raw && PREMIUM_TTS_ENABLED && !TTS_URLS.length) postTtsStatus('disabled_no_endpoint', { reason });
       return null;
     }
     const voice = effectiveTtsVoice();
     const key = `${TTS_MODEL}|${voice}|${activeLang()}|${raw}`;
     if (TTS_CACHE.has(key)) return TTS_CACHE.get(key);
-    try {
-      postTtsStatus('fetch_start', { reason, chars:raw.length });
-      const res = await fetch(TTS_URL, {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json' },
-        body:JSON.stringify({
-          text:raw,
-          input:raw,
-          model:TTS_MODEL,
-          voice,
-          lang:activeLang(),
-          language:activeLang(),
-          response_format:'mp3',
-          instructions:ttsInstructions(),
-          uid: UID || CTX.uid || CTX.linkId || '',
-          linkId: UID || CTX.uid || CTX.linkId || '',
-          companyId: COMPANY_ID || CTX.companyId || '',
-          productType:'modul1'
-        })
-      });
-      if (!res.ok) throw new Error(`tts_http_${res.status}`);
-      const ct = res.headers.get('content-type') || '';
-      let blob = null;
-      if (ct.includes('application/json')) {
-        const j = await res.json();
-        if (!j?.ok) throw new Error(j?.error || j?.message || 'tts_json_not_ok');
-        const dataUrl = j.dataUrl || j.audioDataUrl || '';
-        if (!dataUrl) throw new Error('tts_json_missing_audio');
-        blob = await (await fetch(dataUrl)).blob();
-      } else {
-        blob = await res.blob();
+
+    let lastError = '';
+    for (const endpoint of TTS_URLS) {
+      try {
+        postTtsStatus('fetch_start', { reason, chars:raw.length, endpoint });
+        const res = await fetch(endpoint, {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json' },
+          body:JSON.stringify({
+            text:raw,
+            input:raw,
+            model:TTS_MODEL,
+            voice,
+            lang:activeLang(),
+            language:activeLang(),
+            response_format:'mp3',
+            instructions:ttsInstructions(),
+            uid: UID || CTX.uid || CTX.linkId || '',
+            linkId: UID || CTX.uid || CTX.linkId || '',
+            companyId: COMPANY_ID || CTX.companyId || '',
+            productType:'modul1'
+          })
+        });
+        if (!res.ok) throw new Error(`tts_http_${res.status}`);
+        const ct = res.headers.get('content-type') || '';
+        let blob = null;
+        if (ct.includes('application/json')) {
+          const j = await res.json();
+          if (!j?.ok) throw new Error(j?.error || j?.message || 'tts_json_not_ok');
+          const dataUrl = j.dataUrl || j.audioDataUrl || '';
+          if (!dataUrl) throw new Error('tts_json_missing_audio');
+          blob = await (await fetch(dataUrl)).blob();
+        } else {
+          blob = await res.blob();
+        }
+        if (!blob || !blob.size) throw new Error('tts_empty_audio');
+        TTS_CACHE.set(key, blob);
+        postTtsStatus('fetch_ok', { reason, endpoint, bytes:blob.size });
+        return blob;
+      } catch(e) {
+        lastError = errMsg(e);
+        postTtsStatus('fetch_failed_try_next', { reason, endpoint, message:lastError });
       }
-      if (!blob || !blob.size) throw new Error('tts_empty_audio');
-      TTS_CACHE.set(key, blob);
-      postTtsStatus('fetch_ok', { reason, bytes:blob.size });
-      return blob;
-    } catch(e) {
-      ttsFailureCount += 1;
-      postTtsStatus('fetch_failed_browser_fallback', { reason, message:errMsg(e) });
-      return null;
     }
+
+    ttsFailureCount += 1;
+    postTtsStatus('fetch_failed_browser_fallback', { reason, message:lastError || 'all_tts_endpoints_failed', endpoints:TTS_URLS });
+    return null;
   }
   function speakBrowser(text, opts={}){ return new Promise(resolve => { const raw = clean(text); if (!raw || !('speechSynthesis' in window)) { timer(resolve, estimateSpeechMs(raw)); return; }
       let done = false; const finish = (why) => { if (done) return; done = true; debug('v262_browser_tts_done', { why, textPreview: raw.slice(0,80) }); resolve(); };
@@ -261,7 +274,21 @@
   async function askSlot(slot){ if (finishing || destroyed) return; if (slot > targetSlots) { finishAssessment('slot_over_target'); return; } clearSlotTimers(); currentSlot = slot; setSlotUi(slot); slotStartedAt = Date.now(); lastVoiceAt = 0; setPhase('SPEAKING_QUESTION', isGerman() ? `Frage ${slot} wird gestellt…` : `Question ${slot} is being asked…`); const q = questions[slot-1] || (isGerman()?`Bitte beantworten Sie Frage ${slot}.`:`Please answer question ${slot}.`); $question.textContent = q; $hint.textContent = t('wait'); postTurn('assistant', q, slot, 'main_question'); postToParent('clarity.assessment.v2.slot_asked', { slot, questionIndex:slot, target:targetSlots, question:q, version:TOKENLESS_VERSION }); debug('v26_slot_asked', { slot, question:q }); postToParent('clarity.avatar', { state:'ai_speaking', reason:'v26_question' }); await speak(q, { rate:0.93, reason:'question' }); if (finishing || destroyed) return; timer(()=>openAnswerWindow(slot), timing().afterQuestionBufferMs); }
   function openAnswerWindow(slot){ if (finishing || destroyed || slot !== currentSlot) return; answerWindowOpenedAt = Date.now(); lastVoiceAt = Date.now(); setPhase('LISTENING', t('listen')); $hint.textContent = t('listen'); postToParent('clarity.avatar', { state:'listening', reason:'v26_answer_window' }); debug('v26_answer_window_open', { slot }); const tm = timing(); const check = () => { if (finishing || destroyed || slot !== currentSlot) return; const now = Date.now(); const elapsed = now - answerWindowOpenedAt; const quietFor = now - (lastVoiceAt || answerWindowOpenedAt); const bySilence = elapsed >= tm.minAnswerMs && quietFor >= tm.silenceMs; const byMax = elapsed >= tm.maxAnswerMs; if (bySilence || byMax){ commitSlot(slot, bySilence ? 'silence_after_min' : 'max_answer_time'); return; } timer(check, 1000); }; timer(check, 1000); }
   function commitSlot(slot, reason){ if (finishing || destroyed || slot !== currentSlot) return; setPhase('COMMITTING', t('wait')); postToParent('clarity.assessment.v2.slot_answered', { slot, questionIndex:slot, target:targetSlots, reason, version:TOKENLESS_VERSION }); debug('v26_slot_answered_committed', { slot, reason }); if (slot >= targetSlots){ finishAssessment('target_reached'); return; } const tm = timing(); timer(()=>askSlot(slot+1), tm.nextQuestionMs); }
-  function finishAssessment(reason='finish'){ if (finishing) return; finishing = true; clearSlotTimers(); setPhase('FINISHING', t('processing')); setStatus('warn', t('processing')); $hint.textContent = t('processing'); postToParent('clarity.assessment.v2.target_answered', { slot:Math.max(currentSlot,targetSlots), target:targetSlots, reason, version:TOKENLESS_VERSION }); postToParent('clarity.live.processing_started', { reason, version:TOKENLESS_VERSION }); debug('v26_finish_assessment', { reason, currentSlot, targetSlots }); try { speechSynthesis?.cancel?.(); } catch(_){} timer(()=>{ stopRecorders(); postToParent('clarity.live.ended', { reason, version:TOKENLESS_VERSION }); }, timing().finalStopMs); }
+  function finalSpokenCloseText(){
+    const lk = activeLang();
+    if (lk === 'de') return 'Vielen Dank. Das Assessment wird jetzt verarbeitet. Bitte bleiben Sie noch kurz auf dieser Seite.';
+    if (lk === 'es') return 'Muchas gracias. El assessment se está procesando ahora. Por favor, permanezca un momento en esta página.';
+    if (lk === 'fr') return 'Merci beaucoup. L’évaluation est maintenant en cours de traitement. Veuillez rester encore un instant sur cette page.';
+    if (lk === 'it') return 'Grazie. L’assessment viene ora elaborato. La preghiamo di restare ancora un momento su questa pagina.';
+    return 'Thank you. The assessment is now being processed. Please stay on this page for a moment.';
+  }
+  function speakFinalAfterRecordingStopped(){
+    const text = finalSpokenCloseText();
+    // Spoken only after recorder stop was triggered; this must never become an assessment answer.
+    timer(() => { speak(text, { reason:'final_after_stop', rate:0.94 }).catch(()=>{}); }, 250);
+  }
+
+  function finishAssessment(reason='finish'){ if (finishing) return; finishing = true; clearSlotTimers(); setPhase('FINISHING', t('processing')); setStatus('warn', t('processing')); $hint.textContent = t('processing'); postToParent('clarity.assessment.v2.target_answered', { slot:Math.max(currentSlot,targetSlots), target:targetSlots, reason, version:TOKENLESS_VERSION }); postToParent('clarity.live.processing_started', { reason, version:TOKENLESS_VERSION }); debug('v263_finish_assessment', { reason, currentSlot, targetSlots }); try { speechSynthesis?.cancel?.(); } catch(_){} timer(()=>{ stopRecorders(); postToParent('clarity.live.ended', { reason, version:TOKENLESS_VERSION }); speakFinalAfterRecordingStopped(); }, timing().finalStopMs); }
   function manualStop(reason='manual_stop'){ debug('v26_manual_stop', { reason, currentSlot }); finishAssessment(reason); }
 
   function handleMessage(ev){ let msg = ev?.data; try { if (typeof msg === 'string') msg = JSON.parse(msg); } catch(_){} if (!msg || typeof msg !== 'object') return; const type = msg.type; const data = msg.data || msg.payload || {}; if (type === 'clarity.live.context' || type === 'clarity.live.prime'){ CTX = { ...CTX, ...(data||{}) }; CTX.lang = firstNonEmpty(CTX.userCommLang, CTX.interviewLang, CTX.interviewLanguage, CTX.lang, Q.get('lang'), 'en'); CTX.reportLang = firstNonEmpty(CTX.reportLang, CTX.reportLanguage, Q.get('reportLang'), CTX.lang); CTX.ttsVoice = firstNonEmpty(CTX.ttsVoice, data.ttsVoice, Q.get('ttsVoice'), Q.get('voice'), 'marin'); $btnStop.textContent = t('endBtn'); setStatus('info', t('init')); debug('v26_context_received', { mode:CTX.mode, moduleArea:CTX.moduleArea, questionCount:CTX.questionCount, totalQuestionCount:CTX.totalQuestionCount, lang:CTX.lang }); return; } if (type === 'clarity.live.record'){ recordEnabled = data?.enabled !== false; debug('v26_record_enabled', { recordEnabled, prepared }); if (recordEnabled && prepared && !recordingStartedAt) beginAssessmentFlow(); return; } if (type === 'clarity.live.start'){ startAssessment(); return; } if (type === 'clarity.live.hangup' || type === 'clarity.live.stop' || type === 'recorder:stop'){ manualStop(type); return; } }
