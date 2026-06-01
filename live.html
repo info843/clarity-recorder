@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v4.0.2 AUTO_HANGUP_AUDIO_END_GUARD: based on v4.0.1; faster reliable controlled final hangup after closing speech + manual parent stop support -->
+  <!-- v4.0.3 HARD_FINAL_SLOT_LOCK: based on v4.0.2; locks Q8-Q10 completion, restores +2s final speech buffer, recovers late-phase system comments -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -1254,7 +1254,7 @@
   // v4.0.1: The controlled interview closing text is long and premium-user-facing.
   // The old hard-end watchdog could force the recorder into processing before the
   // final sentence became audible. Give controlled audio/video enough time to speak it.
-  const CONTROLLED_FINAL_CLOSE_WATCHDOG_MS = Math.max(16000, Math.min(45000, Number(Q.get('controlledFinalCloseWatchdogMs') || 26000) || 26000));
+  const CONTROLLED_FINAL_CLOSE_WATCHDOG_MS = Math.max(18000, Math.min(48000, Number(Q.get('controlledFinalCloseWatchdogMs') || 28000) || 28000));
 
   const STRUCTURED_AUTOFINISH_IDLE_MS = Math.max(12000, Math.min(45000, Number(Q.get('autoFinishIdleMs') || 22000) || 22000));
   const STRUCTURED_AUTOFINISH_FORCE_MS = Math.max(8000, Math.min(30000, Number(Q.get('autoFinishForceMs') || 16000) || 16000));
@@ -1754,9 +1754,9 @@
     const q = Math.max(0, Number(questionIndex || 0));
     const t = Math.max(1, Number(target || 1));
     if (!q || q >= t) return false;
-    // v4.0.1: Q9/Q10 in Q10 interviews must be protected for completion.
-    // Q1-Q8 may still get one natural follow-up; Q9/Q10 prioritize finishing the plan.
-    return q < Math.max(1, t - 1);
+    // v4.0.3: last three slots in Q10-style interviews must be protected for completion.
+    // Q1-Q7 may still get one natural follow-up; Q8-Q10 prioritize finishing the plan.
+    return q < Math.max(1, t - 2);
   }
 
   function controlledInterviewLatePhase(questionIndex, target = interviewMainQuestionTarget(CTX)){
@@ -2158,6 +2158,21 @@
       }
 
       return registerAssistantMainQuestionMeta((structuredCurrentQuestionIndex || 0) + 1, 'unplanned_detected_question');
+    }
+
+    if ((controlledInterviewDriverEnabled(CTX) || isVideoOnlyInterview(CTX)) && isInterviewLiveContext(CTX) && !isInterviewHybrid(CTX)) {
+      const target = interviewLiveQuestionTarget(CTX);
+      const q = structuredCurrentQuestionIndex || 0;
+      if (q > 0 && q < target && q >= Math.max(1, target - 2)) {
+        log('[DRIVER:controlled] late-phase assistant system/comment recovered to next fixed slot', {
+          currentQuestion: q,
+          targetQuestions: target,
+          textPreview: clean.slice(0, 180)
+        });
+        scheduleVideoOnlyDriver('late_phase_system_comment_recovery', 700);
+      } else if (q >= target) {
+        scheduleStrictTargetFinalization('system_after_target_complete', TARGET_FINALIZE_AFTER_ANSWER_MS + 1200);
+      }
     }
 
     structuredLastAssistantTurnType = 'system';
@@ -2831,7 +2846,7 @@
       }
 
       // After a main answer, ask exactly one natural follow-up only while it cannot endanger completion.
-      // v4.0.1: From Q9/Q10 in Q10 interviews, skip follow-ups and move directly to the next main/final close.
+      // v4.0.3: From Q8/Q9/Q10 in Q10 interviews, skip follow-ups and move directly to the next main/final close.
       if (q > 0 && structuredLastCandidateTurnType === 'answer' && !structuredFollowUpAskedForQuestion[q] && controlledInterviewFollowUpAllowed(q, t)) {
         log('[DRIVER:controlled] requesting one controlled follow-up', { source: source || '', q, target: t, mode: controlledDriverLabel(CTX), latePhase: controlledInterviewLatePhase(q, t) });
         requestSlotFollowUp(source || 'controlled_driver_followup');
@@ -2883,13 +2898,22 @@
 
     const plannedQuestion = slotPlanQuestionAt(nextNo);
     const lk = activeInterviewLang(CTX);
+    const lateSlot = nextNo >= Math.max(1, target - 2);
     const instruction = lk === 'de'
       ? (plannedQuestion
-        ? `Bitte stelle jetzt exakt diese nächste Hauptfrage aus dem festen Interviewplan. Sage nur die Frage selbst und keine Meta-Erklärung: ${plannedQuestion}`
-        : 'Bitte stelle jetzt direkt die nächste rollenbezogene Hauptfrage. Sage nur die Frage selbst und keine Meta-Erklärung.')
+        ? (lateSlot
+          ? `HARD FINAL SLOT LOCK: Stelle jetzt exakt Frage ${nextNo} von ${target} aus dem festen Interviewplan. Sage ausschließlich diese Frage, ohne Motivation, ohne Zusammenfassung, ohne Lob, ohne Übergangstext und ohne Meta-Erklärung. Danach wartest du auf die Antwort: ${plannedQuestion}`
+          : `Bitte stelle jetzt exakt diese nächste Hauptfrage aus dem festen Interviewplan. Sage nur die Frage selbst und keine Meta-Erklärung: ${plannedQuestion}`)
+        : (lateSlot
+          ? `HARD FINAL SLOT LOCK: Stelle jetzt direkt Frage ${nextNo} von ${target}. Sage ausschließlich die Frage selbst, ohne Motivation, ohne Zusammenfassung, ohne Lob, ohne Übergangstext und ohne Meta-Erklärung. Danach wartest du auf die Antwort.`
+          : 'Bitte stelle jetzt direkt die nächste rollenbezogene Hauptfrage. Sage nur die Frage selbst und keine Meta-Erklärung.'))
       : (plannedQuestion
-        ? `Please now ask exactly this next main question from the fixed interview plan. Say only the question itself and no meta explanation: ${plannedQuestion}`
-        : 'Please now ask the next role-specific main question directly. Say only the question itself and no meta explanation.');
+        ? (lateSlot
+          ? `HARD FINAL SLOT LOCK: Now ask exactly question ${nextNo} of ${target} from the fixed interview plan. Say only this question, without motivation, summary, praise, transition text or meta explanation. Then wait for the answer: ${plannedQuestion}`
+          : `Please now ask exactly this next main question from the fixed interview plan. Say only the question itself and no meta explanation: ${plannedQuestion}`)
+        : (lateSlot
+          ? `HARD FINAL SLOT LOCK: Now ask question ${nextNo} of ${target} directly. Say only the question itself, without motivation, summary, praise, transition text or meta explanation. Then wait for the answer.`
+          : 'Please now ask the next role-specific main question directly. Say only the question itself and no meta explanation.'));
 
     return createAssistantAudioResponseFromInstruction(instruction, source || 'slot_next_main_stall');
   }
