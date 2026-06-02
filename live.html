@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v4.0.3 HARD_FINAL_SLOT_LOCK: based on v4.0.2; locks Q8-Q10 completion, restores +2s final speech buffer, recovers late-phase system comments -->
+  <!-- v4.0.4 DETERMINISTIC_FINAL_CLOSE: based on v4.0.3; controlled interview final close uses deterministic Wix/OpenAI TTS playback instead of free Realtime closing generation -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -1102,6 +1102,9 @@
 
   /* ===== Endpunkte ===== */
   const TOKEN_URL = 'https://www.clarity-nvl.com/_functions/realtimeToken';
+  const FINAL_TTS_URL = 'https://www.clarity-nvl.com/_functions/tts';
+  const FINAL_TTS_MODEL = 'gpt-4o-mini-tts';
+  const FINAL_TTS_VOICE = 'marin';
   const MUX_UPLOAD_URL = `${API_BASE}/api/mux-upload`;
   const MUX_ASSET_URL  = `${API_BASE}/api/mux-asset`;
 
@@ -1255,6 +1258,7 @@
   // The old hard-end watchdog could force the recorder into processing before the
   // final sentence became audible. Give controlled audio/video enough time to speak it.
   const CONTROLLED_FINAL_CLOSE_WATCHDOG_MS = Math.max(18000, Math.min(48000, Number(Q.get('controlledFinalCloseWatchdogMs') || 28000) || 28000));
+  const DETERMINISTIC_FINAL_CLOSE_TIMEOUT_MS = Math.max(14000, Math.min(36000, Number(Q.get('deterministicFinalCloseTimeoutMs') || 24000) || 24000));
 
   const STRUCTURED_AUTOFINISH_IDLE_MS = Math.max(12000, Math.min(45000, Number(Q.get('autoFinishIdleMs') || 22000) || 22000));
   const STRUCTURED_AUTOFINISH_FORCE_MS = Math.max(8000, Math.min(30000, Number(Q.get('autoFinishForceMs') || 16000) || 16000));
@@ -2516,6 +2520,191 @@
     log('[FINALIZER] absolute full finalize fallback scheduled', { source: source || '', delayMs: delay });
   }
 
+
+  function currentFinalCloseTextForDeterministicPlayback(){
+    const lk = activeInterviewLang(CTX);
+    const profile = langProfile(lk);
+    return finalClosingText({ ...CTX, lang: lk }) || finalClosingText(CTX) || (profile?.finalClose || t('finalClose'));
+  }
+
+  function deterministicFinalCloseEnabled(){
+    return controlledInterviewDriverEnabled(CTX) && isInterviewLiveContext(CTX) && !isInterviewHybrid(CTX) && !isAssessmentVoiceLive(CTX) && !isAssessmentHybridLive(CTX);
+  }
+
+  async function fetchDeterministicFinalCloseDataUrl(text, lang){
+    const body = {
+      text,
+      input: text,
+      voice: FINAL_TTS_VOICE,
+      model: FINAL_TTS_MODEL,
+      lang: (typeof normalizeLangCode === 'function') ? normalizeLangCode(lang || activeInterviewLang(CTX), 'de') : String(lang || 'de').slice(0,2).toLowerCase(),
+      productType: 'interview',
+      purpose: 'final_close'
+    };
+
+    const res = await fetch(FINAL_TTS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    const j = await res.json().catch(() => null);
+    if (!res.ok || !j?.ok || !j?.dataUrl) {
+      throw new Error(`deterministic_tts_failed status=${res.status} error=${j?.error || ''} message=${j?.message || ''}`);
+    }
+    return String(j.dataUrl || '');
+  }
+
+  function browserSpeechFinalClose(text, lang){
+    return new Promise((resolve) => {
+      try {
+        if (!('speechSynthesis' in window) || !window.SpeechSynthesisUtterance) return resolve(false);
+        const utterance = new SpeechSynthesisUtterance(String(text || ''));
+        utterance.lang = String(lang || activeInterviewLang(CTX) || 'de').slice(0,2).toLowerCase() === 'de' ? 'de-DE' : 'en-US';
+        utterance.rate = 0.96;
+        utterance.pitch = 1.0;
+        utterance.volume = 1.0;
+        let done = false;
+        const finish = (ok) => {
+          if (done) return;
+          done = true;
+          try { window.speechSynthesis.cancel(); } catch(_) {}
+          resolve(!!ok);
+        };
+        utterance.onend = () => finish(true);
+        utterance.onerror = () => finish(false);
+        try { window.speechSynthesis.cancel(); } catch(_) {}
+        window.speechSynthesis.speak(utterance);
+        setTimeout(() => finish(true), Math.max(9000, Math.min(DETERMINISTIC_FINAL_CLOSE_TIMEOUT_MS, String(text || '').length * 95)));
+      } catch(_) {
+        resolve(false);
+      }
+    });
+  }
+
+  async function playDeterministicFinalClose(text, source){
+    const finalText = String(text || currentFinalCloseTextForDeterministicPlayback() || '').trim();
+    if (!finalText) return false;
+
+    const lang = activeInterviewLang(CTX);
+    try { clearVideoDriverTimer(); } catch(_) {}
+    try { clearSlotStallTimer(); } catch(_) {}
+    try { if (targetAutoFinishTimer) clearTimeout(targetAutoFinishTimer); } catch(_) {}
+    try { if (structuredEarlyClosingRecoveryTimer) clearTimeout(structuredEarlyClosingRecoveryTimer); } catch(_) {}
+    try { dcSend({ type: 'response.cancel' }); } catch(_) {}
+
+    postToParent('clarity.live.deterministic_final_close_started', {
+      uid: UID,
+      companyId: COMPANY_ID,
+      source: source || '',
+      lang,
+      ts: new Date().toISOString()
+    });
+
+    let played = false;
+    try {
+      const dataUrl = await fetchDeterministicFinalCloseDataUrl(finalText, lang);
+      played = await new Promise(async (resolve) => {
+        let done = false;
+        let audio = null;
+        let node = null;
+        const timeoutMs = Math.max(14000, Math.min(DETERMINISTIC_FINAL_CLOSE_TIMEOUT_MS, finalText.length * 105));
+        const finish = (ok) => {
+          if (done) return;
+          done = true;
+          try { if (audio) { audio.pause(); audio.src = ''; } } catch(_) {}
+          try { if (node) node.disconnect(); } catch(_) {}
+          resolve(!!ok);
+        };
+
+        try {
+          audio = new Audio();
+          audio.preload = 'auto';
+          audio.crossOrigin = 'anonymous';
+          audio.src = dataUrl;
+          audio.volume = 1.0;
+
+          if (recordingAudioContext) {
+            try { await recordingAudioContext.resume(); } catch(_) {}
+          }
+          if (recordingAudioContext && recordingAudioDestination) {
+            try {
+              node = recordingAudioContext.createMediaElementSource(audio);
+              node.connect(recordingAudioDestination);
+              node.connect(recordingAudioContext.destination);
+            } catch (e) {
+              log('[FINAL-CLOSE] deterministic audio graph connect failed', errMsg(e));
+            }
+          }
+
+          audio.onended = () => finish(true);
+          audio.onerror = () => finish(false);
+          await audio.play();
+          setTimeout(() => finish(true), timeoutMs);
+        } catch (e) {
+          log('[FINAL-CLOSE] deterministic audio playback failed', errMsg(e));
+          finish(false);
+        }
+      });
+    } catch (e) {
+      log('[FINAL-CLOSE] deterministic TTS fetch failed', errMsg(e));
+    }
+
+    if (!played) {
+      played = await browserSpeechFinalClose(finalText, lang);
+      if (played) log('[FINAL-CLOSE] browser speech fallback used', { source: source || '', lang });
+    }
+
+    FINAL_MESSAGE_SPOKEN = true;
+    FINAL_MESSAGE_ITEM_ID = `deterministic-final-${Date.now()}`;
+    emitTranscript('assistant', finalText, {
+      itemId: FINAL_MESSAGE_ITEM_ID,
+      responseId: 'deterministic_final_close',
+      sourceEvent: 'deterministic_final_close',
+      final: true
+    });
+
+    postToParent('clarity.live.deterministic_final_close_done', {
+      uid: UID,
+      companyId: COMPANY_ID,
+      source: source || '',
+      played,
+      ts: new Date().toISOString()
+    });
+
+    return true;
+  }
+
+  function startDeterministicFinalCloseAndHangup(source, finalClose){
+    if (deterministicFinalCloseStarted || END_CALLED || FINAL_HANGUP_TIMER) return true;
+    deterministicFinalCloseStarted = true;
+    HARD_END_LOCK = true;
+    TARGET_FINALIZE_REQUESTED = true;
+    lockRealtimeListeningForEnd(source || 'deterministic_final_close');
+    setStatus('warn', t('processing'));
+    try { if (HARD_END_WATCHDOG_TIMER) clearTimeout(HARD_END_WATCHDOG_TIMER); } catch(_) {}
+    HARD_END_WATCHDOG_TIMER = setTimeout(() => {
+      if (END_CALLED || FINAL_HANGUP_TIMER) return;
+      log('[FINAL-CLOSE] deterministic final close watchdog -> hangup', { source: source || '' });
+      FINAL_MESSAGE_SPOKEN = true;
+      beginFinalHangup(source || 'deterministic_final_close_watchdog');
+    }, DETERMINISTIC_FINAL_CLOSE_TIMEOUT_MS + 5000);
+
+    playDeterministicFinalClose(finalClose, source || 'deterministic_final_close')
+      .then(() => {
+        if (END_CALLED || FINAL_HANGUP_TIMER) return;
+        beginFinalHangup(source || 'deterministic_final_close_done');
+      })
+      .catch((e) => {
+        log('[FINAL-CLOSE] deterministic final close exception', errMsg(e));
+        if (!END_CALLED && !FINAL_HANGUP_TIMER) {
+          FINAL_MESSAGE_SPOKEN = true;
+          beginFinalHangup(source || 'deterministic_final_close_exception');
+        }
+      });
+    return true;
+  }
+
   function requestHardEnd(source, opts = {}){
     if (END_CALLED || FINAL_HANGUP_TIMER) return;
 
@@ -2582,6 +2771,12 @@
           : (isHybridEnd
             ? `The spoken part is now complete. Do not ask another spoken question. Now say exactly this handoff message without additional explanation: “${finalClose}” Then call end_interview.`
             : `The ${isAssessmentEnd ? 'assessment' : 'interview'} is now definitively complete. Do not ask another question. Now say exactly this closing message without additional explanation: “${finalClose}” Then call end_interview.`));
+
+      if (controlledStandaloneFinal) {
+        startDeterministicFinalCloseAndHangup(source || 'hard_end_deterministic_final_close', finalClose);
+        return;
+      }
+
 
       try {
         if (controlledInterviewDriverEnabled(CTX) || isVideoOnlyInterview(CTX)) {
@@ -2717,6 +2912,11 @@
       userAudioItems,
       effectiveCandidateResponses: effectiveCandidateResponseCount()
     });
+
+    if (controlledStandaloneFinal) {
+      startDeterministicFinalCloseAndHangup(source || 'autofinish_deterministic_final_close', finalClose);
+      return;
+    }
 
     try {
       if (controlledInterviewDriverEnabled(CTX) || isVideoOnlyInterview(CTX)) {
@@ -3086,7 +3286,7 @@
     // only a short safety tail is needed before stopping mic/video/recorder. The old 52s+
     // buffer made successful Q10 runs look like a missing auto-hangup.
     if (controlledInterviewDriverEnabled(CTX) && isInterviewLiveContext(CTX) && !isInterviewHybrid(CTX)) {
-      return Math.max(4500, Math.min(12000, Number(Q.get('controlledFinalHangupBufferMs') || 6500) || 6500));
+      return Math.max(6500, Math.min(14000, Number(Q.get('controlledFinalHangupBufferMs') || 8500) || 8500));
     }
 
     // Hybrid handoff and legacy interview modes keep a longer buffer because their final/handoff
@@ -5071,7 +5271,9 @@
   /* ===== Recorder ===== */
   function prepareRecording(){
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    recordingAudioContext = ctx;
     const dest = ctx.createMediaStreamDestination();
+    recordingAudioDestination = dest;
 
     if (localStream){
       try {
