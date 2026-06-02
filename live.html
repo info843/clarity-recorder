@@ -1115,6 +1115,11 @@
 
   let localStream, remoteStream;
   let mixedStream, mediaRecorder;
+  // v4.0.4.1 HOTFIX: deterministic final close TTS can be routed into the mixed recorder.
+  // These handles must be declared before prepareRecording() assigns them; otherwise strict mode
+  // throws "recordingAudioContext is not defined" and the interview cannot start.
+  let recordingAudioContext = null;
+  let recordingAudioDestination = null;
   let audioCtx, remoteSource;
 
   let destroyed = false;
