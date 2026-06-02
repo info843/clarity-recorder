@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v4.0.4 DETERMINISTIC_FINAL_CLOSE: based on v4.0.3; controlled interview final close uses deterministic Wix/OpenAI TTS playback instead of free Realtime closing generation -->
+  <!-- v4.0.5 DETERMINISTIC_TAIL_Q8_Q10: based on v4.0.4.1; controlled Interview keeps Q1-Q7 natural, but speaks Q8-Q10 and final close deterministically to prevent late-phase model drift -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -1115,7 +1115,7 @@
 
   let localStream, remoteStream;
   let mixedStream, mediaRecorder;
-  // v4.0.4.1 HOTFIX: deterministic final close TTS can be routed into the mixed recorder.
+  // v4.0.5 DETERMINISTIC_TAIL_Q8_Q10 + v4.0.4.1 HOTFIX: deterministic final close TTS can be routed into the mixed recorder.
   // These handles must be declared before prepareRecording() assigns them; otherwise strict mode
   // throws "recordingAudioContext is not defined" and the interview cannot start.
   let recordingAudioContext = null;
@@ -1264,6 +1264,13 @@
   // final sentence became audible. Give controlled audio/video enough time to speak it.
   const CONTROLLED_FINAL_CLOSE_WATCHDOG_MS = Math.max(18000, Math.min(48000, Number(Q.get('controlledFinalCloseWatchdogMs') || 28000) || 28000));
   const DETERMINISTIC_FINAL_CLOSE_TIMEOUT_MS = Math.max(14000, Math.min(36000, Number(Q.get('deterministicFinalCloseTimeoutMs') || 24000) || 24000));
+  // v4.0.5: In the final third of standalone Interview audio/video, the app speaks the fixed
+  // main questions itself. This keeps Q8-Q10 deterministic while preserving natural AI
+  // reactions and one follow-up in Q1-Q7. Default: last 3 slots of the selected Q-set.
+  const CONTROLLED_DETERMINISTIC_TAIL_LAST_N = Math.max(1, Math.min(8, Number(Q.get('controlledDeterministicTailLastN') || 3) || 3));
+  const DETERMINISTIC_TAIL_QUESTION_TIMEOUT_MS = Math.max(8000, Math.min(30000, Number(Q.get('deterministicTailQuestionTimeoutMs') || 18000) || 18000));
+  let DETERMINISTIC_TAIL_QUESTION_ACTIVE = false;
+  const DETERMINISTIC_TAIL_QUESTION_ITEM_IDS = new Set();
 
   const STRUCTURED_AUTOFINISH_IDLE_MS = Math.max(12000, Math.min(45000, Number(Q.get('autoFinishIdleMs') || 22000) || 22000));
   const STRUCTURED_AUTOFINISH_FORCE_MS = Math.max(8000, Math.min(30000, Number(Q.get('autoFinishForceMs') || 16000) || 16000));
@@ -2173,12 +2180,13 @@
       const target = interviewLiveQuestionTarget(CTX);
       const q = structuredCurrentQuestionIndex || 0;
       if (q > 0 && q < target && q >= Math.max(1, target - 2)) {
-        log('[DRIVER:controlled] late-phase assistant system/comment recovered to next fixed slot', {
+        try { dcSend({ type: 'response.cancel' }); } catch(_) {}
+        log('[DRIVER:controlled] late-phase assistant system/comment cancelled and recovered to deterministic tail slot', {
           currentQuestion: q,
           targetQuestions: target,
           textPreview: clean.slice(0, 180)
         });
-        scheduleVideoOnlyDriver('late_phase_system_comment_recovery', 700);
+        scheduleVideoOnlyDriver('late_phase_system_comment_recovery', 350);
       } else if (q >= target) {
         scheduleStrictTargetFinalization('system_after_target_complete', TARGET_FINALIZE_AFTER_ANSWER_MS + 1200);
       }
@@ -3094,6 +3102,186 @@
     return createAssistantAudioResponseFromInstruction(instruction, source || 'slot_followup_stall');
   }
 
+
+  function controlledDeterministicTailQuestionEnabled(nextNo, target){
+    if (!controlledInterviewDriverEnabled(CTX)) return false;
+    if (!isInterviewLiveContext(CTX) || isInterviewHybrid(CTX) || isAssessmentVoiceLive(CTX) || isAssessmentHybridLive(CTX)) return false;
+    const n = Math.max(1, Number(nextNo || 0));
+    const t = Math.max(1, Number(target || interviewMainQuestionTarget(CTX) || 1));
+    const start = Math.max(1, t - CONTROLLED_DETERMINISTIC_TAIL_LAST_N + 1);
+    return n >= start;
+  }
+
+  function emitDeterministicMainQuestionTurn(nextNo, questionText, source){
+    const qNo = Math.max(1, Math.min(interviewMainQuestionTarget(CTX), Number(nextNo || 1)));
+    const clean = String(questionText || '').replace(/\s+/g, ' ').trim();
+    if (!clean) return false;
+
+    // Update the same slot state that Realtime assistant transcripts use, but without letting
+    // a free model response reinterpret the tail question. This is the key v4.0.5 stabilizer.
+    if (qNo > structuredCurrentQuestionIndex) {
+      registerAssistantMainQuestionMeta(qNo, 'deterministic_tail_main_question');
+    } else {
+      structuredCurrentQuestionIndex = Math.max(structuredCurrentQuestionIndex || 0, qNo);
+      structuredCurrentSubTurnIndex = 0;
+      structuredAwaitingFollowUpQuestion = false;
+      structuredLastAssistantTurnType = 'main_question';
+    }
+
+    transcriptSeq += 1;
+    structuredTurnIndex += 1;
+    const itemId = `deterministic-tail-q${qNo}-${Date.now()}`;
+    DETERMINISTIC_TAIL_QUESTION_ITEM_IDS.add(itemId);
+    const ts = new Date().toISOString();
+
+    const transcriptPayload = {
+      speaker: 'assistant',
+      text: clean,
+      seq: transcriptSeq,
+      itemId,
+      responseId: 'deterministic_tail_question',
+      sourceEvent: source || 'deterministic_tail_question',
+      final: true,
+      ts
+    };
+    log('[TRANSCRIPT]', transcriptPayload);
+    postToParent('rt.transcript.partial', transcriptPayload);
+
+    postToParent('clarity.live.turn', {
+      uid: UID || CTX?.uid || CTX?.linkId || '',
+      linkId: UID || CTX?.uid || CTX?.linkId || '',
+      sessionId: CTX?.sessionId || CTX?.liveSessionId || '',
+      companyId: COMPANY_ID || CTX?.companyId || '',
+      productType: 'interview',
+      moduleArea: CTX?.moduleArea || '',
+      mode: AUDIO_ONLY ? 'audio' : (CTX?.mode || 'video'),
+      position: CTX?.position || '',
+      candidateName: CTX?.candidateName || CTX?.name || '',
+      candidateEmail: CTX?.candidateEmail || CTX?.employeeEmail || '',
+      turnIndex: structuredTurnIndex,
+      questionIndex: qNo,
+      subTurnIndex: 0,
+      role: 'assistant',
+      speaker: 'assistant',
+      turnType: 'main_question',
+      source: 'deterministic_tail_tts',
+      originalText: clean,
+      cleanText: clean,
+      originalLang: activeInterviewLang(CTX),
+      reportLang: activeReportLang(CTX),
+      isFinal: true,
+      isMainQuestion: true,
+      isFollowUp: false,
+      isCandidateAnswer: false,
+      isIncludedInReport: true,
+      isTechnical: false,
+      itemId,
+      responseId: 'deterministic_tail_question',
+      sourceEvent: source || 'deterministic_tail_question',
+      createdAt: ts,
+      metaJson: {
+        deterministicTail: true,
+        transcriptSeq,
+        realtimeModel: REALTIME_MODEL,
+        voice: FINAL_TTS_VOICE,
+        questionSet: CTX?.questionSet || '',
+        totalQuestionCount: CTX?.totalQuestionCount || CTX?.questionCount || '',
+        mainQuestionIndexLive: structuredCurrentQuestionIndex,
+        awaitingFollowUp: false
+      }
+    });
+
+    postToParent('clarity.live.deterministic_tail_question', {
+      uid: UID,
+      companyId: COMPANY_ID,
+      questionIndex: qNo,
+      targetQuestions: interviewMainQuestionTarget(CTX),
+      source: source || '',
+      ts
+    });
+    return true;
+  }
+
+  async function playDeterministicTailQuestion(nextNo, questionText, source){
+    const clean = String(questionText || '').replace(/\s+/g, ' ').trim();
+    if (!clean || END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK) return false;
+    if (DETERMINISTIC_TAIL_QUESTION_ACTIVE) return true;
+    DETERMINISTIC_TAIL_QUESTION_ACTIVE = true;
+
+    try {
+      clearVideoDriverTimer();
+      clearSlotStallTimer();
+      try { dcSend({ type: 'response.cancel' }); } catch(_) {}
+      emitDeterministicMainQuestionTurn(nextNo, clean, source || 'deterministic_tail_question');
+
+      const lang = activeInterviewLang(CTX);
+      let played = false;
+      try {
+        const dataUrl = await fetchDeterministicFinalCloseDataUrl(clean, lang);
+        played = await new Promise(async (resolve) => {
+          let done = false;
+          let audio = null;
+          let node = null;
+          const timeoutMs = Math.max(8000, Math.min(DETERMINISTIC_TAIL_QUESTION_TIMEOUT_MS, clean.length * 95));
+          const finish = (ok) => {
+            if (done) return;
+            done = true;
+            try { if (audio) { audio.pause(); audio.src = ''; } } catch(_) {}
+            try { if (node) node.disconnect(); } catch(_) {}
+            resolve(!!ok);
+          };
+
+          try {
+            audio = new Audio();
+            audio.preload = 'auto';
+            audio.crossOrigin = 'anonymous';
+            audio.src = dataUrl;
+            audio.volume = 1.0;
+
+            if (recordingAudioContext) {
+              try { await recordingAudioContext.resume(); } catch(_) {}
+            }
+            if (recordingAudioContext && recordingAudioDestination) {
+              try {
+                node = recordingAudioContext.createMediaElementSource(audio);
+                node.connect(recordingAudioDestination);
+                node.connect(recordingAudioContext.destination);
+              } catch (e) {
+                log('[DRIVER:controlled] deterministic tail audio graph connect failed', errMsg(e));
+              }
+            }
+
+            audio.onended = () => finish(true);
+            audio.onerror = () => finish(false);
+            await audio.play();
+            setTimeout(() => finish(true), timeoutMs);
+          } catch (e) {
+            log('[DRIVER:controlled] deterministic tail audio playback failed', errMsg(e));
+            finish(false);
+          }
+        });
+      } catch (e) {
+        log('[DRIVER:controlled] deterministic tail TTS fetch failed', errMsg(e));
+      }
+
+      if (!played) {
+        played = await browserSpeechFinalClose(clean, lang);
+        if (played) log('[DRIVER:controlled] deterministic tail browser speech fallback used', { questionIndex: nextNo, source: source || '' });
+      }
+
+      log('[DRIVER:controlled] deterministic tail question spoken', {
+        questionIndex: nextNo,
+        target: interviewMainQuestionTarget(CTX),
+        played,
+        mode: controlledDriverLabel(CTX),
+        source: source || ''
+      });
+      return true;
+    } finally {
+      DETERMINISTIC_TAIL_QUESTION_ACTIVE = false;
+    }
+  }
+
   function requestNextPlannedMainQuestion(source){
     if (!isInterviewLiveContext(CTX) || isInterviewHybrid(CTX)) return false;
     if (END_CALLED || FINAL_HANGUP_TIMER || HARD_END_LOCK) return false;
@@ -3102,6 +3290,18 @@
     if (nextNo <= 0 || nextNo > target) return false;
 
     const plannedQuestion = slotPlanQuestionAt(nextNo);
+    if (plannedQuestion && controlledDeterministicTailQuestionEnabled(nextNo, target)) {
+      playDeterministicTailQuestion(nextNo, plannedQuestion, source || 'deterministic_tail_next_main').catch((e) => {
+        log('[DRIVER:controlled] deterministic tail question failed; falling back to Realtime instruction', errMsg(e));
+        const lkFallback = activeInterviewLang(CTX);
+        const fallbackInstruction = lkFallback === 'de'
+          ? `Stelle jetzt exakt Frage ${nextNo} von ${target}. Sage ausschließlich diese Frage, ohne Zusatztext: ${plannedQuestion}`
+          : `Now ask exactly question ${nextNo} of ${target}. Say only this question, without extra text: ${plannedQuestion}`;
+        createAssistantAudioResponseFromInstruction(fallbackInstruction, source || 'deterministic_tail_fallback');
+      });
+      return true;
+    }
+
     const lk = activeInterviewLang(CTX);
     const lateSlot = nextNo >= Math.max(1, target - 2);
     const instruction = lk === 'de'
