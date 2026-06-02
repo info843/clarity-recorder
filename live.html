@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Live Interview</title>
-  <!-- v4.0.5 DETERMINISTIC_TAIL_Q8_Q10: based on v4.0.4.1; controlled Interview keeps Q1-Q7 natural, but speaks Q8-Q10 and final close deterministically to prevent late-phase model drift -->
+  <!-- v4.0.5.1 SINGLE_VOICE_TAIL_GUARD: based on v4.0.5; disables separate deterministic tail-question TTS by default to prevent double voices; Q8-Q10 are forced through the existing Realtime interviewer voice -->
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -1115,7 +1115,7 @@
 
   let localStream, remoteStream;
   let mixedStream, mediaRecorder;
-  // v4.0.5 DETERMINISTIC_TAIL_Q8_Q10 + v4.0.4.1 HOTFIX: deterministic final close TTS can be routed into the mixed recorder.
+  // v4.0.5.1 SINGLE_VOICE_TAIL_GUARD + v4.0.4.1 HOTFIX: deterministic final close TTS can be routed into the mixed recorder.
   // These handles must be declared before prepareRecording() assigns them; otherwise strict mode
   // throws "recordingAudioContext is not defined" and the interview cannot start.
   let recordingAudioContext = null;
@@ -1264,9 +1264,10 @@
   // final sentence became audible. Give controlled audio/video enough time to speak it.
   const CONTROLLED_FINAL_CLOSE_WATCHDOG_MS = Math.max(18000, Math.min(48000, Number(Q.get('controlledFinalCloseWatchdogMs') || 28000) || 28000));
   const DETERMINISTIC_FINAL_CLOSE_TIMEOUT_MS = Math.max(14000, Math.min(36000, Number(Q.get('deterministicFinalCloseTimeoutMs') || 24000) || 24000));
-  // v4.0.5: In the final third of standalone Interview audio/video, the app speaks the fixed
-  // main questions itself. This keeps Q8-Q10 deterministic while preserving natural AI
-  // reactions and one follow-up in Q1-Q7. Default: last 3 slots of the selected Q-set.
+  // v4.0.5.1: Separate deterministic tail-question TTS is OFF by default.
+  // v4.0.5 proved the idea but created two simultaneous interviewer voices: Realtime voice + TTS voice.
+  // Q8-Q10 are therefore forced through the existing Realtime interviewer voice unless explicitly enabled for experiments.
+  const CONTROLLED_DETERMINISTIC_TAIL_AUDIO_ENABLED = Q.get('controlledDeterministicTailAudio') === '1';
   const CONTROLLED_DETERMINISTIC_TAIL_LAST_N = Math.max(1, Math.min(8, Number(Q.get('controlledDeterministicTailLastN') || 3) || 3));
   const DETERMINISTIC_TAIL_QUESTION_TIMEOUT_MS = Math.max(8000, Math.min(30000, Number(Q.get('deterministicTailQuestionTimeoutMs') || 18000) || 18000));
   let DETERMINISTIC_TAIL_QUESTION_ACTIVE = false;
@@ -3104,6 +3105,10 @@
 
 
   function controlledDeterministicTailQuestionEnabled(nextNo, target){
+    // v4.0.5.1: prevent double voices. The deterministic tail *question* audio is disabled by default.
+    // The same hard Q8-Q10 instructions still run via createAssistantAudioResponseFromInstruction(),
+    // so the existing Realtime interviewer voice remains the only voice asking questions.
+    if (!CONTROLLED_DETERMINISTIC_TAIL_AUDIO_ENABLED) return false;
     if (!controlledInterviewDriverEnabled(CTX)) return false;
     if (!isInterviewLiveContext(CTX) || isInterviewHybrid(CTX) || isAssessmentVoiceLive(CTX) || isAssessmentHybridLive(CTX)) return false;
     const n = Math.max(1, Number(nextNo || 0));
