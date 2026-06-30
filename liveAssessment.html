@@ -154,8 +154,8 @@ function normalizedAssessmentMode(){ return lower(firstNonEmpty(CTX.assessmentMo
       es: ['¿Qué herramientas concretas utiliza con más frecuencia en su trabajo diario?','¿Qué método utiliza normalmente para estructurar sus proyectos?','Dé un ejemplo concreto de un proyecto en el que utilizó su competencia metodológica.','¿Qué habilidades prácticas desarrolló específicamente en ese proceso?','¿Cómo asegura que sus soluciones sean transferibles a nuevas tareas?','¿Cómo aborda el aprendizaje de una herramienta desconocida?','¿Qué herramienta aprendió más recientemente y para qué la utilizó?','¿Cómo mide el éxito de sus soluciones implementadas en proyectos?','¿Cómo integra feedback para mejorar su competencia metodológica?','¿Qué habilidad es especialmente importante para su rol objetivo y por qué?']
     },
     language: {
-      de: ['Beschreiben Sie eine berufliche Herausforderung, die Sie sprachlich erfolgreich bewältigt haben.','Wie gehen Sie vor, wenn Sie ein Team für ein neues Projekt sprachlich ausrichten müssen?','Wie erklären Sie komplexe technische Inhalte verständlich für Nicht-Fachleute?','Wie passen Sie Ihre Kommunikation an unterschiedliche Hierarchieebenen an?','Wie erklären Sie einem Kunden mit wenig Fachwissen ein technisches Problem?','Wie unterscheiden Sie Ihre Wortwahl schriftlich und mündlich?','Wie reagieren Sie sprachlich, wenn Missverständnisse entstehen?','Welche Rolle spielt Körpersprache in Ihrer mündlichen Kommunikation?','Wie reagieren Sie auf unerwartete Fragen in einer Präsentation?','Wie stellen Sie am Ende eines Gesprächs sicher, dass Ihre Botschaft verstanden wurde?'],
-      en: ['Describe a professional communication challenge you handled successfully.','How do you align a team linguistically for a new project?','How do you explain complex technical content clearly to non-experts?','How do you adapt your communication to different hierarchy levels?','How do you explain a technical problem to a customer with little technical knowledge?','How do you vary your wording in written versus oral communication?','How do you respond linguistically when misunderstandings occur?','What role does body language play in your oral communication?','How do you respond to unexpected questions in a presentation?','How do you ensure at the end of a conversation that your message was understood?'],
+      de: ['Beschreiben Sie eine berufliche Herausforderung, die Sie sprachlich erfolgreich bewältigt haben.','Wie gehen Sie vor, wenn Sie ein Team für ein neues Projekt sprachlich ausrichten müssen?','Wie erklären Sie komplexe technische Inhalte verständlich für Nicht-Fachleute?','Wie passen Sie Ihre Kommunikation an unterschiedliche Hierarchieebenen an?','Wie erklären Sie ein komplexes Thema aus Ihrem beruflichen Feld einer Person mit wenig Vorwissen?','Wie unterscheiden Sie Ihre Wortwahl schriftlich und mündlich?','Wie reagieren Sie sprachlich, wenn Missverständnisse entstehen?','Welche Rolle spielt Körpersprache in Ihrer mündlichen Kommunikation?','Wie reagieren Sie auf unerwartete Fragen in einer Präsentation?','Wie stellen Sie am Ende eines Gesprächs sicher, dass Ihre Botschaft verstanden wurde?'],
+      en: ['Describe a professional communication challenge you handled successfully.','How do you align a team linguistically for a new project?','How do you explain complex technical content clearly to non-experts?','How do you adapt your communication to different hierarchy levels?','How would you explain a complex topic from your professional field to someone with little prior knowledge?','How do you vary your wording in written versus oral communication?','How do you respond linguistically when misunderstandings occur?','What role does body language play in your oral communication?','How do you respond to unexpected questions in a presentation?','How do you ensure at the end of a conversation that your message was understood?'],
       es: ['Describa un desafío de comunicación profesional que haya manejado con éxito.','¿Cómo alinea lingüísticamente a un equipo para un nuevo proyecto?','¿Cómo explica contenido técnico complejo a personas no expertas?','¿Cómo adapta su comunicación a diferentes niveles jerárquicos?','¿Cómo explica un problema técnico a un cliente con poco conocimiento técnico?','¿Cómo varía su lenguaje entre comunicación escrita y oral?','¿Cómo responde lingüísticamente cuando surgen malentendidos?','¿Qué papel juega el lenguaje corporal en su comunicación oral?','¿Cómo responde a preguntas inesperadas en una presentación?','¿Cómo se asegura al final de una conversación de que su mensaje fue entendido?']
     }
   };
@@ -352,7 +352,7 @@ function normalizedAssessmentMode(){ return lower(firstNonEmpty(CTX.assessmentMo
       "Beschreiben Sie ein Projekt, bei dem Zusammenarbeit mit anderen Funktionen wichtig war.",
       "Wie erklären Sie ein fachliches Ergebnis an Personen ohne Detailwissen?",
       "Welche Tools oder Systeme möchten Sie als Nächstes vertiefen und warum?",
-      "Wie reagieren Sie, wenn ein Kunde oder Stakeholder ein anderes Ergebnis erwartet?",
+      "Wie reagieren Sie, wenn ein Stakeholder oder berufliches Gegenüber ein anderes Ergebnis erwartet?",
       "Beschreiben Sie eine Situation, in der Sie unter realen Bedingungen schnell liefern mussten.",
       "Wie stellen Sie sicher, dass Ihre Lösung nicht nur funktioniert, sondern auch praktikabel bleibt?",
       "Welche fachliche Entscheidung mussten Sie zuletzt begründen?",
@@ -394,7 +394,7 @@ function normalizedAssessmentMode(){ return lower(firstNonEmpty(CTX.assessmentMo
       "Describe a project where collaboration with other functions was important.",
       "How do you explain a professional result to people without detailed knowledge?",
       "Which tools or systems would you like to deepen next, and why?",
-      "How do you react when a customer or stakeholder expects a different result?",
+      "How do you react when a stakeholder or professional counterpart expects a different result?",
       "Describe a situation where you had to deliver quickly under real conditions.",
       "How do you make sure your solution is not only functional but also practical?",
       "Which professional decision did you recently have to justify?",
@@ -424,7 +424,7 @@ function normalizedAssessmentMode(){ return lower(firstNonEmpty(CTX.assessmentMo
     "de": [
       "Bitte erklären Sie ein berufliches Thema aus Ihrem Bereich in klaren, einfachen Worten.",
       "Wie passen Sie Ihre Sprache an, wenn Ihr Gegenüber wenig Fachwissen hat?",
-      "Formulieren Sie eine kurze Antwort auf eine kritische Kundenfrage.",
+      "Formulieren Sie eine kurze Antwort auf eine kritische berufliche Frage.",
       "Wie stellen Sie sicher, dass Sie in einem Gespräch richtig verstanden wurden?",
       "Beschreiben Sie eine Situation, in der präzise Sprache entscheidend war.",
       "Wie würden Sie einen komplexen Sachverhalt in einem Meeting zusammenfassen?",
@@ -439,7 +439,7 @@ function normalizedAssessmentMode(){ return lower(firstNonEmpty(CTX.assessmentMo
       "Wie würden Sie in {{position}} eine klare Empfehlung formulieren?",
       "Bitte geben Sie ein Beispiel für eine überzeugende, aber sachliche Argumentation.",
       "Wie reagieren Sie, wenn Sie eine Frage nicht sofort beantworten können?",
-      "Welche Sprache nutzen Sie, um Vertrauen in einem Kundengespräch aufzubauen?",
+      "Welche Sprache hilft Ihnen, in einem beruflichen Gespräch Vertrauen aufzubauen?",
       "Bitte fassen Sie ein berufliches Problem in drei präzisen Sätzen zusammen.",
       "Wie vermeiden Sie Missverständnisse bei internationalen oder mehrsprachigen Kontakten?",
       "Formulieren Sie eine kurze professionelle Rückfrage, wenn Informationen fehlen.",
@@ -447,10 +447,10 @@ function normalizedAssessmentMode(){ return lower(firstNonEmpty(CTX.assessmentMo
       "Bitte erklären Sie eine Veränderung im Projekt so, dass sie akzeptiert werden kann.",
       "Wie passen Sie Ton und Detailtiefe an verschiedene Hierarchieebenen an?",
       "Welche Strategien nutzen Sie, um aktiv zuzuhören und passend zu antworten?",
-      "Formulieren Sie eine kurze Zusammenfassung nach einem Kundengespräch.",
+      "Formulieren Sie eine kurze Zusammenfassung nach einem beruflichen Gespräch.",
       "Wie würden Sie ein unangenehmes Thema respektvoll ansprechen?",
       "Bitte beschreiben Sie eine Situation, in der Ihre Kommunikation ein Ergebnis verbessert hat.",
-      "Wie würden Sie einem Kunden den nächsten Schritt nach einem Gespräch erklären?",
+      "Wie würden Sie einer anderen Person den nächsten Schritt nach einem Gespräch erklären?",
       "Welche Wörter oder Formulierungen vermeiden Sie in professionellen Situationen?",
       "Bitte geben Sie ein Beispiel für eine klare Priorisierung in schriftlicher Form.",
       "Wie reagieren Sie, wenn Ihr Gegenüber Ihre Aussage falsch interpretiert?",
@@ -466,7 +466,7 @@ function normalizedAssessmentMode(){ return lower(firstNonEmpty(CTX.assessmentMo
     "en": [
       "Please explain a professional topic from your field in clear and simple words.",
       "How do you adapt your language when the other person has little technical knowledge?",
-      "Formulate a short response to a critical customer question.",
+      "Formulate a short answer to a critical professional question.",
       "How do you make sure you were understood correctly in a conversation?",
       "Describe a situation where precise language was decisive.",
       "How would you summarize a complex issue in a meeting?",
@@ -481,7 +481,7 @@ function normalizedAssessmentMode(){ return lower(firstNonEmpty(CTX.assessmentMo
       "How would you formulate a clear recommendation in {{position}}?",
       "Please give an example of persuasive but factual reasoning.",
       "How do you respond when you cannot answer a question immediately?",
-      "Which language do you use to build trust in a customer conversation?",
+      "Which language helps you build trust in a professional conversation?",
       "Please summarize a professional problem in three precise sentences.",
       "How do you avoid misunderstandings in international or multilingual contacts?",
       "Formulate a short professional follow-up question when information is missing.",
@@ -489,10 +489,10 @@ function normalizedAssessmentMode(){ return lower(firstNonEmpty(CTX.assessmentMo
       "Please explain a project change in a way that can be accepted.",
       "How do you adapt tone and level of detail to different hierarchy levels?",
       "Which strategies do you use to listen actively and respond appropriately?",
-      "Formulate a short summary after a customer conversation.",
+      "Formulate a short summary after a professional conversation.",
       "How would you address an uncomfortable topic respectfully?",
       "Describe a situation where your communication improved an outcome.",
-      "How would you explain the next step to a customer after a conversation?",
+      "How would you explain the next step to another person after a conversation?",
       "Which words or phrases do you avoid in professional situations?",
       "Please give an example of clear prioritization in written form.",
       "How do you react when the other person misinterprets your statement?",
@@ -507,8 +507,26 @@ function normalizedAssessmentMode(){ return lower(firstNonEmpty(CTX.assessmentMo
     ]
   }
 };
-  function personalizeAssessmentQuestion(q, position=''){
-    const pos = clean(position || CTX?.position || CTX?.roleProfileText || '') || (isGerman() ? 'die Zielrolle' : 'the target role');
+  const POSITION_FALLBACK_LABEL = {
+  de: 'die Zielrolle', en: 'the target role', es: 'el rol objetivo', fr: 'le rôle cible', it: 'il ruolo target',
+  pt: 'o cargo-alvo', nl: 'de doelrol', pl: 'docelowa rola', tr: 'hedef rol', ar: 'الدور المستهدف'
+};
+const GENERIC_ASSESSMENT_FALLBACK_Q = {
+  de: 'Bitte beschreiben Sie eine weitere relevante berufliche Situation.',
+  en: 'Please describe another relevant professional situation.',
+  es: 'Describa otra situación profesional relevante.',
+  fr: 'Décrivez une autre situation professionnelle pertinente.',
+  it: 'Descriva un’altra situazione professionale rilevante.',
+  pt: 'Descreva outra situação profissional relevante.',
+  nl: 'Beschrijf een andere relevante professionele situatie.',
+  pl: 'Proszę opisać inną istotną sytuację zawodową.',
+  tr: 'Başka ilgili bir profesyonel durumu açıklayın.',
+  ar: 'صف موقفا مهنيا آخر ذا صلة.'
+};
+function personalizeAssessmentQuestion(q, position=''){
+    const lk = activeLang();
+    const fallback = POSITION_FALLBACK_LABEL[lk] || POSITION_FALLBACK_LABEL.en || 'the target role';
+    const pos = clean(position || CTX?.position || CTX?.roleProfileText || '') || fallback;
     return String(q || '').replace(/\{\{position\}\}/g, pos);
   }
   function assessmentQuestionBank(area, lang, position=''){
