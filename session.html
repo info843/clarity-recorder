@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <title>CLARITY Interview</title>
+  <link rel="stylesheet" href="./interview-v4.css">
+</head>
+<body>
+  <div class="ambient ambient-a" aria-hidden="true"></div>
+  <div class="ambient ambient-b" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="brand-lockup">
+      <img id="brandLogo" class="brand-logo" src="./assets/clarity-logo.png" alt="CLARITY">
+      <div>
+        <div id="brandName" class="brand-name">CLARITY</div>
+        <div id="productLabel" class="brand-product">Structured Interview</div>
+      </div>
+    </div>
+    <div class="top-status">
+      <span id="secureBadge" class="pill"><span class="dot dot-ok"></span><span data-i18n="secure">Secure session</span></span>
+      <span id="connectionBadge" class="pill hidden"><span class="dot" id="connectionDot"></span><span id="connectionText">Preparing</span></span>
+    </div>
+  </header>
+
+  <main id="app" class="app-shell" aria-live="polite">
+    <section id="screenLoading" class="screen screen-centered active">
+      <div class="glass-card compact-card center-card">
+        <div class="loader-ring" aria-hidden="true"></div>
+        <h1 data-i18n="loadingTitle">Preparing your interview</h1>
+        <p id="loadingMessage" class="muted" data-i18n="loadingText">The secure interview link is being verified.</p>
+      </div>
+    </section>
+
+    <section id="screenUnavailable" class="screen screen-centered">
+      <div class="glass-card compact-card center-card">
+        <div class="status-icon status-error">!</div>
+        <h1 data-i18n="unavailableTitle">Link unavailable</h1>
+        <p id="unavailableMessage" class="muted" data-i18n="unavailableText">This interview link is invalid, expired, already completed, or no longer available.</p>
+      </div>
+    </section>
+
+    <section id="screenWelcome" class="screen screen-centered">
+      <div class="glass-card welcome-card">
+        <div class="eyebrow" data-i18n="welcomeEyebrow">CLARITY INTERVIEW</div>
+        <h1 id="welcomeTitle" data-i18n="welcomeTitle">Your structured interview</h1>
+        <p id="welcomeIntro" class="lead" data-i18n="welcomeIntro">You will speak with a clearly identified AI interviewer. The process is structured and the final decision remains with people.</p>
+
+        <div class="summary-grid">
+          <div class="summary-item"><span data-i18n="position">Position</span><strong id="summaryPosition">—</strong></div>
+          <div class="summary-item"><span data-i18n="format">Format</span><strong id="summaryMode">—</strong></div>
+          <div class="summary-item"><span data-i18n="depth">Depth</span><strong id="summaryDepth">—</strong></div>
+          <div class="summary-item"><span data-i18n="language">Language</span><strong id="summaryLanguage">—</strong></div>
+        </div>
+
+        <div class="notice-box">
+          <strong data-i18n="recommendationTitle">Recommended setup</strong>
+          <p data-i18n="recommendationText">A desktop or laptop with a headset provides the best quality. Tablet and mobile use are supported when the device check passes.</p>
+        </div>
+
+        <div class="actions right">
+          <button id="btnWelcomeContinue" class="btn btn-primary" type="button" data-i18n="continue">Continue</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="screenProfile" class="screen screen-centered">
+      <form id="candidateForm" class="glass-card form-card" novalidate>
+        <div class="step-row"><span class="step active">1</span><span class="step-line"></span><span class="step">2</span><span class="step-line"></span><span class="step">3</span></div>
+        <h1 data-i18n="profileTitle">Candidate details and consent</h1>
+        <p class="muted" data-i18n="profileText">Enter your details and review the information before the technical check.</p>
+
+        <div class="field-grid">
+          <label class="field"><span data-i18n="firstName">First name</span><input id="firstName" autocomplete="given-name" maxlength="120" required></label>
+          <label class="field"><span data-i18n="lastName">Last name</span><input id="lastName" autocomplete="family-name" maxlength="120" required></label>
+          <label class="field field-wide"><span data-i18n="email">Email</span><input id="email" type="email" autocomplete="email" maxlength="254" required></label>
+        </div>
+
+        <div class="consent-stack">
+          <label class="check"><input id="consentGeneral" type="checkbox" required><span data-i18n="consentGeneral">I have read the candidate information and agree to participate in this structured AI-supported interview.</span></label>
+          <label class="check"><input id="consentAudio" type="checkbox" required><span data-i18n="consentAudio">I consent to microphone use, audio recording, transcription and analysis for this interview.</span></label>
+          <label id="videoConsentRow" class="check"><input id="consentVideo" type="checkbox"><span data-i18n="consentVideo">I consent to camera use and video recording for this interview.</span></label>
+        </div>
+
+        <div class="legal-note" data-i18n="humanDecision">CLARITY supports structured analysis. It does not make the final hiring decision. Human review remains required.</div>
+        <div id="formError" class="inline-error hidden"></div>
+        <div class="actions split">
+          <button id="btnProfileBack" class="btn btn-secondary" type="button" data-i18n="back">Back</button>
+          <button class="btn btn-primary" type="submit" data-i18n="deviceCheck">Run device check</button>
+        </div>
+      </form>
+    </section>
+
+    <section id="screenPreflight" class="screen screen-centered">
+      <div class="glass-card preflight-card">
+        <div class="step-row"><span class="step done">✓</span><span class="step-line done"></span><span class="step active">2</span><span class="step-line"></span><span class="step">3</span></div>
+        <h1 data-i18n="preflightTitle">Technical check</h1>
+        <p class="muted" data-i18n="preflightText">Microphone, camera, browser and network suitability are checked before the interview starts.</p>
+
+        <div id="preflightList" class="check-grid">
+          <div class="check-card" data-check="browser"><span class="check-symbol">…</span><div><strong data-i18n="browser">Browser</strong><small></small></div></div>
+          <div class="check-card" data-check="microphone"><span class="check-symbol">…</span><div><strong data-i18n="microphone">Microphone</strong><small></small></div></div>
+          <div class="check-card" data-check="camera"><span class="check-symbol">…</span><div><strong data-i18n="camera">Camera</strong><small></small></div></div>
+          <div class="check-card" data-check="network"><span class="check-symbol">…</span><div><strong data-i18n="network">Network</strong><small></small></div></div>
+          <div class="check-card" data-check="screen"><span class="check-symbol">…</span><div><strong data-i18n="screen">Screen</strong><small></small></div></div>
+          <div class="check-card" data-check="audioOutput"><span class="check-symbol">…</span><div><strong data-i18n="audioOutput">Audio output</strong><small></small></div></div>
+        </div>
+
+        <div id="preflightResult" class="notice-box"><strong data-i18n="checking">Checking…</strong><p data-i18n="allowPermissions">Allow microphone and camera access when your browser asks.</p></div>
+        <div id="preflightError" class="inline-error hidden"></div>
+        <div class="actions split">
+          <button id="btnRetryPreflight" class="btn btn-secondary" type="button" data-i18n="retry">Retry</button>
+          <button id="btnStartInterview" class="btn btn-primary" type="button" disabled data-i18n="startInterview">Start interview</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="screenRoom" class="screen room-screen">
+      <div class="room-layout">
+        <article class="glass-card interviewer-card">
+          <div class="room-heading">
+            <div><div class="eyebrow" data-i18n="aiInterviewer">AI INTERVIEWER</div><h1 id="roomPosition">Interview</h1></div>
+            <div class="progress-pill"><span id="questionProgress">Q 0 / 0</span></div>
+          </div>
+
+          <div id="avatar" class="avatar" data-state="thinking" aria-label="AI interviewer">
+            <div class="avatar-halo"></div>
+            <div class="avatar-head">
+              <div class="avatar-eyes"><i></i><i></i></div>
+              <div class="avatar-mouth"><i></i><i></i><i></i><i></i><i></i></div>
+            </div>
+            <div class="avatar-shoulders"></div>
+          </div>
+          <div id="avatarLabel" class="avatar-label" data-i18n="preparing">Preparing…</div>
+          <div class="sound-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        </article>
+
+        <aside class="glass-card runtime-card">
+          <iframe id="liveRuntime" title="CLARITY live interview" allow="camera; microphone; autoplay; fullscreen" referrerpolicy="strict-origin" loading="eager"></iframe>
+          <div class="room-metrics">
+            <div><span data-i18n="microphone">Microphone</span><div class="mini-meter"><i id="userLevel"></i></div></div>
+            <div><span data-i18n="interviewerAudio">Interviewer audio</span><div class="mini-meter"><i id="aiLevel"></i></div></div>
+          </div>
+          <div id="roomStatus" class="room-status" data-i18n="preparing">Preparing…</div>
+          <div class="actions split room-actions">
+            <button id="btnRoomHelp" class="btn btn-secondary" type="button" data-i18n="help">Help</button>
+            <button id="btnEndInterview" class="btn btn-danger" type="button" data-i18n="endInterview">End interview</button>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="screenChat" class="screen screen-centered">
+      <div class="glass-card chat-card">
+        <div class="step-row"><span class="step done">✓</span><span class="step-line done"></span><span class="step done">✓</span><span class="step-line done"></span><span class="step active">3</span></div>
+        <div class="eyebrow" data-i18n="writtenPart">WRITTEN PART</div>
+        <h1 data-i18n="chatTitle">Final written questions</h1>
+        <p class="muted" data-i18n="chatText">Answer the remaining questions in your own words. Submit one answer at a time.</p>
+        <div id="chatMessages" class="chat-messages"></div>
+        <form id="chatForm" class="chat-compose">
+          <textarea id="chatInput" rows="4" maxlength="6000" data-i18n-placeholder="chatPlaceholder" placeholder="Write your answer…"></textarea>
+          <button id="btnSendChat" class="btn btn-primary" type="submit" data-i18n="send">Send</button>
+        </form>
+      </div>
+    </section>
+
+    <section id="screenProcessing" class="screen screen-centered">
+      <div class="glass-card compact-card center-card">
+        <div class="processing-orbit" aria-hidden="true"><i></i><i></i><i></i></div>
+        <h1 data-i18n="processingTitle">Your interview is being processed</h1>
+        <p id="processingMessage" class="muted" data-i18n="processingText">The recording, transcript and report are being prepared. Keep this page open until completion is confirmed.</p>
+        <div class="processing-steps">
+          <div id="processUpload" class="process-step active"><i></i><span data-i18n="recordingSaved">Recording saved</span></div>
+          <div id="processAnalysis" class="process-step"><i></i><span data-i18n="analysis">Analysis</span></div>
+          <div id="processReport" class="process-step"><i></i><span data-i18n="report">Report</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="screenComplete" class="screen screen-centered">
+      <div class="glass-card compact-card center-card">
+        <div class="status-icon status-success">✓</div>
+        <h1 data-i18n="completeTitle">Interview completed</h1>
+        <p class="muted" data-i18n="completeText">Your responses were submitted successfully. You may now close this window.</p>
+        <div class="rating-block">
+          <p data-i18n="ratingTitle">How was your experience?</p>
+          <div id="ratingStars" class="stars" role="radiogroup" aria-label="Rating">
+            <button type="button" data-star="1">★</button><button type="button" data-star="2">★</button><button type="button" data-star="3">★</button><button type="button" data-star="4">★</button><button type="button" data-star="5">★</button>
+          </div>
+          <textarea id="ratingNote" rows="3" maxlength="1000" data-i18n-placeholder="ratingPlaceholder" placeholder="Optional feedback"></textarea>
+          <button id="btnSubmitRating" class="btn btn-secondary" type="button" data-i18n="submitRating">Submit rating</button>
+          <div id="ratingStatus" class="muted small"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="helpDialog" class="help-dialog">
+    <form method="dialog">
+      <button class="dialog-close" aria-label="Close">×</button>
+      <h2 data-i18n="helpTitle">Interview help</h2>
+      <p data-i18n="helpText">Stay on this page, speak naturally and allow short pauses. Check that your browser still has microphone and camera permission.</p>
+      <ul>
+        <li data-i18n="helpOne">Use headphones when possible.</li>
+        <li data-i18n="helpTwo">Do not switch apps during the interview.</li>
+        <li data-i18n="helpThree">Use the end button only when necessary.</li>
+      </ul>
+    </form>
+  </dialog>
+
+  <script src="./interview-v4.js" defer></script>
+</body>
+</html>
