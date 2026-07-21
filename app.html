@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="color-scheme" content="light" />
+  <meta name="referrer" content="no-referrer" />
+  <title>CLARITY Universal App</title>
+  <link rel="stylesheet" href="./clarity-app.css" />
+</head>
+<body>
+<div class="app">
+  <main class="shell" aria-live="polite">
+    <header class="topbar">
+      <div class="brand">
+        <img id="brandLogo" src="./assets/clarity-logo.png" alt="CLARITY logo" />
+        <div class="brand-copy"><strong id="brandName">CLARITY</strong><span id="productLine">Decision Intelligence Platform</span></div>
+      </div>
+      <div class="top-actions">
+        <button class="ghost" id="supportBtn" type="button">Support</button>
+        <button class="ghost" id="langBtn" type="button">DE</button>
+      </div>
+    </header>
+
+    <section class="hero">
+      <article class="hero-card">
+        <div class="eyebrow"><span class="dot"></span><span id="eyebrow">Secure CLARITY access</span></div>
+        <h1><span id="heroPrefix">Welcome to</span> <span class="gradient" id="heroProduct">CLARITY</span></h1>
+        <p class="lead" id="heroDescription">Your secure workflow is being prepared.</p>
+        <div class="meta-grid">
+          <div class="meta"><span id="metaWorkflowLabel">Workflow</span><strong id="metaWorkflow">—</strong></div>
+          <div class="meta"><span id="metaModeLabel">Mode</span><strong id="metaMode">—</strong></div>
+          <div class="meta"><span id="metaLanguageLabel">Language</span><strong id="metaLanguage">—</strong></div>
+          <div class="meta"><span id="metaPurposeLabel">Position / purpose</span><strong id="metaPurpose">—</strong></div>
+          <div class="meta"><span id="metaQuestionsLabel">Scope</span><strong id="metaQuestions">—</strong></div>
+          <div class="meta"><span id="metaUidLabel">Access ID</span><strong id="metaUid">—</strong></div>
+        </div>
+      </article>
+      <aside class="summary-card">
+        <h2 id="summaryTitle">Access summary</h2>
+        <div class="summary-list">
+          <div class="summary-row"><span id="summaryCompanyLabel">Company</span><strong id="summaryCompany">—</strong></div>
+          <div class="summary-row"><span id="summaryReportLabel">Report language</span><strong id="summaryReport">—</strong></div>
+          <div class="summary-row"><span id="summaryUnitsLabel">Reserved units</span><strong id="summaryUnits">—</strong></div>
+          <div class="summary-row"><span id="summaryStatusLabel">Status</span><strong id="summaryStatus">—</strong></div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="progress-wrap">
+      <div class="progress">
+        <div class="step active" data-step="welcome"><strong id="step1Title">1 · Welcome</strong><span id="step1Text">Access verification</span></div>
+        <div class="step" data-step="profile"><strong id="step2Title">2 · Profile</strong><span id="step2Text">Participant details</span></div>
+        <div class="step" data-step="consent"><strong id="step3Title">3 · Consent</strong><span id="step3Text">Privacy and transparency</span></div>
+        <div class="step" data-step="module"><strong id="step4Title">4 · Workflow</strong><span id="step4Text">Product module</span></div>
+      </div>
+    </section>
+
+    <section class="content">
+      <article class="flow-card" id="loadingView">
+        <h2 id="loadingTitle">Verifying your CLARITY link…</h2>
+        <p id="loadingText">No credits are consumed while the secure access is checked.</p>
+        <div class="notice info"><span>i</span><span id="loadingNotice">Please keep this window open.</span></div>
+      </article>
+
+      <article class="flow-card hidden" id="welcomeView">
+        <h2 id="welcomeTitle">Your secure workflow is ready</h2>
+        <p id="welcomeText">Review the information above. Opening this page has not consumed any credits.</p>
+        <div class="module-panel"><div class="module-icon" id="moduleIcon">CL</div><div><strong id="moduleTitle">CLARITY module</strong><span id="moduleDescription">The correct module was resolved from your UID.</span><div class="status-line"><span class="pill ok" id="moduleReadiness">Router ready</span><span class="pill" id="moduleDevice">Responsive shell</span></div></div></div>
+        <div class="actions"><button class="btn primary" id="continueProfileBtn" type="button">Continue</button></div>
+      </article>
+
+      <article class="flow-card hidden" id="profileView">
+        <h2 id="profileTitle">Participant profile</h2>
+        <p id="profileText">Please confirm the details used for this workflow.</p>
+        <form id="profileForm" class="form-grid">
+          <div class="field"><label id="firstNameLabel" for="firstName">First name *</label><input class="input" id="firstName" autocomplete="given-name" maxlength="200" required /></div>
+          <div class="field"><label id="lastNameLabel" for="lastName">Last name *</label><input class="input" id="lastName" autocomplete="family-name" maxlength="200" required /></div>
+          <div class="field wide"><label id="emailLabel" for="email">Email *</label><input class="input" id="email" type="email" autocomplete="email" maxlength="500" required /></div>
+          <div class="field wide"><label id="referenceLabel" for="externalReference">Reference (optional)</label><input class="input" id="externalReference" maxlength="500" /></div>
+        </form>
+        <div class="actions"><button class="btn" id="backWelcomeBtn" type="button">Back</button><button class="btn primary" id="saveProfileBtn" type="button">Save and continue</button></div>
+      </article>
+
+      <article class="flow-card hidden" id="consentView">
+        <h2 id="consentTitle">Privacy and transparency</h2>
+        <p id="consentText">Please review and confirm the required declarations before the product module starts.</p>
+        <div class="check"><input id="privacyConsent" type="checkbox" /><span id="privacyConsentText">I have read the privacy information and agree that my data may be processed for this CLARITY workflow.</span></div>
+        <div class="check" style="margin-top:10px"><input id="aiConsent" type="checkbox" /><span id="aiConsentText">I understand that AI supports the structured process and that final decisions remain human-led.</span></div>
+        <div class="check hidden" style="margin-top:10px" id="mediaConsentRow"><input id="mediaConsent" type="checkbox" /><span id="mediaConsentText">I agree to the required microphone or camera processing for this workflow.</span></div>
+        <div class="actions"><button class="btn" id="backProfileBtn" type="button">Back</button><button class="btn primary" id="saveConsentBtn" type="button">Confirm and continue</button></div>
+      </article>
+
+      <article class="flow-card hidden" id="moduleView">
+        <h2 id="moduleViewTitle">Product module</h2>
+        <p id="moduleViewText">The Universal App router has loaded the correct product configuration.</p>
+        <div class="notice info"><span>i</span><span id="moduleNotice">This V2-10A package validates the standalone link, common profile, consent, branding and responsive router. The product execution module is activated in the next vertical phase.</span></div>
+        <div class="module-panel"><div class="module-icon" id="finalModuleIcon">CL</div><div><strong id="finalModuleTitle">CLARITY module</strong><span id="finalModuleDescription">Configuration resolved.</span><div class="status-line"><span class="pill" id="finalWorkflow">—</span><span class="pill" id="finalStatus">—</span></div></div></div>
+        <div class="actions"><button class="btn secondary" id="statusBtn" type="button">Refresh status</button><button class="btn primary" id="startModuleBtn" type="button" disabled>Start workflow</button></div>
+      </article>
+
+      <article class="flow-card hidden error-view" id="errorView">
+        <h2 id="errorTitle">This CLARITY link is unavailable</h2>
+        <p id="errorText">The access could not be verified.</p>
+        <div class="notice error"><span>!</span><span id="errorHelp">Please contact the organisation that sent you the link.</span></div>
+        <div class="code" id="errorCode"></div>
+      </article>
+    </section>
+
+    <footer class="footer"><span id="footerLeft">CLARITY Decision Intelligence Platform</span><span id="footerRight">Human decision · AI intelligence</span></footer>
+  </main>
+</div>
+<script type="module" src="./clarity-app.js"></script>
+</body>
+</html>
