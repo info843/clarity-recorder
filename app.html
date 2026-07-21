@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="color-scheme" content="light" />
   <meta name="referrer" content="no-referrer" />
-  <title>CLARITY Universal App</title>
+  <title>CLARITY Universal App · CV Analysis</title>
   <link rel="stylesheet" href="./clarity-app.css" />
 </head>
 <body>
@@ -97,6 +97,71 @@
         <div class="notice info"><span>i</span><span id="moduleNotice">This V2-10A package validates the standalone link, common profile, consent, branding and responsive router. The product execution module is activated in the next vertical phase.</span></div>
         <div class="module-panel"><div class="module-icon" id="finalModuleIcon">CL</div><div><strong id="finalModuleTitle">CLARITY module</strong><span id="finalModuleDescription">Configuration resolved.</span><div class="status-line"><span class="pill" id="finalWorkflow">—</span><span class="pill" id="finalStatus">—</span></div></div></div>
         <div class="actions"><button class="btn secondary" id="statusBtn" type="button">Refresh status</button><button class="btn primary" id="startModuleBtn" type="button" disabled>Start workflow</button></div>
+      </article>
+
+
+
+      <article class="flow-card hidden" id="cvView">
+        <div class="cv-head">
+          <div>
+            <div class="eyebrow"><span class="dot"></span><span id="cvEyebrow">CV Analysis</span></div>
+            <h2 id="cvTitle">Upload your CV</h2>
+            <p id="cvText">Select a supported document. Uploading the file does not consume a credit.</p>
+          </div>
+          <span class="pill ok" id="cvCreditRule">0 credits until analysis starts</span>
+        </div>
+        <label class="drop-zone" id="cvDropZone" for="cvFileInput">
+          <input id="cvFileInput" type="file" accept=".pdf,.doc,.docx,.txt,.rtf,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,application/rtf" hidden />
+          <span class="drop-icon">CV</span>
+          <strong id="cvDropTitle">Choose a CV or drop it here</strong>
+          <span id="cvDropHelp">PDF, DOC, DOCX, TXT or RTF · maximum 8 MB</span>
+        </label>
+        <div class="file-card hidden" id="cvFileCard">
+          <div><strong id="cvFileName">—</strong><span id="cvFileMeta">—</span></div>
+          <button class="ghost" id="cvRemoveFileBtn" type="button">Remove</button>
+        </div>
+        <div class="stage-list" id="cvPreStartStages">
+          <div class="stage-row" data-stage="upload"><span class="stage-dot"></span><div><strong id="cvStageUploadTitle">1 · Secure upload</strong><span id="cvStageUploadText">No credit consumption</span></div><em id="cvStageUploadState">Pending</em></div>
+          <div class="stage-row" data-stage="start"><span class="stage-dot"></span><div><strong id="cvStageStartTitle">2 · Start analysis</strong><span id="cvStageStartText">Consumes the reserved credit exactly once</span></div><em id="cvStageStartState">Pending</em></div>
+        </div>
+        <div class="notice info"><span>i</span><span id="cvPrivacyNote">Your CV is processed only for the configured CLARITY workflow. Final decisions remain human-led.</span></div>
+        <div class="actions">
+          <button class="btn" id="cvBackBtn" type="button">Back</button>
+          <button class="btn secondary" id="cvUploadBtn" type="button" disabled>Upload CV</button>
+          <button class="btn primary" id="cvStartBtn" type="button" disabled>Start analysis</button>
+        </div>
+      </article>
+
+      <article class="flow-card hidden" id="cvProcessingView">
+        <div class="processing-orbit" aria-hidden="true"><span></span><span></span><span></span></div>
+        <h2 id="cvProcessingTitle">CV Analysis is running</h2>
+        <p id="cvProcessingText">The document is being extracted, analysed and prepared for the CLARITY Workspace.</p>
+        <div class="processing-bar"><span id="cvProcessingBar"></span></div>
+        <div class="stage-list">
+          <div class="stage-row" data-process-stage="credit"><span class="stage-dot"></span><div><strong id="cvProcessCreditTitle">Credit confirmed</strong><span id="cvProcessCreditText">The reserved unit is consumed once at analysis_started.</span></div><em id="cvProcessCreditState">Waiting</em></div>
+          <div class="stage-row" data-process-stage="extract"><span class="stage-dot"></span><div><strong id="cvProcessExtractTitle">Document extraction</strong><span id="cvProcessExtractText">Reading the supplied CV evidence.</span></div><em id="cvProcessExtractState">Waiting</em></div>
+          <div class="stage-row" data-process-stage="analysis"><span class="stage-dot"></span><div><strong id="cvProcessAnalysisTitle">Structured analysis</strong><span id="cvProcessAnalysisText">Role fit, strengths, risks and interview questions.</span></div><em id="cvProcessAnalysisState">Waiting</em></div>
+          <div class="stage-row" data-process-stage="report"><span class="stage-dot"></span><div><strong id="cvProcessReportTitle">Unified report</strong><span id="cvProcessReportText">Creating the consistent CLARITY report.</span></div><em id="cvProcessReportState">Waiting</em></div>
+          <div class="stage-row" data-process-stage="workspace"><span class="stage-dot"></span><div><strong id="cvProcessWorkspaceTitle">Workspace index</strong><span id="cvProcessWorkspaceText">Publishing result and assets to the company Workspace.</span></div><em id="cvProcessWorkspaceState">Waiting</em></div>
+        </div>
+        <div class="notice info"><span>i</span><span id="cvProcessingNotice">Processing continues server-side. A temporary timeout does not mean the analysis failed.</span></div>
+      </article>
+
+      <article class="flow-card hidden" id="cvCompleteView">
+        <div class="completion-mark">✓</div>
+        <h2 id="cvCompleteTitle">CV Analysis completed</h2>
+        <p id="cvCompleteText">The organisation can now review the structured result and report in the CLARITY Workspace.</p>
+        <div class="completion-grid">
+          <div><span id="cvCompleteFileLabel">Document</span><strong id="cvCompleteFile">—</strong></div>
+          <div><span id="cvCompleteStatusLabel">Status</span><strong id="cvCompleteStatus">Completed</strong></div>
+          <div><span id="cvCompleteReportLabel">Unified report</span><strong id="cvCompleteReport">Ready in Workspace</strong></div>
+          <div><span id="cvCompleteCreditLabel">Credit</span><strong id="cvCompleteCredit">Consumed once</strong></div>
+        </div>
+        <div class="notice info hidden" id="cvReviewNotice"><span>i</span><span id="cvReviewText">The result is available, but the report quality gate marked it for human review.</span></div>
+        <div class="actions">
+          <a class="btn secondary hidden" id="cvCandidateReportLink" href="#" target="_blank" rel="noopener noreferrer">Open report</a>
+          <button class="btn" id="cvCloseBtn" type="button">Close window</button>
+        </div>
       </article>
 
       <article class="flow-card hidden error-view" id="errorView">
