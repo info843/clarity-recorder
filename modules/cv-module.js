@@ -84,6 +84,18 @@ export function createCvModule(context){
     lastStatus=data;renderStatus(data);return data;
   }
 
+  async function refreshWithRetry(maxAttempts=4){
+    let lastError=null;
+    for(let attempt=0;attempt<maxAttempts;attempt+=1){
+      try{return await refresh()}
+      catch(error){
+        lastError=error;
+        await sleep(Math.min(5000,1000*(attempt+1)));
+      }
+    }
+    throw lastError||new Error(tr('generic'));
+  }
+
   function renderStatus(data){
     const cv=data?.cv||{};
     if(cv.sourcePresent){
@@ -134,25 +146,69 @@ export function createCvModule(context){
   async function startAnalysis(){
     setBusy('cvStartBtn',true);stage('[data-stage="start"]','active',tr('starting'));
     try{
-      const started=await api('v2CvStart',{body:{token:state.token,uid:state.uid}});lastStatus=started;renderStatus(started);stage('[data-stage="start"]','done',tr('consumed'));show('cvProcessingView');
+      let started=null;
+      try{
+        started=await api('v2CvStart',{body:{token:state.token,uid:state.uid}});
+      }catch(startError){
+        // Wix can finish the server-side start write but lose the HTTP response.
+        // Recover by checking the persisted state before treating the start as failed.
+        const recovered=await refreshWithRetry(5).catch(()=>null);
+        const phase=recovered?.cv?.phase||'';
+        const accepted=recovered?.cv?.billableEventOccurred===true
+          || ['processing','report_processing','completed'].includes(phase);
+        if(!accepted)throw startError;
+        started=recovered;
+      }
+
+      lastStatus=started;renderStatus(started);
+      stage('[data-stage="start"]','done',tr('consumed'));
+      show('cvProcessingView');
+
+      // Processing can exceed the browser/Wix HTTP response window. A rejected
+      // fetch is therefore non-fatal; status polling is the source of truth.
       api('v2CvProcess',{body:{token:state.token,uid:state.uid}}).catch(()=>null);
       await pollUntilTerminal();
-    }catch(error){stage('[data-stage="start"]','failed',tr('failed'));alert(error?.message||tr('generic'));await refresh().catch(()=>null)}
-    finally{setBusy('cvStartBtn',false)}
+    }catch(error){
+      const recovered=await refreshWithRetry(3).catch(()=>null);
+      const phase=recovered?.cv?.phase||'';
+      if(['processing','report_processing','completed'].includes(phase)){
+        show('cvProcessingView');
+        await pollUntilTerminal();
+      }else{
+        stage('[data-stage="start"]','failed',tr('failed'));
+        alert(error?.message||tr('generic'));
+      }
+    }finally{setBusy('cvStartBtn',false)}
   }
 
   async function pollUntilTerminal(){
     if(polling)return;polling=true;
+    let consecutiveFetchErrors=0;
     try{
-      for(let attempt=0;attempt<120;attempt+=1){
-        const data=await refresh();const phase=data?.cv?.phase;
-        if(phase==='completed'){renderComplete(data);return}
-        if(phase==='failed_technical'){renderFailure(data);return}
-        await sleep(2500);
+      for(let attempt=0;attempt<160;attempt+=1){
+        try{
+          const data=await refresh();
+          consecutiveFetchErrors=0;
+          const phase=data?.cv?.phase;
+          if(phase==='completed'){renderComplete(data);return}
+          if(phase==='failed_technical'){renderFailure(data);return}
+        }catch(error){
+          consecutiveFetchErrors+=1;
+          // A platform timeout often appears in the browser as CORS / Failed to
+          // fetch even though the server-side process continues. Keep polling.
+          if(consecutiveFetchErrors>=12)throw error;
+        }
+        await sleep(consecutiveFetchErrors?4000:2500);
       }
-      throw new Error(getLocale()==='de'?'Die Verarbeitung dauert länger. Öffnen Sie den Link später erneut, um den Status zu prüfen.':'Processing is taking longer. Reopen the link later to check the status.');
-    }catch(error){alert(error?.message||tr('generic'))}
-    finally{polling=false}
+      throw new Error(getLocale()==='de'
+        ?'Die Verarbeitung dauert länger. Öffnen Sie den Link später erneut, um den Status zu prüfen.'
+        :'Processing is taking longer. Reopen the link later to check the status.');
+    }catch(error){
+      const recovered=await refreshWithRetry(3).catch(()=>null);
+      if(recovered?.cv?.phase==='completed'){renderComplete(recovered);return}
+      if(recovered?.cv?.phase==='failed_technical'){renderFailure(recovered);return}
+      alert(error?.message||tr('generic'));
+    }finally{polling=false}
   }
 
   function renderComplete(data){
@@ -184,7 +240,7 @@ export function createCvModule(context){
   async function activate(){
     applyLocale();
     try{
-      const data=await refresh();const phase=data?.cv?.phase;
+      const data=await refreshWithRetry(5);const phase=data?.cv?.phase;
       if(phase==='completed'){renderComplete(data);return}
       if(['processing','report_processing'].includes(phase)){show('cvProcessingView');api('v2CvProcess',{body:{token:state.token,uid:state.uid}}).catch(()=>null);await pollUntilTerminal();return}
       if(phase==='failed_technical'){renderFailure(data);return}
