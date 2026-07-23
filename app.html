@@ -7,14 +7,22 @@
   <meta name="referrer" content="no-referrer" />
   <title>CLARITY Universal App · CV Analysis</title>
   <link rel="stylesheet" href="./clarity-app.css" />
+  <link id="appFavicon" rel="icon" href="data:," />
 </head>
-<body>
+<body class="branding-pending">
+<div class="bootstrap-gate" id="bootstrapGate" role="status" aria-live="polite" aria-busy="true">
+  <div class="bootstrap-card">
+    <div class="bootstrap-spinner" aria-hidden="true"></div>
+    <strong id="bootstrapTitle">Sicherer Zugang wird vorbereitet …</strong>
+    <span id="bootstrapText">Zugang und Darstellung werden sicher geprüft.</span>
+  </div>
+</div>
 <div class="app">
-  <main class="shell" aria-live="polite">
+  <main class="shell" id="appShell" aria-live="polite" aria-hidden="true">
     <header class="topbar">
       <div class="brand">
-        <img id="brandLogo" src="./assets/clarity-logo.png" alt="CLARITY logo" />
-        <div class="brand-copy"><strong id="brandName">CLARITY</strong><span id="productLine">Decision Intelligence Platform</span></div>
+        <img id="brandLogo" alt="" hidden />
+        <div class="brand-copy"><strong id="brandName"></strong><span id="productLine"></span></div>
       </div>
       <div class="top-actions">
         <button class="ghost" id="supportBtn" type="button">Support</button>
