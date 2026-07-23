@@ -2,6 +2,7 @@ import { resolveModuleView } from './modules/router-module.js';
 import { createCvModule } from './modules/cv-module.js';
 import { createVideoPresentationModule } from './modules/video-presentation-module.js';
 import { createAiLiteracyModule } from './modules/ai-literacy-module.js?v=2.15.0';
+import { createAssessmentModule } from './modules/assessment-module.js?v=2.16.0';
 
 const API_BASE = 'https://www.clarity-nvl.com/_functions';
 const state = {
@@ -11,6 +12,7 @@ const state = {
 let cvModule = null;
 let vpModule = null;
 let aiLiteracyModule = null;
+let assessmentModule = null;
 
 const $ = (id) => document.getElementById(id);
 const TEXT = {
@@ -43,14 +45,14 @@ const TEXT = {
 };
 
 function t(key,...args){const value=TEXT[state.locale]?.[key]??TEXT.en[key]??key;return typeof value==='function'?value(...args):value}
-function show(id){['loadingView','welcomeView','profileView','consentView','moduleView','cvView','cvProcessingView','cvCompleteView','vpView','vpProcessingView','vpCompleteView','aiLiteracyView','errorView'].forEach(x=>$(x)?.classList.toggle('hidden',x!==id))}
+function show(id){['loadingView','welcomeView','profileView','consentView','moduleView','assessmentView','cvView','cvProcessingView','cvCompleteView','vpView','vpProcessingView','vpCompleteView','aiLiteracyView','errorView'].forEach(x=>$(x)?.classList.toggle('hidden',x!==id))}
 function setStep(step){state.step=step;const order=['welcome','profile','consent','module'];const pos=order.indexOf(step);document.querySelectorAll('.step').forEach((el,i)=>{el.classList.toggle('active',i===pos);el.classList.toggle('done',i<pos)})}
 function langName(code){return({de:'Deutsch',en:'English',fr:'Français',es:'Español',it:'Italiano',nl:'Nederlands',pt:'Português',pl:'Polski',tr:'Türkçe',ar:'العربية'})[code]||String(code||'—').toUpperCase()}
 function modeName(mode){const map={audio:'Audio',video:'Video',mix:'Mix',audio_chat:'Audio + Chat',video_chat:'Video + Chat',chat:'Chat',upload:'Upload',standard:'Standard'};return map[mode]||String(mode||'—').replaceAll('_',' ')}
 function applyLocale(){
   document.documentElement.lang=state.locale;$('langBtn').textContent=state.locale==='de'?'EN':'DE';
   const map={eyebrow:'eyebrow',heroPrefix:'heroPrefix',loadingTitle:'loadingTitle',loadingText:'loadingText',loadingNotice:'loadingNotice',metaWorkflowLabel:'workflow',metaModeLabel:'mode',metaLanguageLabel:'language',metaPurposeLabel:'purpose',metaQuestionsLabel:'scope',metaUidLabel:'accessId',summaryTitle:'accessSummary',summaryCompanyLabel:'company',summaryReportLabel:'reportLang',summaryUnitsLabel:'units',summaryStatusLabel:'status',welcomeTitle:'welcome',welcomeText:'welcomeText',continueProfileBtn:'continue',profileTitle:'profile',profileText:'profileText',firstNameLabel:'firstName',lastNameLabel:'lastName',emailLabel:'email',referenceLabel:'reference',backWelcomeBtn:'back',saveProfileBtn:'save',consentTitle:'consent',consentText:'consentText',privacyConsentText:'privacy',aiConsentText:'ai',mediaConsentText:'media',backProfileBtn:'back',saveConsentBtn:'confirm',moduleViewTitle:'productModule',moduleViewText:'moduleText',moduleNotice:'moduleNotice',statusBtn:'refresh',startModuleBtn:'start',errorTitle:'unavailable',errorText:'unavailableText',errorHelp:'unavailableHelp',step1Title:'step1',step1Text:'step1Text',step2Title:'step2',step2Text:'step2Text',step3Title:'step3',step3Text:'step3Text',step4Title:'step4',step4Text:'step4Text'};
-  Object.entries(map).forEach(([id,k])=>{if($(id))$(id).textContent=t(k)});renderPayload();cvModule?.applyLocale();vpModule?.applyLocale();aiLiteracyModule?.applyLocale();
+  Object.entries(map).forEach(([id,k])=>{if($(id))$(id).textContent=t(k)});renderPayload();cvModule?.applyLocale();vpModule?.applyLocale();aiLiteracyModule?.applyLocale();assessmentModule?.applyLocale();
 }
 function normalizeWixImageUrl(value){const raw=String(value||'').trim();if(!raw)return'';if(/^https?:\/\//i.test(raw))return raw;if(/^wix:image:\/\//i.test(raw)){const match=raw.match(/^wix:image:\/\/v1\/([^/]+)\//i)||raw.match(/^wix:image:\/\/([^/]+)\//i);return match?.[1]?`https://static.wixstatic.com/media/${encodeURIComponent(match[1])}`:''}return''}
 function assetCandidates(value){if(!value)return[];if(typeof value==='string')return[value];if(typeof value!=='object'||Array.isArray(value))return[];return[value.publicUrl,value.logoPublicUrl,value.previewUrl,value.logoPreviewUrl,value.fileUrl,value.logoFileUrl,value.downloadUrl,value.src,value.url,value.assetUrl,value.mediaUrl]}
@@ -73,8 +75,8 @@ async function bootstrap(){if(!state.uid)return fail({code:'UNIVERSAL_UID_REQUIR
 async function saveProfile(){const profile={firstName:$('firstName').value.trim(),lastName:$('lastName').value.trim(),email:$('email').value.trim(),externalReference:$('externalReference').value.trim()};if(!profile.firstName||!profile.lastName||!/^\S+@\S+\.\S+$/.test(profile.email))return alert(t('profileError'));$('saveProfileBtn').disabled=true;try{const data=await api('v2AppProfile',{body:{token:state.token,uid:state.uid,profile}});state.payload.runtime={...state.payload.runtime,...data.runtime};setStep('consent');show('consentView')}catch(e){alert(e.message||t('genericError'))}finally{$('saveProfileBtn').disabled=false}}
 async function saveConsent(){const mediaOk=!state.module?.media||$('mediaConsent').checked;if(!$('privacyConsent').checked||!$('aiConsent').checked||!mediaOk)return alert(t('consentError'));$('saveConsentBtn').disabled=true;try{const data=await api('v2AppConsent',{body:{token:state.token,uid:state.uid,accepted:true,privacyAccepted:true,aiInteractionAccepted:true,mediaAccepted:state.module?.media===true,version:'universal-consent-v1'}});state.payload.runtime={...state.payload.runtime,...data.runtime};renderPayload();setStep('module');show('moduleView')}catch(e){alert(e.message||t('genericError'))}finally{$('saveConsentBtn').disabled=false}}
 async function refreshStatus(){try{const data=await api('v2AppStatus',{body:{token:state.token,uid:state.uid}});state.payload={...state.payload,...data};state.module=resolveModuleView(state.payload,state.locale);renderPayload()}catch(e){alert(e.message||t('genericError'))}}
-async function startModule(){if(!state.module?.startEnabled)return alert(t('modulePendingAlert'));if(state.payload?.runtime?.productKey==='cv_analysis')return cvModule.activate();if(state.payload?.runtime?.productKey==='video_presentation')return vpModule.activate();if(state.payload?.runtime?.productKey==='ai_literacy')return aiLiteracyModule.activate();alert(t('modulePendingAlert'))}
+async function startModule(){if(!state.module?.startEnabled)return alert(t('modulePendingAlert'));if(state.payload?.runtime?.productKey==='cv_analysis')return cvModule.activate();if(state.payload?.runtime?.productKey==='video_presentation')return vpModule.activate();if(state.payload?.runtime?.productKey==='ai_literacy')return aiLiteracyModule.activate();if(['assessment','snapshot'].includes(state.payload?.runtime?.productKey))return assessmentModule.activate();alert(t('modulePendingAlert'))}
 function wire(){
   $('langBtn').addEventListener('click',()=>{state.locale=state.locale==='de'?'en':'de';applyLocale()});$('supportBtn').addEventListener('click',()=>{location.href='mailto:info@clarity-nvl.com'});$('continueProfileBtn').addEventListener('click',()=>{setStep('profile');show('profileView')});$('backWelcomeBtn').addEventListener('click',()=>{setStep('welcome');show('welcomeView')});$('saveProfileBtn').addEventListener('click',saveProfile);$('backProfileBtn').addEventListener('click',()=>{setStep('profile');show('profileView')});$('saveConsentBtn').addEventListener('click',saveConsent);$('statusBtn').addEventListener('click',refreshStatus);$('startModuleBtn').addEventListener('click',startModule);
 }
-cvModule=createCvModule({$,state,api,show,setStep,getLocale:()=>state.locale,onFatal:fail});vpModule=createVideoPresentationModule({$,state,api,show,setStep,getLocale:()=>state.locale,onFatal:fail});aiLiteracyModule=createAiLiteracyModule({$,state,api,show,setStep,getLocale:()=>state.locale,onFatal:fail});wire();applyLocale();bootstrap();
+cvModule=createCvModule({$,state,api,show,setStep,getLocale:()=>state.locale,onFatal:fail});vpModule=createVideoPresentationModule({$,state,api,show,setStep,getLocale:()=>state.locale,onFatal:fail});aiLiteracyModule=createAiLiteracyModule({$,state,api,show,setStep,getLocale:()=>state.locale,onFatal:fail});assessmentModule=createAssessmentModule({$,state,api,show,setStep,getLocale:()=>state.locale,onFatal:fail});wire();applyLocale();bootstrap();
