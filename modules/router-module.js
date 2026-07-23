@@ -26,4 +26,3 @@ export function resolveModuleView(runtimePayload, locale = 'en') {
     route: serverModule.route || runtime.appRoute || ''
   };
 }
-
