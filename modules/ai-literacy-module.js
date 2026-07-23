@@ -2,7 +2,7 @@
 // CLARITY Universal App — AI Literacy vertical v2.12.0
 
 export function createAiLiteracyModule({ $, state, api, show, setStep, getLocale, onFatal }) {
-  const VERSION = '2.12.1';
+  const VERSION = '2.13.0';
   let active = false;
   let frameReady = false;
   let lastState = null;
@@ -293,13 +293,25 @@ export function createAiLiteracyModule({ $, state, api, show, setStep, getLocale
       try {
         setStatus(t('profile'), 'warn');
         postToFrame({ type: 'IB_USER_LOADING', payload: { message: t('profile') } });
-        const result = await api('v2AiLiteracyProfile', {
+        const result = await apiWithTransportRetry('v2AiLiteracyProfile', {
           body: baseBody({ profile: payload.profile || {}, notices: payload.notices || {} })
-        });
+        }, { attempts: 3, delayMs: 1800 });
         postToFrame({ type: 'IB_USER_PROFILE_SAVED', payload: result });
         sendInit(result.state || await loadStatus({ includeArtifacts: false }));
         setStatus(t('ready'), 'ok');
       } catch (error) {
+        if (isAmbiguousTransportError(error)) {
+          try {
+            const recoveredState = await loadStatus({ includeArtifacts: false, forceProfileSync: true });
+            const access = recoveredState?.bootstrap?.access || {};
+            if (access?.uid || access?.participantId) {
+              postToFrame({ type: 'IB_USER_PROFILE_SAVED', payload: { ok: true, state: recoveredState, recoveredFromTimeout: true } });
+              sendInit(recoveredState);
+              setStatus(t('ready'), 'ok');
+              return;
+            }
+          } catch (_) {}
+        }
         const messageText = normalizeError(error);
         setStatus(messageText, 'err');
         postToFrame({ type: 'IB_USER_ERROR', error: messageText });
