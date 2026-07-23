@@ -58,8 +58,9 @@ export const PRODUCT_MANIFEST = Object.freeze({
       de: 'Training, Wissenstest, Report und Zertifikat in einem dokumentierten Prozess.',
       en: 'Training, knowledge test, report and certificate in one documented process.'
     },
-    steps: ['profile', 'consent', 'module'],
-    media: false
+    steps: ['profile', 'consent', 'training', 'knowledge_test', 'result', 'evidence'],
+    media: false,
+    executable: true
   })
 });
 
