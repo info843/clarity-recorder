@@ -1,4 +1,4 @@
-const VERSION = 'video-presentation-module-v2.11.0';
+const VERSION = 'video-presentation-module-v2.11.1-submit-timeout-recovery';
 const MUX_UPLOAD_URL = `${location.origin}/api/mux-upload`;
 const MUX_ASSET_URL = `${location.origin}/api/mux-asset`;
 const SUPPORTED = ['en','de','es','fr','it','nl','pt','pl','tr','ar'];
@@ -111,18 +111,112 @@ export function createVideoPresentationModule(context){
   async function fetchMuxAsset(uploadId){const response=await fetch(`${MUX_ASSET_URL}?uploadId=${encodeURIComponent(uploadId)}`,{cache:'no-store'});const data=await response.json().catch(()=>({ok:false,error:'invalid_json'}));if(!response.ok||!data?.ok)throw new Error(data?.message||data?.error||`mux_asset_failed_${response.status}`);return data}
   async function pollMuxAsset(uploadId,maxMs=180000){const started=Date.now();let last=null;while(Date.now()-started<maxMs){await sleep(3000);last=await fetchMuxAsset(uploadId);if(last.assetStatus==='ready'&&last.playbackId)return last;if(last.assetStatus==='errored')return last;setProcessing(Math.min(78,52+(Date.now()-started)/maxMs*24),tr('processing'))}return last}
 
-  async function submit(){
-    if(submitting||!blob)return;submitting=true;updateSubmitState();stopTracks();show('vpProcessingView');stage('upload','active',language()==='de'?'Wird hochgeladen':'Uploading');
-    try{
-      setProcessing(12,tr('uploading'));const created=await createMuxUpload();setProcessing(28,tr('uploading'));await putToMux(created.uploadUrl,blob);stage('upload','done',language()==='de'?'Hochgeladen':'Uploaded');
-      setProcessing(52,tr('processing'));let asset=await fetchMuxAsset(created.uploadId);if(!(asset?.assetStatus==='ready'&&asset?.playbackId))asset=await pollMuxAsset(created.uploadId);if(!(asset?.assetId&&asset?.playbackId))throw new Error(asset?.error||'Mux asset was not ready.');
-      stage('media','done',language()==='de'?'Bereit':'Ready');stage('credit','active',language()==='de'?'Wird bestätigt':'Confirming');setProcessing(82,tr('processing'));
-      const result=await api('v2VpSubmit',{body:{token:state.token,uid:state.uid,sessionId,durationSec:Math.round(recordedDurationSec),durationMs:Math.round(recordedDurationSec*1000),sizeBytes:blob.size,recordingMimeType:blob.type||'video/webm',mux:{provider:'mux',uploadId:created.uploadId||'',putStatus:lastPutStatus,assetStatus:asset.assetStatus||'',assetId:asset.assetId||'',playbackId:asset.playbackId||'',playbackUrl:asset.playbackUrl||'',downloadUrl:asset.downloadUrl||'',audioOnlyUrl:asset.audioOnlyUrl||'',staticRenditionsStatus:asset.staticRenditionsStatus||'',error:asset.error||''}}});
-      lastStatus=result;stage('credit','done',language()==='de'?'Einmal verbraucht':'Consumed once');setProcessing(94,tr('processing'));await pollUntilTerminal();
-    }catch(error){submitting=false;updateSubmitState();show('vpView');setStatus(error?.message||String(error),'err');await log('vp_submit_error',error?.message||String(error));}
+  function isTransientTransportError(error){
+    const code=String(error?.code||'').toLowerCase();
+    const message=String(error?.message||error||'').toLowerCase();
+    return [
+      'failed to fetch','networkerror','network error','load failed','timed out','timeout',
+      'http 502','http_502','http 503','http_503','http 504','http_504','gateway timeout'
+    ].some(marker=>code.includes(marker)||message.includes(marker));
   }
 
-  async function pollUntilTerminal(){if(polling)return;polling=true;try{for(let attempt=0;attempt<80;attempt+=1){const data=await refresh(attempt%5===0);const phase=data?.vp?.phase;if(phase==='completed'){renderComplete(data);return}if(phase==='failed_technical'){renderFailure(data);return}setProcessing(Math.min(99,94+attempt/80*5),tr('processing'));await sleep(2500)}throw new Error(language()==='de'?'Die Verarbeitung dauert länger. Öffnen Sie den Link später erneut.':'Processing is taking longer. Reopen the link later.')}finally{polling=false}}
+  async function submit(){
+    if(submitting||!blob)return;
+    submitting=true;updateSubmitState();stopTracks();show('vpProcessingView');stage('upload','active',language()==='de'?'Wird hochgeladen':'Uploading');
+    let submitDispatched=false;
+    try{
+      setProcessing(12,tr('uploading'));
+      const created=await createMuxUpload();
+      setProcessing(28,tr('uploading'));
+      await putToMux(created.uploadUrl,blob);
+      stage('upload','done',language()==='de'?'Hochgeladen':'Uploaded');
+
+      setProcessing(52,tr('processing'));
+      let asset=await fetchMuxAsset(created.uploadId);
+      if(!(asset?.assetStatus==='ready'&&asset?.playbackId))asset=await pollMuxAsset(created.uploadId);
+      if(!(asset?.assetId&&asset?.playbackId))throw new Error(asset?.error||'Mux asset was not ready.');
+
+      stage('media','done',language()==='de'?'Bereit':'Ready');
+      stage('credit','active',language()==='de'?'Wird bestätigt':'Confirming');
+      setProcessing(82,tr('processing'));
+
+      const submitBody={
+        token:state.token,
+        uid:state.uid,
+        sessionId,
+        durationSec:Math.round(recordedDurationSec),
+        durationMs:Math.round(recordedDurationSec*1000),
+        sizeBytes:blob.size,
+        recordingMimeType:blob.type||'video/webm',
+        mux:{
+          provider:'mux',uploadId:created.uploadId||'',putStatus:lastPutStatus,
+          assetStatus:asset.assetStatus||'',assetId:asset.assetId||'',
+          playbackId:asset.playbackId||'',playbackUrl:asset.playbackUrl||'',
+          downloadUrl:asset.downloadUrl||'',audioOnlyUrl:asset.audioOnlyUrl||'',
+          staticRenditionsStatus:asset.staticRenditionsStatus||'',error:asset.error||''
+        }
+      };
+
+      submitDispatched=true;
+      try{
+        const result=await api('v2VpSubmit',{body:submitBody});
+        lastStatus=result;
+        stage('credit','done',language()==='de'?'Einmal verbraucht':'Consumed once');
+      }catch(error){
+        if(!isTransientTransportError(error))throw error;
+        // The request may have been committed even though Wix closed the HTTP
+        // connection. Never return to the recorder after the final payload was
+        // dispatched; resolve the authoritative state through v2VpStatus.
+        await log('vp_submit_response_uncertain',error?.message||String(error),{
+          sessionId,muxUploadId:created.uploadId||'',muxAssetId:asset.assetId||''
+        });
+      }
+
+      setProcessing(94,tr('processing'));
+      await pollUntilTerminal({tolerateTransient:true});
+    }catch(error){
+      if(submitDispatched&&isTransientTransportError(error)){
+        // A second transient failure while checking status is still not proof
+        // that submission failed. Keep the candidate in the processing view.
+        setProcessing(96,tr('processing'));
+        await log('vp_submit_status_uncertain',error?.message||String(error),{sessionId});
+        try{await pollUntilTerminal({tolerateTransient:true,maxAttempts:96})}catch(_){}
+        return;
+      }
+      submitting=false;
+      updateSubmitState();
+      show('vpView');
+      setStatus(error?.message||String(error),'err');
+      await log('vp_submit_error',error?.message||String(error));
+    }
+  }
+
+  async function pollUntilTerminal(options={}){
+    if(polling)return {terminal:false,alreadyPolling:true};
+    const tolerateTransient=options.tolerateTransient===true;
+    const maxAttempts=Math.max(1,Number(options.maxAttempts)||80);
+    polling=true;
+    try{
+      for(let attempt=0;attempt<maxAttempts;attempt+=1){
+        try{
+          const data=await refresh(attempt%8===0);
+          const phase=data?.vp?.phase;
+          if(phase==='completed'){renderComplete(data);return {terminal:true,phase,data}}
+          if(phase==='failed_technical'){renderFailure(data);return {terminal:true,phase,data}}
+        }catch(error){
+          if(!tolerateTransient||!isTransientTransportError(error))throw error;
+          await log('vp_status_poll_transient',error?.message||String(error),{sessionId,attempt});
+        }
+        setProcessing(Math.min(99,94+attempt/maxAttempts*5),tr('processing'));
+        await sleep(2500);
+      }
+      // The media upload and final submit payload were already dispatched.
+      // Remaining in the processing screen is safer than showing a false
+      // failure or allowing a second recording/submission.
+      setProcessing(99,tr('processing'));
+      return {terminal:false,timeout:true};
+    }finally{polling=false}
+  }
   function renderComplete(data){lastStatus=data;const workspaceReady=data?.pipeline?.ready===true;stage('workspace',workspaceReady?'done':'active',workspaceReady?(language()==='de'?'Indiziert':'Indexed'):(language()==='de'?'Wird indiziert':'Indexing'));setText('vpCompleteStatus',language()==='de'?'Abgeschlossen':'Completed');setText('vpCompleteMedia',workspaceReady?(language()==='de'?'Im Workspace bereit':'Ready in Workspace'):(data?.vp?.mediaReady?(language()==='de'?'Video bereit · Workspace wird aktualisiert':'Video ready · Workspace updating'):(language()==='de'?'Wird verarbeitet':'Processing')));setText('vpCompleteCredit',language()==='de'?'Einmal verbraucht':'Consumed once');show('vpCompleteView')}
   function renderFailure(data){lastStatus=data;show('vpProcessingView');stage('workspace','failed',language()==='de'?'Technischer Fehler':'Technical error');$('vpRetryBtn')?.classList.remove('hidden');setText('vpProcessingText',data?.vp?.errorMessage||'Video processing failed.')}
   async function retry(){setBusy('vpRetryBtn',true);try{await api('v2VpRetry',{body:{token:state.token,uid:state.uid,sessionId}});$('vpRetryBtn')?.classList.add('hidden');await pollUntilTerminal()}catch(error){alert(error?.message||String(error))}finally{setBusy('vpRetryBtn',false)}}
