@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light" />
   <meta name="referrer" content="no-referrer" />
   <title>CLARITY Universal App · Decision Intelligence Platform</title>
-  <link rel="stylesheet" href="./clarity-app.css" />
+  <link rel="stylesheet" href="./clarity-app.css?v=2.16.0" />
   <link id="appFavicon" rel="icon" href="data:," />
 </head>
 <body class="branding-pending">
@@ -108,6 +108,60 @@
       </article>
 
 
+
+      <article class="flow-card hidden assessment-view" id="assessmentView">
+        <div class="assessment-head">
+          <div>
+            <div class="eyebrow"><span class="dot"></span><span>Assessment V2 · Chat</span></div>
+            <h2 id="assessmentTitle">CLARITY Assessment</h2>
+            <p id="assessmentText">Structured assessment workflow.</p>
+          </div>
+          <span class="pill ok">E1 · Chat ready</span>
+        </div>
+        <div class="notice info"><span>i</span><span id="assessmentReleaseText">Chat mode is enabled in this release.</span></div>
+        <div class="assessment-meta-grid">
+          <div><span id="assessmentAreaLabel">Area</span><strong id="assessmentArea">—</strong></div>
+          <div><span id="assessmentScopeLabel">Scope</span><strong id="assessmentScope">—</strong></div>
+          <div><span id="assessmentCreditLabel">Credit rule</span><strong id="assessmentCredit">—</strong></div>
+        </div>
+        <div class="assessment-progress"><div><strong id="assessmentProgressText">0 / 0</strong></div><span><i id="assessmentProgressBar"></i></span></div>
+
+        <section id="assessmentStartPanel">
+          <div class="assessment-start-card">
+            <strong>Secure structured workflow</strong>
+            <p>The credit is consumed exactly once when the assessment session starts.</p>
+          </div>
+          <div class="actions"><button class="btn primary" id="assessmentStartBtn" type="button">Start assessment</button></div>
+        </section>
+
+        <section class="hidden" id="assessmentChatPanel">
+          <div class="assessment-messages" id="assessmentMessages" aria-live="polite"></div>
+          <div class="assessment-composer" id="assessmentComposer">
+            <textarea id="assessmentInput" maxlength="12000" rows="6" placeholder="Your answer …"></textarea>
+            <div class="actions">
+              <button class="btn primary" id="assessmentSendBtn" type="button">Send answer</button>
+              <button class="btn primary hidden" id="assessmentFinishBtn" type="button">Complete assessment</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="hidden assessment-processing" id="assessmentProcessingPanel">
+          <div class="processing-orbit"><span></span><span></span><span></span></div>
+          <strong id="assessmentProcessingText">Your report is being created.</strong>
+        </section>
+
+        <section class="hidden assessment-complete" id="assessmentCompletePanel">
+          <div class="completion-mark">✓</div>
+          <h3 id="assessmentCompleteTitle">Assessment completed</h3>
+          <p id="assessmentCompleteText">The report is available.</p>
+          <div class="assessment-report-card">
+            <span class="pill ok" id="assessmentReportSource">—</span>
+            <button class="btn primary" id="assessmentReportBtn" type="button">Download report</button>
+          </div>
+        </section>
+        <div class="actions"><button class="btn secondary" id="assessmentRetryBtn" type="button">Check status again</button></div>
+        <div class="status" id="assessmentStatus"></div>
+      </article>
 
       <article class="flow-card hidden" id="cvView">
         <div class="cv-head">
