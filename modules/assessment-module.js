@@ -1,3 +1,4 @@
+// CLARITY Assessment Universal App module v2.17.0
 const COPY = Object.freeze({
   de: {
     snapshotTitle: 'CLARITY Snapshot',
@@ -66,6 +67,7 @@ export function createAssessmentModule(ctx) {
   let polling = false;
   let pollTimer = 0;
   let current = null;
+  let closeoutStarted = false;
 
   const L = () => COPY[getLocale() === 'de' ? 'de' : 'en'];
   const product = () => String(state.payload?.runtime?.productKey || '').toLowerCase();
@@ -138,6 +140,7 @@ export function createAssessmentModule(ctx) {
     $('assessmentFinishBtn').classList.toggle('hidden', !running || !allAnswered);
     $('assessmentSendBtn').classList.toggle('hidden', !running || allAnswered);
     if (completed) {
+      closeoutStarted = true;
       const url = current.report?.preferredPdfUrl || current.report?.unifiedPdfUrl || current.report?.legacyPdfUrl || '';
       const source = current.report?.preferredSource === 'unified' ? L().unified : L().legacy;
       $('assessmentReportSource').textContent = source;
@@ -208,26 +211,38 @@ export function createAssessmentModule(ctx) {
     const input = $('assessmentInput');
     const message = input.value.trim();
     if (!message) return status(L().answerRequired, 'warn');
+    let autoFinish = false;
     setBusy(true, $('assessmentSendBtn'));
     try {
       const data = await api(endpoint('Message'), {
         body: { token: state.token, uid: state.uid, sessionId: current?.sessionId || '', message }
       });
       input.value = '';
-      render(data.state || data);
+      const next = data.state || data;
+      render(next);
+      autoFinish = next.done === true ||
+        Number(next.answeredCount || 0) >= Number(next.expectedAnswers || next.questionCount || Number.MAX_SAFE_INTEGER);
     } catch (error) {
       if (isAmbiguous(error)) {
         status(L().transport, 'warn');
-        await readStatus(false).catch(() => {});
+        const recovered = await readStatus(false).catch(() => null);
+        autoFinish = recovered && (
+          recovered.done === true ||
+          Number(recovered.answeredCount || 0) >= Number(recovered.expectedAnswers || recovered.questionCount || Number.MAX_SAFE_INTEGER)
+        );
       } else status(error.message || String(error), 'err');
     } finally {
       setBusy(false, $('assessmentSendBtn'));
       input.focus();
     }
+    if (autoFinish) {
+      window.setTimeout(() => finish(), 80);
+    }
   }
 
   async function finish() {
-    if (busy) return;
+    if (busy || closeoutStarted) return;
+    closeoutStarted = true;
     setBusy(true, $('assessmentFinishBtn'));
     $('assessmentComposer').classList.add('hidden');
     $('assessmentProcessingPanel').classList.remove('hidden');
@@ -243,6 +258,7 @@ export function createAssessmentModule(ctx) {
         status(L().transport, 'warn');
         await pollStatus();
       } else {
+        closeoutStarted = false;
         status(error.message || String(error), 'err');
         $('assessmentComposer').classList.remove('hidden');
       }
@@ -283,6 +299,7 @@ export function createAssessmentModule(ctx) {
 
   async function activate() {
     clearPoll();
+    closeoutStarted = false;
     setStep('module');
     show('assessmentView');
     applyCopy();
