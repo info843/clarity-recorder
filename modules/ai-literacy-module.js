@@ -2,7 +2,7 @@
 // CLARITY Universal App — AI Literacy vertical v2.12.0
 
 export function createAiLiteracyModule({ $, state, api, show, setStep, getLocale, onFatal }) {
-  const VERSION = '2.12.0';
+  const VERSION = '2.12.1';
   let active = false;
   let frameReady = false;
   let lastState = null;
@@ -201,6 +201,8 @@ export function createAiLiteracyModule({ $, state, api, show, setStep, getLocale
       training: data?.training?.ok ? data.training : null,
       branding: data?.branding || state.payload?.branding || state.payload?.runtime?.brandingSnapshot || {},
       universalMode: true,
+      profileManagedExternally: true,
+      noticesManagedExternally: true,
       commercial: bootstrap.commercial || {
         unitType: 'ai_literacy_seat',
         unitCost: 1,
