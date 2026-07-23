@@ -69,3 +69,4 @@ function wire(){
   $('langBtn').addEventListener('click',()=>{state.locale=state.locale==='de'?'en':'de';applyLocale()});$('supportBtn').addEventListener('click',()=>{location.href='mailto:info@clarity-nvl.com'});$('continueProfileBtn').addEventListener('click',()=>{setStep('profile');show('profileView')});$('backWelcomeBtn').addEventListener('click',()=>{setStep('welcome');show('welcomeView')});$('saveProfileBtn').addEventListener('click',saveProfile);$('backProfileBtn').addEventListener('click',()=>{setStep('profile');show('profileView')});$('saveConsentBtn').addEventListener('click',saveConsent);$('statusBtn').addEventListener('click',refreshStatus);$('startModuleBtn').addEventListener('click',startModule);
 }
 cvModule=createCvModule({$,state,api,show,setStep,getLocale:()=>state.locale,onFatal:fail});wire();applyLocale();bootstrap();
+
