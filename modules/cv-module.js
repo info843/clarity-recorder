@@ -1,264 +1,71 @@
-const MAX_BYTES = 8 * 1024 * 1024;
-const ACCEPTED = new Set(['pdf','doc','docx','txt','rtf']);
+import { resolveModuleView } from './modules/router-module.js';
+import { createCvModule } from './modules/cv-module.js';
 
-const COPY = {
+const API_BASE = 'https://www.clarity-nvl.com/_functions';
+const state = {
+  uid: new URLSearchParams(location.search).get('uid') || '',
+  token: '', payload: null, module: null, locale: 'en', step: 'welcome'
+};
+let cvModule = null;
+
+const $ = (id) => document.getElementById(id);
+const TEXT = {
   de: {
-    eyebrow:'CV-Analyse', title:'Lebenslauf hochladen', text:'Wählen Sie ein unterstütztes Dokument. Der Upload verbraucht noch keinen Credit.',
-    creditRule:'0 Credits bis zum Analysestart', dropTitle:'Lebenslauf auswählen oder hier ablegen', dropHelp:'PDF, DOC, DOCX, TXT oder RTF · maximal 8 MB',
-    remove:'Entfernen', upload:'CV hochladen', start:(n)=>`Analyse starten · ${n} Credit${n===1?'':'s'}`, back:'Zurück',
-    stageUploadTitle:'1 · Sicherer Upload', stageUploadText:'Noch kein Creditverbrauch', stageStartTitle:'2 · Analyse starten', stageStartText:'Verbraucht den reservierten Credit genau einmal',
-    pending:'Ausstehend', selected:'Ausgewählt', uploading:'Wird hochgeladen', uploaded:'Bereit', starting:'Wird gestartet', consumed:'Credit bestätigt',
-    privacy:'Ihr CV wird nur für den konfigurierten CLARITY-Workflow verarbeitet. Die endgültige Entscheidung bleibt beim Menschen.',
-    invalidType:'Unterstützt werden PDF, DOC, DOCX, TXT und RTF.', tooLarge:'Die Datei darf maximal 8 MB groß sein.', uploadFailed:'Der CV-Upload konnte nicht abgeschlossen werden.',
-    processingTitle:'CV-Analyse läuft', processingText:'Das Dokument wird extrahiert, strukturiert analysiert und für den CLARITY Workspace vorbereitet.',
-    creditTitle:'Credit bestätigt', creditText:'Die reservierte Einheit wird bei analysis_started genau einmal verbraucht.', extractTitle:'Dokumentextraktion', extractText:'Die bereitgestellten CV-Informationen werden gelesen.',
-    analysisTitle:'Strukturierte Analyse', analysisText:'Rollenfit, Stärken, Risiken und Interviewfragen.', reportTitle:'Einheitlicher Report', reportText:'Der konsistente CLARITY-Report wird erstellt.',
-    workspaceTitle:'Workspace-Index', workspaceText:'Ergebnis und Assets werden im Unternehmens-Workspace veröffentlicht.', waiting:'Wartet', running:'Läuft', ready:'Bereit', failed:'Fehlgeschlagen',
-    processingNotice:'Die Verarbeitung läuft serverseitig weiter. Ein vorübergehender Timeout bedeutet nicht automatisch, dass die Analyse fehlgeschlagen ist.',
-    completeTitle:'CV-Analyse abgeschlossen', completeText:'Das Unternehmen kann das strukturierte Ergebnis und den Report jetzt im CLARITY Workspace prüfen.',
-    document:'Dokument', status:'Status', complete:'Abgeschlossen', unifiedReport:'Einheitlicher Report', readyWorkspace:'Im Workspace bereit', reviewWorkspace:'Im Workspace zur Prüfung', credit:'Credit', consumedOnce:'Einmal verbraucht',
-    review:'Das Ergebnis ist verfügbar, der Report wurde durch das Qualitäts-Gate jedoch zur menschlichen Prüfung markiert.', openReport:'Report öffnen', close:'Fenster schließen', retry:'Technisch erneut versuchen',
-    noFile:'Bitte wählen Sie zuerst eine CV-Datei.', generic:'Der CV-Prozess konnte nicht abgeschlossen werden.', reportAvailable:'Report verfügbar', reportPending:'Report wird vorbereitet'
+    support:'Support', heroPrefix:'Willkommen bei', eyebrow:'Sicherer CLARITY-Zugang',
+    loadingTitle:'Ihr CLARITY-Link wird geprüft…', loadingText:'Während der sicheren Prüfung werden keine Credits verbraucht.', loadingNotice:'Bitte lassen Sie dieses Fenster geöffnet.',
+    workflow:'Workflow', mode:'Modus', language:'Sprache', purpose:'Position / Zweck', scope:'Umfang', accessId:'Zugangs-ID',
+    accessSummary:'Zugangsübersicht', company:'Unternehmen', reportLang:'Reportsprache', units:'Reservierte Einheiten', status:'Status',
+    welcome:'Ihr sicherer Workflow ist bereit', welcomeText:'Prüfen Sie die Angaben. Durch das Öffnen dieser Seite wurden keine Credits verbraucht.', continue:'Weiter',
+    profile:'Teilnehmerprofil', profileText:'Bitte bestätigen Sie die Angaben, die für diesen Workflow verwendet werden.', firstName:'Vorname *', lastName:'Nachname *', email:'E-Mail *', reference:'Referenz (optional)', back:'Zurück', save:'Speichern und weiter',
+    consent:'Datenschutz und Transparenz', consentText:'Bitte prüfen und bestätigen Sie die notwendigen Erklärungen, bevor das Produktmodul startet.', privacy:'Ich habe die Datenschutzhinweise gelesen und stimme der Verarbeitung meiner Daten für diesen CLARITY-Workflow zu.', ai:'Ich verstehe, dass KI den strukturierten Prozess unterstützt und endgültige Entscheidungen beim Menschen bleiben.', media:'Ich stimme der erforderlichen Mikrofon- oder Kameraverarbeitung für diesen Workflow zu.', confirm:'Bestätigen und weiter',
+    productModule:'Produktmodul', moduleText:'Der Universal-App-Router hat die korrekte Produktkonfiguration geladen.', moduleNotice:'CV Analysis ist als erstes ausführbares Standalone-Modul aktiviert. Andere Produktmodule bleiben bis zu ihrer eigenen Vertical-Phase gesperrt.', refresh:'Status aktualisieren', start:'Workflow starten',
+    unavailable:'Dieser CLARITY-Link ist nicht verfügbar', unavailableText:'Der Zugang konnte nicht sicher geprüft werden.', unavailableHelp:'Bitte wenden Sie sich an das Unternehmen, das Ihnen den Link gesendet hat.',
+    step1:'1 · Willkommen', step1Text:'Zugang prüfen', step2:'2 · Profil', step2Text:'Teilnehmerangaben', step3:'3 · Einwilligung', step3Text:'Datenschutz und Transparenz', step4:'4 · Workflow', step4Text:'Produktmodul',
+    noInfo:'Keine Angabe', questions:(n)=>n?`Q${n}`:'Standard', responsive:'Responsive Shell', routerReady:'Modul bereit', modulePending:'Produktmodul folgt', profileError:'Bitte füllen Sie Vorname, Nachname und eine gültige E-Mail-Adresse aus.', consentError:'Bitte bestätigen Sie alle erforderlichen Erklärungen.', genericError:'Der Vorgang konnte nicht abgeschlossen werden.', modulePendingAlert:'Dieses Produktmodul wird in einer folgenden Vertical-Phase aktiviert.'
   },
   en: {
-    eyebrow:'CV Analysis', title:'Upload your CV', text:'Select a supported document. Uploading the file does not consume a credit.',
-    creditRule:'0 credits until analysis starts', dropTitle:'Choose a CV or drop it here', dropHelp:'PDF, DOC, DOCX, TXT or RTF · maximum 8 MB',
-    remove:'Remove', upload:'Upload CV', start:(n)=>`Start analysis · ${n} credit${n===1?'':'s'}`, back:'Back',
-    stageUploadTitle:'1 · Secure upload', stageUploadText:'No credit consumption', stageStartTitle:'2 · Start analysis', stageStartText:'Consumes the reserved credit exactly once',
-    pending:'Pending', selected:'Selected', uploading:'Uploading', uploaded:'Ready', starting:'Starting', consumed:'Credit confirmed',
-    privacy:'Your CV is processed only for the configured CLARITY workflow. Final decisions remain human-led.',
-    invalidType:'Supported formats are PDF, DOC, DOCX, TXT and RTF.', tooLarge:'The file must not exceed 8 MB.', uploadFailed:'The CV upload could not be completed.',
-    processingTitle:'CV Analysis is running', processingText:'The document is being extracted, structurally analysed and prepared for the CLARITY Workspace.',
-    creditTitle:'Credit confirmed', creditText:'The reserved unit is consumed exactly once at analysis_started.', extractTitle:'Document extraction', extractText:'Reading the supplied CV information.',
-    analysisTitle:'Structured analysis', analysisText:'Role fit, strengths, risks and interview questions.', reportTitle:'Unified report', reportText:'Creating the consistent CLARITY report.',
-    workspaceTitle:'Workspace index', workspaceText:'Publishing result and assets to the company Workspace.', waiting:'Waiting', running:'Running', ready:'Ready', failed:'Failed',
-    processingNotice:'Processing continues server-side. A temporary timeout does not automatically mean the analysis failed.',
-    completeTitle:'CV Analysis completed', completeText:'The organisation can now review the structured result and report in the CLARITY Workspace.',
-    document:'Document', status:'Status', complete:'Completed', unifiedReport:'Unified report', readyWorkspace:'Ready in Workspace', reviewWorkspace:'Review in Workspace', credit:'Credit', consumedOnce:'Consumed once',
-    review:'The result is available, but the report quality gate marked it for human review.', openReport:'Open report', close:'Close window', retry:'Retry technical processing',
-    noFile:'Select a CV file first.', generic:'The CV process could not be completed.', reportAvailable:'Report available', reportPending:'Report is being prepared'
+    support:'Support', heroPrefix:'Welcome to', eyebrow:'Secure CLARITY access',
+    loadingTitle:'Verifying your CLARITY link…', loadingText:'No credits are consumed while the secure access is checked.', loadingNotice:'Please keep this window open.',
+    workflow:'Workflow', mode:'Mode', language:'Language', purpose:'Position / purpose', scope:'Scope', accessId:'Access ID',
+    accessSummary:'Access summary', company:'Company', reportLang:'Report language', units:'Reserved units', status:'Status',
+    welcome:'Your secure workflow is ready', welcomeText:'Review the information. Opening this page has not consumed any credits.', continue:'Continue',
+    profile:'Participant profile', profileText:'Please confirm the details used for this workflow.', firstName:'First name *', lastName:'Last name *', email:'Email *', reference:'Reference (optional)', back:'Back', save:'Save and continue',
+    consent:'Privacy and transparency', consentText:'Please review and confirm the required declarations before the product module starts.', privacy:'I have read the privacy information and agree that my data may be processed for this CLARITY workflow.', ai:'I understand that AI supports the structured process and that final decisions remain human-led.', media:'I agree to the required microphone or camera processing for this workflow.', confirm:'Confirm and continue',
+    productModule:'Product module', moduleText:'The Universal App router has loaded the correct product configuration.', moduleNotice:'CV Analysis is enabled as the first executable standalone module. Other product modules remain locked until their own vertical phase.', refresh:'Refresh status', start:'Start workflow',
+    unavailable:'This CLARITY link is unavailable', unavailableText:'The access could not be verified securely.', unavailableHelp:'Please contact the organisation that sent you the link.',
+    step1:'1 · Welcome', step1Text:'Access verification', step2:'2 · Profile', step2Text:'Participant details', step3:'3 · Consent', step3Text:'Privacy and transparency', step4:'4 · Workflow', step4Text:'Product module',
+    noInfo:'Not specified', questions:(n)=>n?`Q${n}`:'Standard', responsive:'Responsive shell', routerReady:'Module ready', modulePending:'Product module pending', profileError:'Please enter first name, last name and a valid email address.', consentError:'Please confirm all required declarations.', genericError:'The operation could not be completed.', modulePendingAlert:'This product module is activated in a following vertical phase.'
   }
 };
 
-function ext(name=''){const m=String(name).toLowerCase().match(/\.([a-z0-9]{1,10})$/);return m?m[1]:''}
-function fmtBytes(n=0){const x=Number(n)||0;if(x<1024)return`${x} B`;if(x<1024*1024)return`${(x/1024).toFixed(1)} KB`;return`${(x/1024/1024).toFixed(2)} MB`}
-function sleep(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
-function fileDataUrl(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result||''));r.onerror=()=>reject(r.error||new Error('FILE_READ_FAILED'));r.readAsDataURL(file)})}
-
-export function createCvModule(context){
-  const { $, state, api, show, setStep, getLocale, onFatal } = context;
-  let selectedFile=null;
-  let lastStatus=null;
-  let wired=false;
-  let polling=false;
-
-  const tr=(key,...args)=>{const lang=getLocale()==='de'?'de':'en';const value=COPY[lang][key]??COPY.en[key]??key;return typeof value==='function'?value(...args):value};
-  const setText=(id,value)=>{const el=$(id);if(el)el.textContent=value};
-  const setBusy=(id,busy)=>{const el=$(id);if(!el)return;el.disabled=!!busy;el.classList.toggle('busy',!!busy)};
-  const stage=(selector,status,label)=>{const el=document.querySelector(selector);if(!el)return;el.classList.remove('active','done','failed');if(status)el.classList.add(status);const em=el.querySelector('em');if(em)em.textContent=label||''};
-  const units=()=>Math.max(1,Number(state.payload?.runtime?.requiredUnits||1));
-
-  function applyLocale(){
-    const values={cvEyebrow:'eyebrow',cvTitle:'title',cvText:'text',cvCreditRule:'creditRule',cvDropTitle:'dropTitle',cvDropHelp:'dropHelp',cvRemoveFileBtn:'remove',cvUploadBtn:'upload',cvBackBtn:'back',cvStageUploadTitle:'stageUploadTitle',cvStageUploadText:'stageUploadText',cvStageStartTitle:'stageStartTitle',cvStageStartText:'stageStartText',cvPrivacyNote:'privacy',cvProcessingTitle:'processingTitle',cvProcessingText:'processingText',cvProcessCreditTitle:'creditTitle',cvProcessCreditText:'creditText',cvProcessExtractTitle:'extractTitle',cvProcessExtractText:'extractText',cvProcessAnalysisTitle:'analysisTitle',cvProcessAnalysisText:'analysisText',cvProcessReportTitle:'reportTitle',cvProcessReportText:'reportText',cvProcessWorkspaceTitle:'workspaceTitle',cvProcessWorkspaceText:'workspaceText',cvProcessingNotice:'processingNotice',cvCompleteTitle:'completeTitle',cvCompleteText:'completeText',cvCompleteFileLabel:'document',cvCompleteStatusLabel:'status',cvCompleteStatus:'complete',cvCompleteReportLabel:'unifiedReport',cvCompleteCreditLabel:'credit',cvCompleteCredit:'consumedOnce',cvReviewText:'review',cvCandidateReportLink:'openReport',cvCloseBtn:'close'};
-    Object.entries(values).forEach(([id,key])=>setText(id,tr(key)));
-    setText('cvStartBtn',tr('start',units()));
-    if(!selectedFile&&!lastStatus?.cv?.sourcePresent)stage('[data-stage="upload"]','',tr('pending'));
-    if(!lastStatus?.cv?.billableEventOccurred)stage('[data-stage="start"]','',tr('pending'));
-  }
-
-  function chooseFile(file){
-    if(!file)return;
-    if(!ACCEPTED.has(ext(file.name))){alert(tr('invalidType'));return}
-    if(file.size>MAX_BYTES){alert(tr('tooLarge'));return}
-    selectedFile=file;
-    $('cvFileCard').classList.remove('hidden');
-    setText('cvFileName',file.name);setText('cvFileMeta',`${fmtBytes(file.size)} · ${file.type||ext(file.name).toUpperCase()}`);
-    $('cvUploadBtn').disabled=false;
-    stage('[data-stage="upload"]','active',tr('selected'));
-  }
-
-  function clearFile(){selectedFile=null;$('cvFileInput').value='';$('cvFileCard').classList.add('hidden');$('cvUploadBtn').disabled=true;if(!lastStatus?.cv?.sourcePresent)stage('[data-stage="upload"]','',tr('pending'))}
-
-  async function refresh(){
-    const data=await api('v2CvStatus',{body:{token:state.token,uid:state.uid}});
-    lastStatus=data;renderStatus(data);return data;
-  }
-
-  async function refreshWithRetry(maxAttempts=4){
-    let lastError=null;
-    for(let attempt=0;attempt<maxAttempts;attempt+=1){
-      try{return await refresh()}
-      catch(error){
-        lastError=error;
-        await sleep(Math.min(5000,1000*(attempt+1)));
-      }
-    }
-    throw lastError||new Error(tr('generic'));
-  }
-
-  function renderStatus(data){
-    const cv=data?.cv||{};
-    if(cv.sourcePresent){
-      setText('cvFileName',cv.fileName||'CV');setText('cvFileMeta',`${fmtBytes(cv.fileSizeBytes)} · ${cv.mimeType||''}`);
-      $('cvFileCard').classList.remove('hidden');$('cvUploadBtn').disabled=true;$('cvStartBtn').disabled=!!cv.billableEventOccurred;
-      stage('[data-stage="upload"]','done',tr('uploaded'));
-    }
-    if(cv.billableEventOccurred)stage('[data-stage="start"]','done',tr('consumed'));
-    else if(cv.sourcePresent)stage('[data-stage="start"]','active',tr('pending'));
-    setText('cvStartBtn',tr('start',units()));
-    renderProcessingStages(data);
-  }
-
-  function renderProcessingStages(data){
-    const cv=data?.cv||{},phase=cv.phase||'';
-    const all=['credit','extract','analysis','report','workspace'];
-    all.forEach(name=>stage(`[data-process-stage="${name}"]`,'',tr('waiting')));
-    let progress=8;
-    if(cv.billableEventOccurred){stage('[data-process-stage="credit"]','done',tr('ready'));progress=20}
-    if(['processing','report_processing','completed'].includes(phase)){
-      stage('[data-process-stage="extract"]',phase==='processing'?'active':'done',phase==='processing'?tr('running'):tr('ready'));progress=phase==='processing'?42:58;
-      stage('[data-process-stage="analysis"]',phase==='processing'?'active':'done',phase==='processing'?tr('running'):tr('ready'));
-    }
-    if(['report_processing','completed'].includes(phase)){
-      stage('[data-process-stage="extract"]','done',tr('ready'));stage('[data-process-stage="analysis"]','done',tr('ready'));
-      stage('[data-process-stage="report"]',phase==='report_processing'?'active':'done',phase==='report_processing'?tr('running'):tr('ready'));progress=phase==='report_processing'?78:92;
-    }
-    if(phase==='completed'){
-      stage('[data-process-stage="report"]','done',tr('ready'));stage('[data-process-stage="workspace"]','done',tr('ready'));progress=100;
-    }else if(data?.pipeline?.stages?.some(s=>s.key==='workspace'&&['indexed','ready'].includes(s.status))){stage('[data-process-stage="workspace"]','done',tr('ready'));progress=Math.max(progress,96)}
-    if(phase==='failed_technical'){
-      const current=cv.errorStage==='unified_report'?'report':'analysis';stage(`[data-process-stage="${current}"]`,'failed',tr('failed'));
-    }
-    $('cvProcessingBar').style.width=`${progress}%`;
-  }
-
-  async function upload(){
-    if(!selectedFile){alert(tr('noFile'));return}
-    setBusy('cvUploadBtn',true);stage('[data-stage="upload"]','active',tr('uploading'));
-    try{
-      const dataUrl=await fileDataUrl(selectedFile);
-      const result=await api('v2CvUpload',{body:{token:state.token,uid:state.uid,fileName:selectedFile.name,mimeType:selectedFile.type||'',base64:dataUrl}});
-      lastStatus=result;renderStatus(result);$('cvStartBtn').disabled=false;stage('[data-stage="upload"]','done',tr('uploaded'));
-    }catch(error){stage('[data-stage="upload"]','failed',tr('failed'));alert(error?.message||tr('uploadFailed'))}
-    finally{setBusy('cvUploadBtn',false);$('cvUploadBtn').disabled=!!lastStatus?.cv?.sourcePresent}
-  }
-
-  async function startAnalysis(){
-    setBusy('cvStartBtn',true);stage('[data-stage="start"]','active',tr('starting'));
-    try{
-      let started=null;
-      try{
-        started=await api('v2CvStart',{body:{token:state.token,uid:state.uid}});
-      }catch(startError){
-        // Wix can finish the server-side start write but lose the HTTP response.
-        // Recover by checking the persisted state before treating the start as failed.
-        const recovered=await refreshWithRetry(5).catch(()=>null);
-        const phase=recovered?.cv?.phase||'';
-        const accepted=recovered?.cv?.billableEventOccurred===true
-          || ['processing','report_processing','completed'].includes(phase);
-        if(!accepted)throw startError;
-        started=recovered;
-      }
-
-      lastStatus=started;renderStatus(started);
-      stage('[data-stage="start"]','done',tr('consumed'));
-      show('cvProcessingView');
-
-      // Processing can exceed the browser/Wix HTTP response window. A rejected
-      // fetch is therefore non-fatal; status polling is the source of truth.
-      api('v2CvProcess',{body:{token:state.token,uid:state.uid}}).catch(()=>null);
-      await pollUntilTerminal();
-    }catch(error){
-      const recovered=await refreshWithRetry(3).catch(()=>null);
-      const phase=recovered?.cv?.phase||'';
-      if(['processing','report_processing','completed'].includes(phase)){
-        show('cvProcessingView');
-        await pollUntilTerminal();
-      }else{
-        stage('[data-stage="start"]','failed',tr('failed'));
-        alert(error?.message||tr('generic'));
-      }
-    }finally{setBusy('cvStartBtn',false)}
-  }
-
-  async function pollUntilTerminal(){
-    if(polling)return;polling=true;
-    let consecutiveFetchErrors=0;
-    try{
-      for(let attempt=0;attempt<160;attempt+=1){
-        try{
-          const data=await refresh();
-          consecutiveFetchErrors=0;
-          const phase=data?.cv?.phase;
-          if(phase==='completed'){renderComplete(data);return}
-          if(phase==='failed_technical'){renderFailure(data);return}
-        }catch(error){
-          consecutiveFetchErrors+=1;
-          // A platform timeout often appears in the browser as CORS / Failed to
-          // fetch even though the server-side process continues. Keep polling.
-          if(consecutiveFetchErrors>=12)throw error;
-        }
-        await sleep(consecutiveFetchErrors?4000:2500);
-      }
-      throw new Error(getLocale()==='de'
-        ?'Die Verarbeitung dauert länger. Öffnen Sie den Link später erneut, um den Status zu prüfen.'
-        :'Processing is taking longer. Reopen the link later to check the status.');
-    }catch(error){
-      const recovered=await refreshWithRetry(3).catch(()=>null);
-      if(recovered?.cv?.phase==='completed'){renderComplete(recovered);return}
-      if(recovered?.cv?.phase==='failed_technical'){renderFailure(recovered);return}
-      alert(error?.message||tr('generic'));
-    }finally{polling=false}
-  }
-
-  function renderComplete(data){
-    lastStatus=data;const cv=data.cv||{};
-    setText('cvCompleteFile',cv.fileName||'CV');setText('cvCompleteStatus',tr('complete'));
-    setText('cvCompleteReport',cv.reportReviewRequired?tr('reviewWorkspace'):tr('readyWorkspace'));
-    $('cvReviewNotice').classList.toggle('hidden',!cv.reportReviewRequired);
-    const link=$('cvCandidateReportLink');
-    if(cv.candidateReportAccess&&cv.preferredReportUrl){link.href=cv.preferredReportUrl;link.classList.remove('hidden')}else{link.classList.add('hidden')}
-    setStep('module');show('cvCompleteView');
-  }
-
-  function renderFailure(data){
-    lastStatus=data;const cv=data.cv||{};show('cvProcessingView');renderProcessingStages(data);
-    let retry=$('cvRetryBtn');
-    if(!retry){retry=document.createElement('button');retry.id='cvRetryBtn';retry.className='btn primary';retry.type='button';$('cvProcessingView').appendChild(retry);retry.addEventListener('click',retryProcessing)}
-    retry.textContent=tr('retry');retry.classList.remove('hidden');
-    const message=cv.errorMessage||tr('generic');
-    const note=$('cvProcessingNotice');if(note)note.textContent=message;
-  }
-
-  async function retryProcessing(){
-    const btn=$('cvRetryBtn');if(btn){btn.disabled=true;btn.classList.add('busy')}
-    try{show('cvProcessingView');api('v2CvRetry',{body:{token:state.token,uid:state.uid}}).catch(()=>null);await pollUntilTerminal()}
-    catch(error){alert(error?.message||tr('generic'))}
-    finally{if(btn){btn.disabled=false;btn.classList.remove('busy')}}
-  }
-
-  async function activate(){
-    applyLocale();
-    try{
-      const data=await refreshWithRetry(5);const phase=data?.cv?.phase;
-      if(phase==='completed'){renderComplete(data);return}
-      if(['processing','report_processing'].includes(phase)){show('cvProcessingView');api('v2CvProcess',{body:{token:state.token,uid:state.uid}}).catch(()=>null);await pollUntilTerminal();return}
-      if(phase==='failed_technical'){renderFailure(data);return}
-      show('cvView');
-    }catch(error){onFatal(error)}
-  }
-
-  function wire(){
-    if(wired)return;wired=true;
-    $('cvFileInput').addEventListener('change',event=>chooseFile(event.target.files?.[0]));
-    const zone=$('cvDropZone');
-    ['dragenter','dragover'].forEach(type=>zone.addEventListener(type,event=>{event.preventDefault();zone.classList.add('drag')}));
-    ['dragleave','drop'].forEach(type=>zone.addEventListener(type,event=>{event.preventDefault();zone.classList.remove('drag')}));
-    zone.addEventListener('drop',event=>chooseFile(event.dataTransfer?.files?.[0]));
-    $('cvRemoveFileBtn').addEventListener('click',clearFile);$('cvUploadBtn').addEventListener('click',upload);$('cvStartBtn').addEventListener('click',startAnalysis);
-    $('cvBackBtn').addEventListener('click',()=>show('moduleView'));$('cvCloseBtn').addEventListener('click',()=>window.close());
-  }
-
-  wire();applyLocale();
-  return { activate, applyLocale, refresh };
+function t(key,...args){const value=TEXT[state.locale]?.[key]??TEXT.en[key]??key;return typeof value==='function'?value(...args):value}
+function show(id){['loadingView','welcomeView','profileView','consentView','moduleView','cvView','cvProcessingView','cvCompleteView','errorView'].forEach(x=>$(x)?.classList.toggle('hidden',x!==id))}
+function setStep(step){state.step=step;const order=['welcome','profile','consent','module'];const pos=order.indexOf(step);document.querySelectorAll('.step').forEach((el,i)=>{el.classList.toggle('active',i===pos);el.classList.toggle('done',i<pos)})}
+function langName(code){return({de:'Deutsch',en:'English',fr:'Français',es:'Español',it:'Italiano',nl:'Nederlands',pt:'Português',pl:'Polski',tr:'Türkçe',ar:'العربية'})[code]||String(code||'—').toUpperCase()}
+function modeName(mode){const map={audio:'Audio',video:'Video',mix:'Mix',audio_chat:'Audio + Chat',video_chat:'Video + Chat',chat:'Chat',upload:'Upload',standard:'Standard'};return map[mode]||String(mode||'—').replaceAll('_',' ')}
+function applyLocale(){
+  document.documentElement.lang=state.locale;$('langBtn').textContent=state.locale==='de'?'EN':'DE';
+  const map={eyebrow:'eyebrow',heroPrefix:'heroPrefix',loadingTitle:'loadingTitle',loadingText:'loadingText',loadingNotice:'loadingNotice',metaWorkflowLabel:'workflow',metaModeLabel:'mode',metaLanguageLabel:'language',metaPurposeLabel:'purpose',metaQuestionsLabel:'scope',metaUidLabel:'accessId',summaryTitle:'accessSummary',summaryCompanyLabel:'company',summaryReportLabel:'reportLang',summaryUnitsLabel:'units',summaryStatusLabel:'status',welcomeTitle:'welcome',welcomeText:'welcomeText',continueProfileBtn:'continue',profileTitle:'profile',profileText:'profileText',firstNameLabel:'firstName',lastNameLabel:'lastName',emailLabel:'email',referenceLabel:'reference',backWelcomeBtn:'back',saveProfileBtn:'save',consentTitle:'consent',consentText:'consentText',privacyConsentText:'privacy',aiConsentText:'ai',mediaConsentText:'media',backProfileBtn:'back',saveConsentBtn:'confirm',moduleViewTitle:'productModule',moduleViewText:'moduleText',moduleNotice:'moduleNotice',statusBtn:'refresh',startModuleBtn:'start',errorTitle:'unavailable',errorText:'unavailableText',errorHelp:'unavailableHelp',step1Title:'step1',step1Text:'step1Text',step2Title:'step2',step2Text:'step2Text',step3Title:'step3',step3Text:'step3Text',step4Title:'step4',step4Text:'step4Text'};
+  Object.entries(map).forEach(([id,k])=>{if($(id))$(id).textContent=t(k)});renderPayload();cvModule?.applyLocale();
 }
+function applyBranding(branding={}){const colors=branding.colors||{},root=document.documentElement,mode=String(branding.brandingMode||'clarity').toLowerCase().replace(/[\s-]+/g,'_'),white=mode==='white_label';if(colors.primary)root.style.setProperty('--navy',colors.primary);if(colors.accent)root.style.setProperty('--cyan',colors.accent);if(colors.secondary)root.style.setProperty('--violet',colors.secondary);if(colors.highlight)root.style.setProperty('--magenta',colors.highlight);$('brandName').textContent=branding.brandName||'CLARITY';$('productLine').textContent=white?'Decision Intelligence Platform':(branding.legalProductName||'CLARITY Decision Intelligence Platform');if(branding.logo){$('brandLogo').src=branding.logo;$('brandLogo').onerror=()=>{if(!white)$('brandLogo').src='./assets/clarity-logo.png';else $('brandLogo').style.visibility='hidden'}}} 
+function renderPayload(){
+  if(!state.payload)return;const r=state.payload.runtime||{},b=state.payload.branding||{},m=state.module||resolveModuleView(state.payload,state.locale);state.module=m;
+  const brandMode=String(b.brandingMode||'clarity').toLowerCase().replace(/[\s-]+/g,'_');const whiteLabel=brandMode==='white_label';const moduleTitle=m.title||'CLARITY';$('heroProduct').textContent=whiteLabel?`${b.brandName||'Company'} ${moduleTitle.replace(/^CLARITY\s*/i,'')}`:moduleTitle;$('heroDescription').textContent=m.description||'';$('moduleIcon').textContent=m.icon||'CL';$('finalModuleIcon').textContent=m.icon||'CL';$('moduleTitle').textContent=m.title||'CLARITY';$('moduleDescription').textContent=m.description||'';$('finalModuleTitle').textContent=m.title||'CLARITY';$('finalModuleDescription').textContent=m.description||'';
+  $('metaWorkflow').textContent=r.workflowKey||'—';$('metaMode').textContent=modeName(r.mode);$('metaLanguage').textContent=langName(r.participantLang);$('metaPurpose').textContent=r.position||r.purpose||t('noInfo');$('metaQuestions').textContent=t('questions',r.questionCount);$('metaUid').textContent=r.uid||'—';
+  $('summaryCompany').textContent=b.brandName||b.companyId||'CLARITY';$('summaryReport').textContent=langName(r.reportLang);$('summaryUnits').textContent=String(r.requiredUnits??0);$('summaryStatus').textContent=r.status||'—';
+  $('moduleReadiness').textContent=m.startEnabled?t('routerReady'):t('modulePending');$('moduleDevice').textContent=t('responsive');$('finalWorkflow').textContent=r.workflowKey||'—';$('finalStatus').textContent=m.readiness||'—';$('startModuleBtn').disabled=!m.startEnabled;$('mediaConsentRow').classList.toggle('hidden',!m.media);applyBranding(b);
+}
+async function api(path,{method='POST',body=null,query={}}={}){const url=new URL(`${API_BASE}/${path}`);Object.entries(query).forEach(([k,v])=>{if(v!==undefined&&v!==null&&v!=='')url.searchParams.set(k,v)});const response=await fetch(url,{method,headers:{'Content-Type':'application/json','Accept':'application/json'},body:body?JSON.stringify(body):undefined,credentials:'omit',cache:'no-store'});const data=await response.json().catch(()=>({}));if(!response.ok||data?.ok===false){const errorPayload=typeof data?.error==='object'?data.error:{};const e=new Error(errorPayload.message||data?.message||`HTTP ${response.status}`);e.code=errorPayload.code||data?.code||data?.error||`HTTP_${response.status}`;e.details=errorPayload.details||data?.details||null;throw e}return data}
+function deviceClass(){const w=Math.min(screen.width||innerWidth,innerWidth);return w<600?'mobile':w<1024?'tablet':'desktop'}
+function prefill(){const p=state.payload?.runtime?.candidateProfile||{};$('firstName').value=p.firstName||'';$('lastName').value=p.lastName||'';$('email').value=p.email||'';$('externalReference').value=p.externalReference||''}
+function fail(error){show('errorView');$('errorText').textContent=error?.message||t('unavailableText');$('errorCode').textContent=error?.code||'UNIVERSAL_APP_ERROR'}
+async function bootstrap(){if(!state.uid)return fail({code:'UNIVERSAL_UID_REQUIRED',message:t('unavailableText')});try{const data=await api('v2AppBootstrap',{method:'GET',query:{uid:state.uid,userAgent:navigator.userAgent,deviceClass:deviceClass()}});state.payload=data;state.token=data.token||'';state.locale=data.runtime?.participantLang==='de'?'de':'en';state.module=resolveModuleView(data,state.locale);prefill();applyLocale();setStep('welcome');show('welcomeView')}catch(e){fail(e)}}
+async function saveProfile(){const profile={firstName:$('firstName').value.trim(),lastName:$('lastName').value.trim(),email:$('email').value.trim(),externalReference:$('externalReference').value.trim()};if(!profile.firstName||!profile.lastName||!/^\S+@\S+\.\S+$/.test(profile.email))return alert(t('profileError'));$('saveProfileBtn').disabled=true;try{const data=await api('v2AppProfile',{body:{token:state.token,uid:state.uid,profile}});state.payload.runtime={...state.payload.runtime,...data.runtime};setStep('consent');show('consentView')}catch(e){alert(e.message||t('genericError'))}finally{$('saveProfileBtn').disabled=false}}
+async function saveConsent(){const mediaOk=!state.module?.media||$('mediaConsent').checked;if(!$('privacyConsent').checked||!$('aiConsent').checked||!mediaOk)return alert(t('consentError'));$('saveConsentBtn').disabled=true;try{const data=await api('v2AppConsent',{body:{token:state.token,uid:state.uid,accepted:true,privacyAccepted:true,aiInteractionAccepted:true,mediaAccepted:state.module?.media===true,version:'universal-consent-v1'}});state.payload.runtime={...state.payload.runtime,...data.runtime};renderPayload();setStep('module');show('moduleView')}catch(e){alert(e.message||t('genericError'))}finally{$('saveConsentBtn').disabled=false}}
+async function refreshStatus(){try{const data=await api('v2AppStatus',{body:{token:state.token,uid:state.uid}});state.payload={...state.payload,...data};state.module=resolveModuleView(state.payload,state.locale);renderPayload()}catch(e){alert(e.message||t('genericError'))}}
+async function startModule(){if(!state.module?.startEnabled)return alert(t('modulePendingAlert'));if(state.payload?.runtime?.productKey==='cv_analysis')return cvModule.activate();alert(t('modulePendingAlert'))}
+function wire(){
+  $('langBtn').addEventListener('click',()=>{state.locale=state.locale==='de'?'en':'de';applyLocale()});$('supportBtn').addEventListener('click',()=>{location.href='mailto:info@clarity-nvl.com'});$('continueProfileBtn').addEventListener('click',()=>{setStep('profile');show('profileView')});$('backWelcomeBtn').addEventListener('click',()=>{setStep('welcome');show('welcomeView')});$('saveProfileBtn').addEventListener('click',saveProfile);$('backProfileBtn').addEventListener('click',()=>{setStep('profile');show('profileView')});$('saveConsentBtn').addEventListener('click',saveConsent);$('statusBtn').addEventListener('click',refreshStatus);$('startModuleBtn').addEventListener('click',startModule);
+}
+cvModule=createCvModule({$,state,api,show,setStep,getLocale:()=>state.locale,onFatal:fail});wire();applyLocale();bootstrap();
