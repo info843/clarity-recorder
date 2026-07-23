@@ -1,7 +1,7 @@
 import { resolveModuleView } from './modules/router-module.js';
 import { createCvModule } from './modules/cv-module.js';
 import { createVideoPresentationModule } from './modules/video-presentation-module.js';
-import { createAiLiteracyModule } from './modules/ai-literacy-module.js?v=2.13.0';
+import { createAiLiteracyModule } from './modules/ai-literacy-module.js?v=2.14.0';
 
 const API_BASE = 'https://www.clarity-nvl.com/_functions';
 const state = {
