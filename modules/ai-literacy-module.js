@@ -1,8 +1,8 @@
 // modules/ai-literacy-module.js
-// CLARITY Universal App — AI Literacy vertical v2.12.0
+// CLARITY Universal App — AI Literacy vertical v2.15.0
 
 export function createAiLiteracyModule({ $, state, api, show, setStep, getLocale, onFatal }) {
-  const VERSION = '2.14.0';
+  const VERSION = '2.15.0';
   let active = false;
   let frameReady = false;
   let lastState = null;
@@ -25,7 +25,7 @@ export function createAiLiteracyModule({ $, state, api, show, setStep, getLocale
       module: 'Modulfortschritt wird gespeichert…',
       test: 'Wissenstest wird vorbereitet…',
       finish: 'Wissenstest wird abgeschlossen…',
-      artifacts: 'Report und Zertifikat werden erstellt…',
+      artifacts: 'Unified Report und Unified Zertifikat werden erstellt…',
       polling: 'Dokumente werden nach einer verzögerten Antwort geprüft…',
       error: 'AI-Literacy-Aktion fehlgeschlagen.'
     },
@@ -41,7 +41,7 @@ export function createAiLiteracyModule({ $, state, api, show, setStep, getLocale
       module: 'Saving module progress…',
       test: 'Preparing knowledge test…',
       finish: 'Finalizing knowledge test…',
-      artifacts: 'Generating report and certificate…',
+      artifacts: 'Generating unified report and unified certificate…',
       polling: 'Checking documents after a delayed response…',
       error: 'AI Literacy action failed.'
     }
@@ -264,7 +264,7 @@ export function createAiLiteracyModule({ $, state, api, show, setStep, getLocale
         last = await api('v2AiLiteracyArtifactStatus', {
           body: baseBody({ sessionId })
         });
-        if (last?.ready) {
+        if (last?.unifiedReady) {
           await finalizeArtifacts(sessionId);
           postToFrame({
             type: 'IB_USER_ARTIFACTS_READY',
@@ -275,6 +275,22 @@ export function createAiLiteracyModule({ $, state, api, show, setStep, getLocale
         }
       } catch (_) {}
     }
+
+    if (last?.legacyReady) {
+      await finalizeArtifacts(sessionId);
+      postToFrame({
+        type: 'IB_USER_ARTIFACTS_PARTIAL',
+        payload: {
+          ...last,
+          degradedFallback: true,
+          message: locale() === 'de'
+            ? 'Die Legacy-Dokumente sind verfügbar. Die Unified-Versionen werden weiter verarbeitet.'
+            : 'Legacy documents are available. Unified versions are still processing.'
+        }
+      });
+      return last;
+    }
+
     postToFrame({
       type: 'IB_USER_ARTIFACTS_UNRESOLVED',
       payload: {
@@ -291,12 +307,34 @@ export function createAiLiteracyModule({ $, state, api, show, setStep, getLocale
       if (index > 0) await sleep(intervalMs);
       try {
         const current = await api('v2AiLiteracyArtifactStatus', { body: baseBody({ sessionId }) });
-        if (stage === 'report' && current?.reportPdfUrl) return current;
-        if (stage === 'certificate' && current?.certificatePdfUrl) return current;
-        if (current?.ready) return current;
+        if (stage === 'legacy_report' && current?.legacyReportPdfUrl) return current;
+        if (stage === 'unified_report' && current?.unifiedReportPdfUrl) return current;
+        if (stage === 'legacy_certificate' && current?.legacyCertificatePdfUrl) return current;
+        if (stage === 'unified_certificate' && current?.unifiedCertificatePdfUrl) return current;
+        if (current?.unifiedReady) return current;
       } catch (_) {}
     }
     return null;
+  }
+
+  async function callDocumentStage(endpoint, sessionId, stage, errorDe, errorEn) {
+    let responseLost = false;
+    try {
+      await api(endpoint, { body: baseBody({ sessionId }) });
+    } catch (error) {
+      if (!isAmbiguousTransportError(error)) throw error;
+      responseLost = true;
+    }
+    if (responseLost) {
+      const ready = await waitForArtifactStage(sessionId, stage);
+      const stageReady = {
+        legacy_report: ready?.legacyReportPdfUrl,
+        unified_report: ready?.unifiedReportPdfUrl,
+        legacy_certificate: ready?.legacyCertificatePdfUrl,
+        unified_certificate: ready?.unifiedCertificatePdfUrl
+      }[stage];
+      if (!stageReady) throw new Error(locale() === 'de' ? errorDe : errorEn);
+    }
   }
 
   async function runArtifactPipeline(sessionId, passStatus = '') {
@@ -309,34 +347,28 @@ export function createAiLiteracyModule({ $, state, api, show, setStep, getLocale
         payload: { attempt: 1, maxChecks: 8, message: t('artifacts') }
       });
 
-      let reportResponseLost = false;
-      try {
-        await api('v2AiLiteracyReport', { body: baseBody({ sessionId }) });
-      } catch (error) {
-        if (!isAmbiguousTransportError(error)) throw error;
-        reportResponseLost = true;
-      }
-      if (reportResponseLost) {
-        const reportReady = await waitForArtifactStage(sessionId, 'report');
-        if (!reportReady?.reportPdfUrl) {
-          throw new Error(locale() === 'de' ? 'Der Report konnte noch nicht bestätigt werden.' : 'The report could not yet be confirmed.');
-        }
-      }
+      await callDocumentStage(
+        'v2AiLiteracyReport', sessionId, 'legacy_report',
+        'Der Legacy-Report konnte noch nicht bestätigt werden.',
+        'The legacy report could not yet be confirmed.'
+      );
+      await callDocumentStage(
+        'v2AiLiteracyUnifiedReport', sessionId, 'unified_report',
+        'Der Unified Report konnte noch nicht bestätigt werden.',
+        'The unified report could not yet be confirmed.'
+      );
 
       if (String(passStatus || '').toLowerCase() === 'passed') {
-        let certificateResponseLost = false;
-        try {
-          await api('v2AiLiteracyCertificate', { body: baseBody({ sessionId }) });
-        } catch (error) {
-          if (!isAmbiguousTransportError(error)) throw error;
-          certificateResponseLost = true;
-        }
-        if (certificateResponseLost) {
-          const certificateReady = await waitForArtifactStage(sessionId, 'certificate');
-          if (!certificateReady?.certificatePdfUrl) {
-            throw new Error(locale() === 'de' ? 'Das Zertifikat konnte noch nicht bestätigt werden.' : 'The certificate could not yet be confirmed.');
-          }
-        }
+        await callDocumentStage(
+          'v2AiLiteracyCertificate', sessionId, 'legacy_certificate',
+          'Das Legacy-Zertifikat konnte noch nicht bestätigt werden.',
+          'The legacy certificate could not yet be confirmed.'
+        );
+        await callDocumentStage(
+          'v2AiLiteracyUnifiedCertificate', sessionId, 'unified_certificate',
+          'Das Unified Zertifikat konnte noch nicht bestätigt werden.',
+          'The unified certificate could not yet be confirmed.'
+        );
       }
 
       return await pollArtifacts(sessionId);
@@ -360,7 +392,7 @@ export function createAiLiteracyModule({ $, state, api, show, setStep, getLocale
   }
 
   async function resumeCompletedWorkflow(data = {}) {
-    if (completionRecoveryStarted || data?.artifactStatus?.ready) return;
+    if (completionRecoveryStarted || data?.artifactStatus?.unifiedReady) return;
     const recovered = recoveredTestResult(data);
     if (!recovered || !recovered.result?.finalAttempt) return;
     completionRecoveryStarted = true;
