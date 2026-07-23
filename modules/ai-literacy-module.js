@@ -2,7 +2,7 @@
 // CLARITY Universal App — AI Literacy vertical v2.12.0
 
 export function createAiLiteracyModule({ $, state, api, show, setStep, getLocale, onFatal }) {
-  const VERSION = '2.13.0';
+  const VERSION = '2.14.0';
   let active = false;
   let frameReady = false;
   let lastState = null;
@@ -161,16 +161,24 @@ export function createAiLiteracyModule({ $, state, api, show, setStep, getLocale
     return null;
   }
 
-  async function pollTestCompletion(sessionId, { maxChecks = 15, intervalMs = 4000 } = {}) {
+  async function pollTestCompletion(sessionId, { maxChecks = 6, intervalMs = 6500 } = {}) {
     for (let index = 0; index < maxChecks; index += 1) {
       if (index > 0) await sleep(intervalMs);
       try {
-        const data = await apiWithTransportRetry('v2AiLiteracyStatus', {
-          body: baseBody({ includeArtifacts: false, synchronizeProfile: false, sessionId })
-        }, { attempts: 2, delayMs: 900 });
-        sendInit(data);
-        const recovered = recoveredTestResult(data);
-        if (recovered) return recovered;
+        const data = await api('v2AiLiteracyCompletionStatus', {
+          body: baseBody({ sessionId })
+        });
+        if (data?.finalized) {
+          return {
+            ok: true,
+            version: VERSION,
+            session: data.session || {},
+            response: data.response || {},
+            result: data.result || {},
+            finalAttempt: data.result?.finalAttempt === true,
+            recoveredFromTimeout: true
+          };
+        }
       } catch (_) {}
     }
     return null;
@@ -221,61 +229,145 @@ export function createAiLiteracyModule({ $, state, api, show, setStep, getLocale
     setStatus(t('preparing'), 'warn');
     const data = await apiWithTransportRetry('v2AiLiteracyStatus', {
       body: baseBody({ includeArtifacts, synchronizeProfile: true, forceProfileSync })
-    }, { attempts: 3, delayMs: 1200 });
+    }, { attempts: 1, delayMs: 1200 });
     sendInit(data);
     setStatus(t('ready'), 'ok');
     return data;
   }
 
-  async function pollArtifacts(sessionId, { maxChecks = 18, intervalMs = 5000 } = {}) {
-    if (artifactPolling) return null;
-    artifactPolling = true;
-    let last = null;
+  async function finalizeArtifacts(sessionId) {
     try {
-      for (let index = 0; index < maxChecks; index += 1) {
-        const attempt = index + 1;
-        postToFrame({
-          type: 'IB_USER_ARTIFACTS_POLLING',
-          payload: {
-            attempt,
-            maxChecks,
-            message: t('polling')
-          }
-        });
-        if (index > 0) await new Promise((resolve) => setTimeout(resolve, intervalMs));
-        try {
-          last = await api('v2AiLiteracyArtifactStatus', {
-            body: baseBody({ sessionId })
-          });
-          if (last?.ready) {
-            postToFrame({
-              type: 'IB_USER_ARTIFACTS_READY',
-              payload: { ...last, recoveredFromTimeout: true }
-            });
-            await loadStatus({ includeArtifacts: true });
-            return last;
-          }
-          if (last?.partial && attempt >= Math.min(maxChecks, 8)) {
-            postToFrame({
-              type: 'IB_USER_ARTIFACTS_PARTIAL',
-              payload: { ...last, recoveredFromTimeout: true }
-            });
-            await loadStatus({ includeArtifacts: true });
-            return last;
-          }
-        } catch (_) {}
-      }
+      return await api('v2AiLiteracyFinalize', { body: baseBody({ sessionId }) });
+    } catch (error) {
+      // At this point both documents already exist. Final reconcile errors must
+      // not hide participant downloads. Workspace Sync can safely replay the
+      // idempotent reconcile if the queued job was not accepted.
+      return {
+        ok: isAmbiguousTransportError(error),
+        finalized: false,
+        ambiguousResponse: isAmbiguousTransportError(error),
+        error: String(error?.message || error || '')
+      };
+    }
+  }
+
+  async function pollArtifacts(sessionId, { maxChecks = 8, intervalMs = 7000 } = {}) {
+    let last = null;
+    for (let index = 0; index < maxChecks; index += 1) {
+      const attempt = index + 1;
       postToFrame({
-        type: 'IB_USER_ARTIFACTS_UNRESOLVED',
-        payload: {
-          message: locale() === 'de'
-            ? 'Die Dokumentenerstellung dauert länger als erwartet. Die Download-Links konnten auf dieser Seite noch nicht bestätigt werden.'
-            : 'Document generation is taking longer than expected. The download links could not yet be confirmed on this page.'
-        }
+        type: 'IB_USER_ARTIFACTS_POLLING',
+        payload: { attempt, maxChecks, message: t('polling') }
       });
-      return last;
+      if (index > 0) await sleep(intervalMs);
+      try {
+        last = await api('v2AiLiteracyArtifactStatus', {
+          body: baseBody({ sessionId })
+        });
+        if (last?.ready) {
+          await finalizeArtifacts(sessionId);
+          postToFrame({
+            type: 'IB_USER_ARTIFACTS_READY',
+            payload: { ...last, recoveredFromTimeout: index > 0 }
+          });
+          setStatus(t('ready'), 'ok');
+          return last;
+        }
+      } catch (_) {}
+    }
+    postToFrame({
+      type: 'IB_USER_ARTIFACTS_UNRESOLVED',
+      payload: {
+        message: locale() === 'de'
+          ? 'Die Dokumente werden weiter verarbeitet. Nutze den Wiederholen-Button erst nach einer kurzen Wartezeit.'
+          : 'The documents are still processing. Use the retry button only after a short wait.'
+      }
+    });
+    return last;
+  }
+
+  async function waitForArtifactStage(sessionId, stage, { maxChecks = 6, intervalMs = 7000 } = {}) {
+    for (let index = 0; index < maxChecks; index += 1) {
+      if (index > 0) await sleep(intervalMs);
+      try {
+        const current = await api('v2AiLiteracyArtifactStatus', { body: baseBody({ sessionId }) });
+        if (stage === 'report' && current?.reportPdfUrl) return current;
+        if (stage === 'certificate' && current?.certificatePdfUrl) return current;
+        if (current?.ready) return current;
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  async function runArtifactPipeline(sessionId, passStatus = '') {
+    if (!sessionId || artifactPolling) return null;
+    artifactPolling = true;
+    try {
+      setStatus(t('artifacts'), 'warn');
+      postToFrame({
+        type: 'IB_USER_ARTIFACTS_POLLING',
+        payload: { attempt: 1, maxChecks: 8, message: t('artifacts') }
+      });
+
+      let reportResponseLost = false;
+      try {
+        await api('v2AiLiteracyReport', { body: baseBody({ sessionId }) });
+      } catch (error) {
+        if (!isAmbiguousTransportError(error)) throw error;
+        reportResponseLost = true;
+      }
+      if (reportResponseLost) {
+        const reportReady = await waitForArtifactStage(sessionId, 'report');
+        if (!reportReady?.reportPdfUrl) {
+          throw new Error(locale() === 'de' ? 'Der Report konnte noch nicht bestätigt werden.' : 'The report could not yet be confirmed.');
+        }
+      }
+
+      if (String(passStatus || '').toLowerCase() === 'passed') {
+        let certificateResponseLost = false;
+        try {
+          await api('v2AiLiteracyCertificate', { body: baseBody({ sessionId }) });
+        } catch (error) {
+          if (!isAmbiguousTransportError(error)) throw error;
+          certificateResponseLost = true;
+        }
+        if (certificateResponseLost) {
+          const certificateReady = await waitForArtifactStage(sessionId, 'certificate');
+          if (!certificateReady?.certificatePdfUrl) {
+            throw new Error(locale() === 'de' ? 'Das Zertifikat konnte noch nicht bestätigt werden.' : 'The certificate could not yet be confirmed.');
+          }
+        }
+      }
+
+      return await pollArtifacts(sessionId);
+    } catch (error) {
+      const messageText = normalizeError(error);
+      setStatus(messageText, 'err');
+      postToFrame({ type: 'IB_USER_ARTIFACTS_UNRESOLVED', payload: { message: messageText } });
+      return null;
     } finally {
       artifactPolling = false;
+    }
+  }
+
+  async function deliverTestResult(result = {}) {
+    postToFrame({ type: 'IB_USER_TEST_RESULT', payload: result });
+    setStatus(t('ready'), 'ok');
+    const finalAttempt = result.finalAttempt === true || result.result?.finalAttempt === true || String(result.result?.passStatus || '').toLowerCase() === 'passed';
+    if (finalAttempt) {
+      await runArtifactPipeline(result.session?.sessionId || result.response?.sessionId || '', result.result?.passStatus || '');
+    }
+  }
+
+  async function resumeCompletedWorkflow(data = {}) {
+    if (completionRecoveryStarted || data?.artifactStatus?.ready) return;
+    const recovered = recoveredTestResult(data);
+    if (!recovered || !recovered.result?.finalAttempt) return;
+    completionRecoveryStarted = true;
+    try {
+      await deliverTestResult(recovered);
+    } finally {
+      completionRecoveryStarted = false;
     }
   }
 
@@ -285,7 +377,9 @@ export function createAiLiteracyModule({ $, state, api, show, setStep, getLocale
 
     if (type === 'IB_USER_APP_READY' || type === 'IB_USER_REFRESH_ACCESS') {
       frameReady = true;
-      await loadStatus({ includeArtifacts: true });
+      const data = lastState || await loadStatus({ includeArtifacts: true });
+      sendInit(data);
+      await resumeCompletedWorkflow(data);
       return;
     }
 
@@ -323,7 +417,7 @@ export function createAiLiteracyModule({ $, state, api, show, setStep, getLocale
       try {
         setStatus(t('training'), 'warn');
         postToFrame({ type: 'IB_USER_LOADING', payload: { message: t('training') } });
-        const result = await apiWithTransportRetry('v2AiLiteracyStart', { body: baseBody({}) }, { attempts: 2, delayMs: 1800 });
+        const result = await api('v2AiLiteracyStart', { body: baseBody({}) });
         postToFrame({ type: 'IB_USER_SESSION_STARTED', payload: result });
         if (result.state) sendInit(result.state);
         setStatus(t('ready'), 'ok');
@@ -378,9 +472,9 @@ export function createAiLiteracyModule({ $, state, api, show, setStep, getLocale
       try {
         setStatus(t('test'), 'warn');
         postToFrame({ type: 'IB_USER_LOADING', payload: { message: t('test') } });
-        const result = await apiWithTransportRetry('v2AiLiteracyTestStart', {
+        const result = await api('v2AiLiteracyTestStart', {
           body: baseBody({ sessionId: payload.sessionId || '' })
-        }, { attempts: 2, delayMs: 1500 });
+        });
         postToFrame({ type: 'IB_USER_TEST_STARTED', payload: result });
         setStatus(t('ready'), 'ok');
       } catch (error) {
@@ -431,15 +525,13 @@ export function createAiLiteracyModule({ $, state, api, show, setStep, getLocale
             answerMap: payload.answerMap || payload.answers || {}
           })
         });
-        postToFrame({ type: 'IB_USER_TEST_RESULT', payload: result });
-        setStatus(t('ready'), 'ok');
+        await deliverTestResult(result);
       } catch (error) {
         if (isAmbiguousTransportError(error)) {
-          setStatus(locale() === 'de' ? 'Testergebnis wird nach verzögerter Antwort geprüft…' : 'Checking test result after a delayed response…', 'warn');
+          setStatus(locale() === 'de' ? 'Testergebnis wird serverseitig bestätigt…' : 'Confirming the test result on the server…', 'warn');
           const recovered = await pollTestCompletion(payload.sessionId || '');
           if (recovered) {
-            postToFrame({ type: 'IB_USER_TEST_RESULT', payload: recovered });
-            setStatus(t('ready'), 'ok');
+            await deliverTestResult(recovered);
             return;
           }
         }
@@ -452,24 +544,8 @@ export function createAiLiteracyModule({ $, state, api, show, setStep, getLocale
 
     if (type === 'IB_USER_GENERATE_ARTIFACTS') {
       const sessionId = payload.sessionId || lastState?.training?.session?.sessionId || '';
-      try {
-        setStatus(t('artifacts'), 'warn');
-        postToFrame({ type: 'IB_USER_LOADING', payload: { message: t('artifacts') } });
-        const result = await api('v2AiLiteracyArtifacts', {
-          body: baseBody({ sessionId })
-        });
-        postToFrame({ type: 'IB_USER_ARTIFACTS_READY', payload: result });
-        await loadStatus({ includeArtifacts: true });
-      } catch (error) {
-        if (isAmbiguousTransportError(error)) {
-          setStatus(t('polling'), 'warn');
-          await pollArtifacts(sessionId);
-        } else {
-          const messageText = normalizeError(error);
-          setStatus(messageText, 'err');
-          postToFrame({ type: 'IB_USER_ERROR', error: messageText });
-        }
-      }
+      const passStatus = payload.passStatus || lastState?.bootstrap?.access?.passStatus || '';
+      await runArtifactPipeline(sessionId, passStatus);
       return;
     }
 
@@ -494,7 +570,10 @@ export function createAiLiteracyModule({ $, state, api, show, setStep, getLocale
     setStatus(t('preparing'), 'warn');
     try {
       const data = await loadStatus({ includeArtifacts: true });
-      if (frameReady) sendInit(data);
+      if (frameReady) {
+        sendInit(data);
+        await resumeCompletedWorkflow(data);
+      }
     } catch (error) {
       const messageText = normalizeError(error);
       setStatus(messageText, 'err');
