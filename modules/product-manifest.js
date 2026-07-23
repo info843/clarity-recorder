@@ -17,8 +17,9 @@ export const PRODUCT_MANIFEST = Object.freeze({
       de: 'Persönliche Videoeinreichung als Ergänzung zum Lebenslauf.',
       en: 'Personal video submission as an addition to the CV.'
     },
-    steps: ['profile', 'consent', 'preflight', 'module'],
-    media: true
+    steps: ['profile', 'consent', 'preflight', 'recording', 'submission', 'completion'],
+    media: true,
+    executable: true
   }),
   snapshot: Object.freeze({
     icon: 'SN',
@@ -65,4 +66,3 @@ export const PRODUCT_MANIFEST = Object.freeze({
 export function getProductManifest(productKey) {
   return PRODUCT_MANIFEST[String(productKey || '').toLowerCase()] || null;
 }
-
