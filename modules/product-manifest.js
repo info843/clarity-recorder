@@ -28,18 +28,22 @@ export const PRODUCT_MANIFEST = Object.freeze({
       de: 'Kompakter strukturierter Kurzcheck.',
       en: 'Compact structured screening workflow.'
     },
-    steps: ['profile', 'consent', 'module'],
-    media: false
+    steps: ['profile', 'consent', 'questions', 'analysis', 'completion'],
+    media: false,
+    executable: true,
+    releaseScope: 'chat_only'
   }),
   assessment: Object.freeze({
     icon: 'AS',
     title: { de: 'CLARITY Assessment', en: 'CLARITY Assessment' },
     description: {
-      de: 'Strukturierter Assessment-Flow in Chat-, Audio-, Video- oder Mix-Modus.',
-      en: 'Structured assessment flow in chat, audio, video or mixed mode.'
+      de: 'Strukturierter Assessment-Flow. In diesem Release ist der Chat-Modus freigegeben.',
+      en: 'Structured assessment workflow. This release enables chat mode.'
     },
-    steps: ['profile', 'consent', 'preflight', 'module'],
-    media: true
+    steps: ['profile', 'consent', 'questions', 'analysis', 'completion'],
+    media: false,
+    executable: true,
+    releaseScope: 'chat_only'
   }),
   interview: Object.freeze({
     icon: 'IV',
