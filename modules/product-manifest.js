@@ -65,3 +65,4 @@ export const PRODUCT_MANIFEST = Object.freeze({
 export function getProductManifest(productKey) {
   return PRODUCT_MANIFEST[String(productKey || '').toLowerCase()] || null;
 }
+
