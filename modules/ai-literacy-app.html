@@ -89,14 +89,18 @@ function openArtifactUrl(url,buttonId){
 }
 function copyArtifactLink(id){const el=$(id);if(!el)return;el.select();el.setSelectionRange?.(0,99999);navigator.clipboard?.writeText(el.value).then(()=>status(t('copied'),'ok','resultStatusBox')).catch(()=>{try{document.execCommand('copy');status(t('copied'),'ok','resultStatusBox')}catch(_){status(t('copyFailed'),'err','resultStatusBox')}})}
 function showArtifactsBox(payload={}){
-  const reportUrl=safeUrl(payload.reportPdfUrl||payload.report?.reportPdfUrl||'');
-  const certUrl=safeUrl(payload.certificatePdfUrl||payload.certificate?.certificatePdfUrl||'');
+  const reportUrl=safeUrl(payload.preferredReportPdfUrl||payload.unifiedReportPdfUrl||payload.reportPdfUrl||payload.report?.preferredReportPdfUrl||payload.report?.unifiedReportPdfUrl||payload.report?.reportPdfUrl||'');
+  const certUrl=safeUrl(payload.preferredCertificatePdfUrl||payload.unifiedCertificatePdfUrl||payload.certificatePdfUrl||payload.certificate?.preferredCertificatePdfUrl||payload.certificate?.unifiedCertificatePdfUrl||payload.certificate?.certificatePdfUrl||'');
+  const reportSource=String(payload.preferredReportSource||payload.report?.preferredReportSource||(payload.unifiedReportPdfUrl?'unified':'legacy')).toLowerCase();
+  const certSource=String(payload.preferredCertificateSource||payload.certificate?.preferredCertificateSource||(payload.unifiedCertificatePdfUrl?'unified':'legacy')).toLowerCase();
+  const sourceLabel=(source)=>source==='unified'?'Unified':(state.lang==='de'?'Fallback':'Fallback');
   let html='<strong>'+esc(t('artifactsReady'))+'</strong>';
+  if(payload.degradedFallback){html+=`<p class="muted">${esc(payload.message||'')}</p>`}
   if(reportUrl){
-    html+=`<div class="artifactRow"><a id="btnOpenReportArtifact" class="primary inlineLinkBtn" href="${esc(reportUrl)}" target="_blank" rel="noopener" download>${esc(t('downloadReport'))}</a><button type="button" onclick="copyArtifactLink('reportUrlBox')">${esc(t('copyReport'))}</button><input id="reportUrlBox" value="${esc(reportUrl)}" readonly /></div>`;
+    html+=`<div class="artifactRow"><span class="pill ${reportSource==='unified'?'ok':'warn'}">${esc(sourceLabel(reportSource))}</span><a id="btnOpenReportArtifact" class="primary inlineLinkBtn" href="${esc(reportUrl)}" target="_blank" rel="noopener" download>${esc(t('downloadReport'))}</a><button type="button" onclick="copyArtifactLink('reportUrlBox')">${esc(t('copyReport'))}</button><input id="reportUrlBox" value="${esc(reportUrl)}" readonly /></div>`;
   }
   if(certUrl){
-    html+=`<div class="artifactRow"><a id="btnOpenCertArtifact" class="green inlineLinkBtn" href="${esc(certUrl)}" target="_blank" rel="noopener" download>${esc(t('downloadCertificate'))}</a><button type="button" onclick="copyArtifactLink('certUrlBox')">${esc(t('copyCertificate'))}</button><input id="certUrlBox" value="${esc(certUrl)}" readonly /></div>`;
+    html+=`<div class="artifactRow"><span class="pill ${certSource==='unified'?'ok':'warn'}">${esc(sourceLabel(certSource))}</span><a id="btnOpenCertArtifact" class="green inlineLinkBtn" href="${esc(certUrl)}" target="_blank" rel="noopener" download>${esc(t('downloadCertificate'))}</a><button type="button" onclick="copyArtifactLink('certUrlBox')">${esc(t('copyCertificate'))}</button><input id="certUrlBox" value="${esc(certUrl)}" readonly /></div>`;
   }else{html+=`<p class="muted">${esc(t('noCertificate'))}</p>`}
   $('artifactBox').innerHTML=html;$('artifactBox').classList.remove('hidden')
 }
