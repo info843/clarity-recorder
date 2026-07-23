@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="color-scheme" content="light" />
   <meta name="referrer" content="no-referrer" />
-  <title>CLARITY Universal App · CV Analysis</title>
+  <title>CLARITY Universal App · Decision Intelligence Platform</title>
   <link rel="stylesheet" href="./clarity-app.css" />
   <link id="appFavicon" rel="icon" href="data:," />
 </head>
@@ -232,6 +232,22 @@
         </div>
         <div class="notice info"><span>i</span><span>Video Presentation does not create an automatic candidate score or hiring recommendation.</span></div>
         <div class="actions"><button class="btn" id="vpCloseBtn" type="button">Close window</button></div>
+      </article>
+
+      <article class="flow-card hidden ai-literacy-view" id="aiLiteracyView">
+        <div class="ai-literacy-head">
+          <div>
+            <div class="eyebrow"><span class="dot"></span><span id="aiLiteracyEyebrow">AI Literacy & Qualification</span></div>
+            <h2 id="aiLiteracyTitle">Training and qualification</h2>
+            <p id="aiLiteracyText">Complete the assigned training, knowledge test and qualification evidence.</p>
+          </div>
+          <span class="pill ok" id="aiLiteracySeatRule">1 seat at training start</span>
+        </div>
+        <div class="notice info ai-literacy-notice"><span>i</span><span id="aiLiteracyNotice">Opening the link, confirming your profile and reading the training do not consume another seat. The assigned seat is consumed exactly once when training starts.</span></div>
+        <div class="ai-literacy-frame-shell">
+          <iframe id="aiLiteracyFrame" title="AI Literacy & Qualification" src="./modules/ai-literacy-app.html" loading="eager" referrerpolicy="no-referrer" allow="clipboard-read; clipboard-write"></iframe>
+        </div>
+        <div class="status" id="aiLiteracyStatus">Preparing AI Literacy workflow…</div>
       </article>
 
       <article class="flow-card hidden error-view" id="errorView">
