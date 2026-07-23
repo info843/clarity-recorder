@@ -172,6 +172,68 @@
         </div>
       </article>
 
+      <article class="flow-card hidden vp-view" id="vpView">
+        <div class="vp-head">
+          <div>
+            <div class="eyebrow"><span class="dot"></span><span id="vpEyebrow">Candidate-controlled recording</span></div>
+            <h2 id="vpTitle">Your video introduction</h2>
+            <p id="vpText">Record your presentation, review it, and submit it only when you are ready.</p>
+          </div>
+          <span class="pill ok" id="vpCreditRule">0 credits until final submission</span>
+        </div>
+        <div class="vp-guidance-grid">
+          <div class="vp-instruction"><strong id="vpInstructionTitle">Company instructions</strong><span id="vpInstructionText">—</span></div>
+          <div class="vp-tip" id="vpTip1">Choose a quiet place with good light and a stable internet connection.</div>
+          <div class="vp-tip" id="vpTip2">Look into the camera naturally and speak clearly.</div>
+          <div class="vp-tip hidden" id="vpExtraLanguage"></div>
+        </div>
+        <div class="vp-video-shell">
+          <video id="vpVideo" autoplay playsinline muted></video>
+          <div class="vp-empty" id="vpEmpty">Camera preview will appear here.</div>
+          <div class="vp-rec hidden" id="vpRecBadge"><i></i><span>REC</span></div>
+        </div>
+        <div class="vp-meters">
+          <div class="vp-meter-row"><span id="vpLengthLabel">Length</span><div class="vp-track"><i id="vpTimeFill"></i></div><b id="vpTimer">00:00 / 03:00</b></div>
+          <div class="vp-meter-row"><span id="vpSoundLabel">Sound</span><div class="vp-track"><i id="vpSoundFill"></i></div><b id="vpSoundText">—</b></div>
+        </div>
+        <div class="actions vp-actions">
+          <button class="btn" id="vpBackBtn" type="button">Back</button>
+          <button class="btn secondary" id="vpCameraBtn" type="button">Start camera</button>
+          <button class="btn" id="vpRecordBtn" type="button" disabled>Start recording</button>
+          <button class="btn danger" id="vpStopBtn" type="button" disabled>Stop</button>
+          <button class="btn" id="vpRetakeBtn" type="button" disabled>Record again</button>
+          <button class="btn primary" id="vpSubmitBtn" type="button" disabled>Submit presentation</button>
+        </div>
+        <div class="status" id="vpStatus"></div>
+      </article>
+
+      <article class="flow-card hidden" id="vpProcessingView">
+        <div class="processing-orbit" aria-hidden="true"><span></span><span></span><span></span></div>
+        <h2 id="vpProcessingTitle">Processing your presentation</h2>
+        <p id="vpProcessingText">Please keep this page open while CLARITY uploads and processes your video presentation.</p>
+        <div class="processing-bar"><span id="vpProcessingBar"></span></div>
+        <div class="stage-list">
+          <div class="stage-row" data-vp-stage="upload"><span class="stage-dot"></span><div><strong id="vpStageUploadTitle">1 · Secure Mux upload</strong><span>No credit consumption during upload preparation.</span></div><em>Waiting</em></div>
+          <div class="stage-row" data-vp-stage="credit"><span class="stage-dot"></span><div><strong id="vpStageCreditTitle">2 · Final submission</strong><span>The reserved credit is consumed exactly once.</span></div><em>Waiting</em></div>
+          <div class="stage-row" data-vp-stage="media"><span class="stage-dot"></span><div><strong id="vpStageMediaTitle">3 · Video asset</strong><span>Mux playback and preview are prepared.</span></div><em>Waiting</em></div>
+          <div class="stage-row" data-vp-stage="workspace"><span class="stage-dot"></span><div><strong id="vpStageWorkspaceTitle">4 · Workspace index</strong><span>Result and media are published to the company Workspace.</span></div><em>Waiting</em></div>
+        </div>
+        <button class="btn primary hidden" id="vpRetryBtn" type="button">Retry technical processing</button>
+      </article>
+
+      <article class="flow-card hidden" id="vpCompleteView">
+        <div class="completion-mark">✓</div>
+        <h2 id="vpCompleteTitle">Submission completed</h2>
+        <p id="vpCompleteText">Thank you. Your video presentation has been submitted successfully.</p>
+        <div class="completion-grid">
+          <div><span id="vpCompleteStatusLabel">Status</span><strong id="vpCompleteStatus">Completed</strong></div>
+          <div><span id="vpCompleteMediaLabel">Video</span><strong id="vpCompleteMedia">Ready in Workspace</strong></div>
+          <div><span id="vpCompleteCreditLabel">Credit</span><strong id="vpCompleteCredit">Consumed once</strong></div>
+        </div>
+        <div class="notice info"><span>i</span><span>Video Presentation does not create an automatic candidate score or hiring recommendation.</span></div>
+        <div class="actions"><button class="btn" id="vpCloseBtn" type="button">Close window</button></div>
+      </article>
+
       <article class="flow-card hidden error-view" id="errorView">
         <h2 id="errorTitle">This CLARITY link is unavailable</h2>
         <p id="errorText">The access could not be verified.</p>
