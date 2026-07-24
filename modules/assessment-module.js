@@ -1,4 +1,4 @@
-// CLARITY Assessment Universal App module v2.19.1 — immediate closeout worker trigger — E1.2 unified reporting and secure downloads
+// CLARITY Assessment Universal App module v2.19.2 — monotonic completion state — E1.2 unified reporting and secure downloads
 const COPY = Object.freeze({
   de: {
     assessment: {
@@ -55,6 +55,31 @@ const COPY = Object.freeze({
 function isAmbiguous(error) {
   const value = `${error?.code || ''} ${error?.message || error || ''}`.toLowerCase();
   return /failed to fetch|network|timeout|timed out|http_50[234]|gateway|load failed/.test(value);
+}
+
+function normalizeUiState(input = {}) {
+  const next = { ...(input || {}) };
+  const hasReport = next.report?.available === true ||
+    Boolean(next.report?.preferredPdfUrl || next.report?.unifiedPdfUrl || next.report?.legacyPdfUrl);
+  if (next.completed === true || hasReport) {
+    next.phase = 'completed';
+    next.completed = true;
+    next.failed = false;
+  }
+  return next;
+}
+
+function shouldAdoptState(current, next) {
+  if (!current) return true;
+  const currentPhase = String(current.phase || '');
+  const nextPhase = String(next.phase || '');
+  if (currentPhase === 'completed' && nextPhase !== 'completed') return false;
+  if (nextPhase === 'failed' && (
+    current.completed === true ||
+    current.report?.available === true ||
+    next.report?.available === true
+  )) return false;
+  return true;
 }
 
 export function createAssessmentModule(ctx) {
@@ -162,7 +187,9 @@ export function createAssessmentModule(ctx) {
   }
 
   function render(data) {
-    current = data || current || {};
+    const next = normalizeUiState(data || current || {});
+    if (!shouldAdoptState(current, next)) return;
+    current = next;
     renderMeta(current);
     renderHistory(current.history || []);
     const phase = current.phase || 'not_started';
@@ -209,7 +236,9 @@ export function createAssessmentModule(ctx) {
       body: { token: state.token, uid: state.uid, sessionId }
     }))
       .then((data) => {
-        if (data?.state) render(data.state);
+        // The process call can finish after a newer status poll. Only adopt a
+        // definitive completed state here; all other states come from polling.
+        if (data?.state?.phase === 'completed') render(data.state);
       })
       .catch(() => {})
       .finally(() => { closeoutKickInFlight = false; });
