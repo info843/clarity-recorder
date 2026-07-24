@@ -1,4 +1,4 @@
-// CLARITY Assessment Universal App module v2.19.2 — monotonic completion state — E1.2 unified reporting and secure downloads
+// CLARITY Assessment Universal App module v2.19.3 — single-dispatch closeout — E1.2 unified reporting and secure downloads
 const COPY = Object.freeze({
   de: {
     assessment: {
@@ -60,12 +60,26 @@ function isAmbiguous(error) {
 function normalizeUiState(input = {}) {
   const next = { ...(input || {}) };
   const hasReport = next.report?.available === true ||
-    Boolean(next.report?.preferredPdfUrl || next.report?.unifiedPdfUrl || next.report?.legacyPdfUrl);
+    Boolean(
+      next.report?.preferredPdfUrl ||
+      next.report?.unifiedPdfUrl ||
+      next.report?.legacyPdfUrl
+    );
+
+  const retryPending =
+    next.retryPending === true ||
+    ['queued', 'processing', 'retry_wait', 'leased']
+      .includes(String(next.closeoutStatus || '').toLowerCase());
+
   if (next.completed === true || hasReport) {
     next.phase = 'completed';
     next.completed = true;
     next.failed = false;
+  } else if (next.phase === 'failed' && retryPending) {
+    next.phase = 'processing';
+    next.failed = false;
   }
+
   return next;
 }
 
@@ -92,7 +106,7 @@ export function createAssessmentModule(ctx) {
   let pollStartedAt = 0;
   let fallbackAllowed = false;
   let closeoutKickInFlight = false;
-  let lastCloseoutKickAt = 0;
+  let closeoutKickSessionId = '';
 
   const product = () => String(state.payload?.runtime?.productKey || '').toLowerCase();
   const L = () => {
@@ -227,21 +241,27 @@ export function createAssessmentModule(ctx) {
   function kickCloseout(force = false) {
     const sessionId = current?.sessionId || '';
     if (!sessionId || closeoutKickInFlight) return;
-    if (!force && Date.now() - lastCloseoutKickAt < 30000) return;
-    lastCloseoutKickAt = Date.now();
+    if (!force && closeoutKickSessionId === sessionId) return;
+
+    closeoutKickSessionId = sessionId;
     closeoutKickInFlight = true;
-    // Deliberately do not await. The Wix connection may time out while the
-    // backend execution continues; status polling remains responsive.
+
+    // Process is a non-blocking 202 trigger. Polling remains the only source of
+    // participant-facing status and never starts a second worker automatically.
     Promise.resolve(api(endpoint('Process'), {
-      body: { token: state.token, uid: state.uid, sessionId }
+      body: {
+        token: state.token,
+        uid: state.uid,
+        sessionId
+      }
     }))
       .then((data) => {
-        // The process call can finish after a newer status poll. Only adopt a
-        // definitive completed state here; all other states come from polling.
         if (data?.state?.phase === 'completed') render(data.state);
       })
       .catch(() => {})
-      .finally(() => { closeoutKickInFlight = false; });
+      .finally(() => {
+        closeoutKickInFlight = false;
+      });
   }
 
   async function readStatus(includeInspection = false) {
@@ -258,7 +278,6 @@ export function createAssessmentModule(ctx) {
     if (!pollStartedAt) pollStartedAt = Date.now();
     try {
       const next = await readStatus(attempt >= 2);
-      if (next.phase === 'processing' && attempt % 3 === 0) kickCloseout(false);
       if (next.phase === 'completed' && next.report?.unifiedReady) {
         clearPoll();
         return;
@@ -347,7 +366,7 @@ export function createAssessmentModule(ctx) {
       });
       render(data.state || data);
       if ((data.state || data).phase !== 'completed') {
-        kickCloseout(true);
+        kickCloseout(false);
         await pollStatus();
       }
     } catch (error) {
@@ -438,7 +457,7 @@ export function createAssessmentModule(ctx) {
     try {
       const data = await readStatus(true);
       if (data.phase === 'processing' || (data.phase === 'completed' && !data.report?.unifiedReady)) {
-        if (data.phase === 'processing') kickCloseout(true);
+        if (data.phase === 'processing') kickCloseout(false);
         await pollStatus();
       }
     } catch (error) {
