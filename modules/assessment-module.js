@@ -1,4 +1,4 @@
-// CLARITY Assessment Universal App module v2.19.0 — E1.2 unified reporting and secure downloads
+// CLARITY Assessment Universal App module v2.19.1 — immediate closeout worker trigger — E1.2 unified reporting and secure downloads
 const COPY = Object.freeze({
   de: {
     assessment: {
@@ -66,6 +66,8 @@ export function createAssessmentModule(ctx) {
   let closeoutStarted = false;
   let pollStartedAt = 0;
   let fallbackAllowed = false;
+  let closeoutKickInFlight = false;
+  let lastCloseoutKickAt = 0;
 
   const product = () => String(state.payload?.runtime?.productKey || '').toLowerCase();
   const L = () => {
@@ -195,6 +197,24 @@ export function createAssessmentModule(ctx) {
     }
   }
 
+  function kickCloseout(force = false) {
+    const sessionId = current?.sessionId || '';
+    if (!sessionId || closeoutKickInFlight) return;
+    if (!force && Date.now() - lastCloseoutKickAt < 30000) return;
+    lastCloseoutKickAt = Date.now();
+    closeoutKickInFlight = true;
+    // Deliberately do not await. The Wix connection may time out while the
+    // backend execution continues; status polling remains responsive.
+    Promise.resolve(api(endpoint('Process'), {
+      body: { token: state.token, uid: state.uid, sessionId }
+    }))
+      .then((data) => {
+        if (data?.state) render(data.state);
+      })
+      .catch(() => {})
+      .finally(() => { closeoutKickInFlight = false; });
+  }
+
   async function readStatus(includeInspection = false) {
     const data = await api(endpoint('Status'), {
       body: { token: state.token, uid: state.uid, sessionId: current?.sessionId || '', includeInspection }
@@ -209,6 +229,7 @@ export function createAssessmentModule(ctx) {
     if (!pollStartedAt) pollStartedAt = Date.now();
     try {
       const next = await readStatus(attempt >= 2);
+      if (next.phase === 'processing' && attempt % 3 === 0) kickCloseout(false);
       if (next.phase === 'completed' && next.report?.unifiedReady) {
         clearPoll();
         return;
@@ -296,7 +317,10 @@ export function createAssessmentModule(ctx) {
         body: { token: state.token, uid: state.uid, sessionId: current?.sessionId || '' }
       });
       render(data.state || data);
-      if ((data.state || data).phase !== 'completed') await pollStatus();
+      if ((data.state || data).phase !== 'completed') {
+        kickCloseout(true);
+        await pollStatus();
+      }
     } catch (error) {
       if (isAmbiguous(error)) {
         status(L().transport, 'warn');
@@ -318,7 +342,10 @@ export function createAssessmentModule(ctx) {
       const data = await api(endpoint('Retry'), { body: { token: state.token, uid: state.uid, sessionId: current?.sessionId || '' } });
       const next = data.state || data;
       render(next);
-      if (next.phase === 'processing' || (next.phase === 'completed' && !next.report?.unifiedReady)) await pollStatus();
+      if (next.phase === 'processing' || (next.phase === 'completed' && !next.report?.unifiedReady)) {
+        kickCloseout(true);
+        await pollStatus();
+      }
     } catch (error) {
       if (isAmbiguous(error)) await pollStatus();
       else status(error.message || String(error), 'err');
@@ -381,7 +408,10 @@ export function createAssessmentModule(ctx) {
     status('', '');
     try {
       const data = await readStatus(true);
-      if (data.phase === 'processing' || (data.phase === 'completed' && !data.report?.unifiedReady)) await pollStatus();
+      if (data.phase === 'processing' || (data.phase === 'completed' && !data.report?.unifiedReady)) {
+        if (data.phase === 'processing') kickCloseout(true);
+        await pollStatus();
+      }
     } catch (error) {
       if (isAmbiguous(error)) await pollStatus();
       else if (onFatal) onFatal(error);
