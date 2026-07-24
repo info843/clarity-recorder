@@ -1,4 +1,4 @@
-// CLARITY Assessment Universal App module v2.18.0
+// CLARITY Assessment Universal App module v2.19.0 — E1.2 unified reporting and secure downloads
 const COPY = Object.freeze({
   de: {
     assessment: {
@@ -20,7 +20,7 @@ const COPY = Object.freeze({
       startTitle: 'Kurzer Überblick', startText: 'Beantworten Sie die Fragen kurz und konkret. Je nach Umfang dauert der Snapshot nur wenige Minuten.'
     },
     download: 'Bericht herunterladen', placeholder: 'Ihre Antwort …', answerRequired: 'Bitte geben Sie eine Antwort ein.',
-    question: 'Frage', answered: 'beantwortet', area: 'Bereich', scope: 'Umfang', process: 'Ablauf',
+    question: 'Frage', answered: 'beantwortet', area: 'Bereich', format: 'Format', shortCheck: 'Kurzcheck', scope: 'Umfang', process: 'Ablauf',
     processRule: 'Auswertung nach der letzten Antwort', retry: 'Status erneut prüfen', report: 'Bericht',
     waitingReport: 'Der Bericht wird noch vorbereitet. Die Seite prüft den Status weiter.',
     transport: 'Die Serverantwort ist noch unklar. Der tatsächliche Status wird geprüft.'
@@ -45,7 +45,7 @@ const COPY = Object.freeze({
       startTitle: 'Quick overview', startText: 'Answer briefly and concretely. Depending on the scope, the Snapshot takes only a few minutes.'
     },
     download: 'Download report', placeholder: 'Your answer …', answerRequired: 'Please enter an answer.',
-    question: 'Question', answered: 'answered', area: 'Area', scope: 'Scope', process: 'Process',
+    question: 'Question', answered: 'answered', area: 'Area', format: 'Format', shortCheck: 'Quick check', scope: 'Scope', process: 'Process',
     processRule: 'Evaluation after the final answer', retry: 'Check status again', report: 'Report',
     waitingReport: 'The report is still being prepared. This page continues checking the status.',
     transport: 'The server response is still unclear. The actual status is being checked.'
@@ -65,6 +65,7 @@ export function createAssessmentModule(ctx) {
   let current = null;
   let closeoutStarted = false;
   let pollStartedAt = 0;
+  let fallbackAllowed = false;
 
   const product = () => String(state.payload?.runtime?.productKey || '').toLowerCase();
   const L = () => {
@@ -82,13 +83,10 @@ export function createAssessmentModule(ctx) {
     return labels[normalized] || value || (de ? 'Allgemein' : 'General');
   }
 
-  function publicDocumentUrl(value) {
-    const raw = String(value || '').trim();
-    if (!raw) return '';
-    if (/^https?:\/\//i.test(raw)) return raw;
-    const match = raw.match(/^wix:document:\/\/v1\/([^/]+)\//i) || raw.match(/^wix:document:\/\/([^/]+)\//i);
-    return match?.[1] ? `https://static.wixstatic.com/media/${match[1]}` : '';
+  function reportIdentity() {
+    return { token: state.token, uid: state.uid, sessionId: current?.sessionId || '', resultId: current?.report?.resultId || '' };
   }
+
 
   function ensureAssessmentStyles() {
     if (document.getElementById('clarity-assessment-contrast-v218')) return;
@@ -151,7 +149,7 @@ export function createAssessmentModule(ctx) {
   }
 
   function renderMeta(data) {
-    $('assessmentArea').textContent = areaLabel(data.moduleArea || 'personality');
+    $('assessmentArea').textContent = product() === 'snapshot' ? L().shortCheck : areaLabel(data.moduleArea || 'personality');
     $('assessmentScope').textContent = `${data.questionCount || 0} ${getLocale() === 'de' ? 'Fragen' : 'questions'}`;
     $('assessmentCredit').textContent = L().processRule;
     const answered = Number(data.answeredCount || 0);
@@ -170,9 +168,10 @@ export function createAssessmentModule(ctx) {
     const running = phase === 'running';
     const processing = phase === 'processing';
     const completed = phase === 'completed';
+    const failed = phase === 'failed';
     $('assessmentStartPanel').classList.toggle('hidden', !notStarted);
     $('assessmentChatPanel').classList.toggle('hidden', !(running || processing));
-    $('assessmentProcessingPanel').classList.toggle('hidden', !processing);
+    $('assessmentProcessingPanel').classList.toggle('hidden', !(processing || failed));
     $('assessmentCompletePanel').classList.toggle('hidden', !completed);
     $('assessmentComposer').classList.toggle('hidden', !running);
     const allAnswered = Number(current.answeredCount || 0) >= Number(current.expectedAnswers || current.questionCount || 1);
@@ -180,12 +179,15 @@ export function createAssessmentModule(ctx) {
     $('assessmentSendBtn').classList.toggle('hidden', !running || allAnswered);
     if (completed) {
       closeoutStarted = true;
-      const url = publicDocumentUrl(current.report?.preferredPdfUrl || current.report?.unifiedPdfUrl || current.report?.legacyPdfUrl || '');
-      $('assessmentReportSource').textContent = L().report;
-      $('assessmentReportBtn').disabled = !url;
-      $('assessmentReportBtn').dataset.url = url;
-      status(url ? L().completedText : L().waitingReport, url ? 'ok' : 'warn');
-      clearPoll();
+      const unifiedReady = current.report?.unifiedReady === true || Boolean(current.report?.unifiedPdfUrl);
+      const fallbackReady = current.report?.available === true || Boolean(current.report?.legacyPdfUrl);
+      const reportAvailable = unifiedReady || (fallbackAllowed && fallbackReady);
+      $('assessmentReportSource').textContent = unifiedReady ? 'Unified PDF' : (fallbackAllowed ? (getLocale() === 'de' ? 'Fallback-Bericht' : 'Fallback report') : (getLocale() === 'de' ? 'Unified PDF wird erstellt' : 'Unified PDF is being created'));
+      $('assessmentReportBtn').disabled = !reportAvailable;
+      status(unifiedReady ? L().completedText : L().waitingReport, unifiedReady ? 'ok' : 'warn');
+      if (unifiedReady || fallbackAllowed) clearPoll();
+    } else if (failed) {
+      status(getLocale() === 'de' ? 'Die Verarbeitung wurde technisch unterbrochen. Mit „Status erneut prüfen“ wird derselbe Vorgang ohne neue Abbuchung fortgesetzt.' : 'Processing was interrupted technically. “Check status again” continues the same record without a new charge.', 'err');
     } else if (processing) {
       status(L().processing, 'warn');
     } else if (running) {
@@ -207,13 +209,15 @@ export function createAssessmentModule(ctx) {
     if (!pollStartedAt) pollStartedAt = Date.now();
     try {
       const next = await readStatus(attempt >= 2);
-      if (next.phase === 'completed' && next.report?.available) {
+      if (next.phase === 'completed' && next.report?.unifiedReady) {
         clearPoll();
         return;
       }
       if (Date.now() - pollStartedAt >= 12 * 60 * 1000) {
+        fallbackAllowed = true;
         polling = false;
-        status(L().waitingReport, 'warn');
+        render(next);
+        status(getLocale() === 'de' ? 'Der Unified Report ist noch nicht bereit. Der verfügbare Fallback-Bericht kann geöffnet werden.' : 'The Unified report is not ready yet. The available fallback report can be opened.', 'warn');
         return;
       }
     } catch (error) {
@@ -314,11 +318,29 @@ export function createAssessmentModule(ctx) {
       const data = await api(endpoint('Retry'), { body: { token: state.token, uid: state.uid, sessionId: current?.sessionId || '' } });
       const next = data.state || data;
       render(next);
-      if (next.phase === 'processing' || (next.phase === 'completed' && !next.report?.available)) await pollStatus();
+      if (next.phase === 'processing' || (next.phase === 'completed' && !next.report?.unifiedReady)) await pollStatus();
     } catch (error) {
       if (isAmbiguous(error)) await pollStatus();
       else status(error.message || String(error), 'err');
     } finally { setBusy(false, $('assessmentRetryBtn')); }
+  }
+
+  async function downloadReport() {
+    if (busy) return;
+    const button = $('assessmentReportBtn');
+    setBusy(true, button);
+    status(getLocale() === 'de' ? 'Sicherer Download wird vorbereitet …' : 'Preparing secure download …', 'warn');
+    try {
+      const data = await api(endpoint('Download'), { body: reportIdentity() });
+      const url = data?.url || data?.downloadUrl || data?.data?.url || '';
+      if (!url) throw new Error(getLocale() === 'de' ? 'Der Bericht ist noch nicht zum Download bereit.' : 'The report is not ready for download yet.');
+      window.open(url, '_blank', 'noopener,noreferrer');
+      status(L().completedText, 'ok');
+    } catch (error) {
+      status(error.message || String(error), 'err');
+    } finally {
+      setBusy(false, button);
+    }
   }
 
   function applyCopy() {
@@ -332,7 +354,7 @@ export function createAssessmentModule(ctx) {
     $('assessmentFinishBtn').textContent = copy.finish;
     $('assessmentRetryBtn').textContent = copy.retry;
     $('assessmentInput').placeholder = copy.placeholder;
-    $('assessmentAreaLabel').textContent = copy.area;
+    $('assessmentAreaLabel').textContent = product() === 'snapshot' ? copy.format : copy.area;
     $('assessmentScopeLabel').textContent = copy.scope;
     $('assessmentCreditLabel').textContent = copy.process;
     $('assessmentProcessingText').textContent = copy.processing;
@@ -359,7 +381,7 @@ export function createAssessmentModule(ctx) {
     status('', '');
     try {
       const data = await readStatus(true);
-      if (data.phase === 'processing' || (data.phase === 'completed' && !data.report?.available)) await pollStatus();
+      if (data.phase === 'processing' || (data.phase === 'completed' && !data.report?.unifiedReady)) await pollStatus();
     } catch (error) {
       if (isAmbiguous(error)) await pollStatus();
       else if (onFatal) onFatal(error);
@@ -370,10 +392,7 @@ export function createAssessmentModule(ctx) {
   $('assessmentSendBtn')?.addEventListener('click', send);
   $('assessmentFinishBtn')?.addEventListener('click', finish);
   $('assessmentRetryBtn')?.addEventListener('click', retry);
-  $('assessmentReportBtn')?.addEventListener('click', () => {
-    const url = $('assessmentReportBtn').dataset.url || '';
-    if (url) window.open(url, '_blank', 'noopener,noreferrer');
-  });
+  $('assessmentReportBtn')?.addEventListener('click', downloadReport);
   $('assessmentInput')?.addEventListener('keydown', (event) => {
     if (event.isComposing) return;
     // Enter submits; Shift+Enter keeps the expected multi-line behavior.
