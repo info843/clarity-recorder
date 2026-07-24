@@ -1,57 +1,53 @@
-// CLARITY Assessment Universal App module v2.17.1
+// CLARITY Assessment Universal App module v2.18.0
 const COPY = Object.freeze({
   de: {
-    snapshotTitle: 'CLARITY Snapshot',
-    assessmentTitle: 'CLARITY Assessment',
-    intro: 'Beantworten Sie die Fragen in eigenen Worten. Ihre Antworten werden strukturiert ausgewertet und in einem Bericht dokumentiert.',
-    release: 'Dieser erste V2-Release verwendet den stabilen Chat-Modus. Audio, Video und Mix folgen in der nächsten Ausbaustufe.',
-    start: 'Assessment starten',
-    starting: 'Assessment wird gestartet …',
-    send: 'Antwort senden',
-    finish: 'Assessment abschließen',
-    processing: 'Ihre Antworten werden ausgewertet und der Bericht wird erstellt. Bitte lassen Sie diese Seite geöffnet.',
-    completed: 'Assessment abgeschlossen',
-    completedText: 'Der Bericht steht zur Verfügung. Die Unified-Version wird im Hintergrund mit dem Workspace synchronisiert.',
-    download: 'Bericht herunterladen',
-    placeholder: 'Ihre Antwort …',
-    answerRequired: 'Bitte geben Sie eine Antwort ein.',
-    question: 'Frage',
-    answered: 'beantwortet',
-    area: 'Bereich',
-    scope: 'Umfang',
-    credit: 'Credit-Regel',
-    creditRule: 'Einmaliger Verbrauch beim Start der Session',
-    retry: 'Status erneut prüfen',
-    legacy: 'Legacy-Fallback',
-    unified: 'Unified',
-    waitingReport: 'Bericht wird vorbereitet …',
+    assessment: {
+      title: 'CLARITY Assessment', eyebrow: 'CLARITY Assessment · Schriftlich', badge: 'Sicherer Ablauf',
+      intro: 'Beantworten Sie die Fragen möglichst konkret und in Ihren eigenen Worten. Beispiele helfen dabei, Ihre Angaben nachvollziehbar einzuordnen.',
+      notice: 'Mit Enter senden Sie Ihre Antwort. Shift + Enter fügt einen Zeilenumbruch ein.',
+      start: 'Assessment starten', starting: 'Assessment wird gestartet …', send: 'Antwort senden', finish: 'Assessment abschließen',
+      processing: 'Ihre Antworten werden ausgewertet und der Bericht wird erstellt. Der Status wird automatisch aktualisiert.',
+      completed: 'Assessment abgeschlossen', completedText: 'Der Bericht steht zur Verfügung.',
+      startTitle: 'Vorbereitung', startText: 'Planen Sie für jede Antwort ausreichend Zeit ein und nennen Sie möglichst konkrete Situationen oder Beispiele.'
+    },
+    snapshot: {
+      title: 'CLARITY Snapshot', eyebrow: 'CLARITY Snapshot · Kurzcheck', badge: 'Kompakter Ablauf',
+      intro: 'Beantworten Sie die vereinbarten Kurzfragen in eigenen Worten. Der Snapshot fasst die Antworten anschließend kompakt zusammen.',
+      notice: 'Der Snapshot ist ein kurzer strukturierter Überblick und ersetzt kein vollständiges Assessment.',
+      start: 'Snapshot starten', starting: 'Snapshot wird gestartet …', send: 'Antwort senden', finish: 'Snapshot abschließen',
+      processing: 'Ihre Antworten werden zusammengefasst. Der Status wird automatisch aktualisiert.',
+      completed: 'Snapshot abgeschlossen', completedText: 'Die kompakte Zusammenfassung steht zur Verfügung.',
+      startTitle: 'Kurzer Überblick', startText: 'Beantworten Sie die Fragen kurz und konkret. Je nach Umfang dauert der Snapshot nur wenige Minuten.'
+    },
+    download: 'Bericht herunterladen', placeholder: 'Ihre Antwort …', answerRequired: 'Bitte geben Sie eine Antwort ein.',
+    question: 'Frage', answered: 'beantwortet', area: 'Bereich', scope: 'Umfang', process: 'Ablauf',
+    processRule: 'Auswertung nach der letzten Antwort', retry: 'Status erneut prüfen', report: 'Bericht',
+    waitingReport: 'Der Bericht wird noch vorbereitet. Die Seite prüft den Status weiter.',
     transport: 'Die Serverantwort ist noch unklar. Der tatsächliche Status wird geprüft.'
   },
   en: {
-    snapshotTitle: 'CLARITY Snapshot',
-    assessmentTitle: 'CLARITY Assessment',
-    intro: 'Answer the questions in your own words. Your responses are evaluated in a structured way and documented in a report.',
-    release: 'This first V2 release uses the stable chat mode. Audio, video and mixed modes follow in the next phase.',
-    start: 'Start assessment',
-    starting: 'Starting assessment …',
-    send: 'Send answer',
-    finish: 'Complete assessment',
-    processing: 'Your responses are being evaluated and the report is being created. Keep this page open.',
-    completed: 'Assessment completed',
-    completedText: 'The report is available. The Unified version is synchronized with the Workspace in the background.',
-    download: 'Download report',
-    placeholder: 'Your answer …',
-    answerRequired: 'Please enter an answer.',
-    question: 'Question',
-    answered: 'answered',
-    area: 'Area',
-    scope: 'Scope',
-    credit: 'Credit rule',
-    creditRule: 'Consumed once when the session starts',
-    retry: 'Check status again',
-    legacy: 'Legacy fallback',
-    unified: 'Unified',
-    waitingReport: 'Preparing report …',
+    assessment: {
+      title: 'CLARITY Assessment', eyebrow: 'CLARITY Assessment · Written', badge: 'Secure workflow',
+      intro: 'Answer the questions as concretely as possible and in your own words. Examples help make your information easier to assess.',
+      notice: 'Press Enter to send your answer. Shift + Enter inserts a new line.',
+      start: 'Start assessment', starting: 'Starting assessment …', send: 'Send answer', finish: 'Complete assessment',
+      processing: 'Your answers are being evaluated and the report is being created. The status updates automatically.',
+      completed: 'Assessment completed', completedText: 'The report is available.',
+      startTitle: 'Preparation', startText: 'Take sufficient time for each answer and provide concrete situations or examples where possible.'
+    },
+    snapshot: {
+      title: 'CLARITY Snapshot', eyebrow: 'CLARITY Snapshot · Quick check', badge: 'Concise workflow',
+      intro: 'Answer the agreed short questions in your own words. The Snapshot then creates a concise summary.',
+      notice: 'The Snapshot is a short structured overview and does not replace a full assessment.',
+      start: 'Start Snapshot', starting: 'Starting Snapshot …', send: 'Send answer', finish: 'Complete Snapshot',
+      processing: 'Your answers are being summarized. The status updates automatically.',
+      completed: 'Snapshot completed', completedText: 'The concise summary is available.',
+      startTitle: 'Quick overview', startText: 'Answer briefly and concretely. Depending on the scope, the Snapshot takes only a few minutes.'
+    },
+    download: 'Download report', placeholder: 'Your answer …', answerRequired: 'Please enter an answer.',
+    question: 'Question', answered: 'answered', area: 'Area', scope: 'Scope', process: 'Process',
+    processRule: 'Evaluation after the final answer', retry: 'Check status again', report: 'Report',
+    waitingReport: 'The report is still being prepared. This page continues checking the status.',
     transport: 'The server response is still unclear. The actual status is being checked.'
   }
 });
@@ -68,10 +64,52 @@ export function createAssessmentModule(ctx) {
   let pollTimer = 0;
   let current = null;
   let closeoutStarted = false;
+  let pollStartedAt = 0;
 
-  const L = () => COPY[getLocale() === 'de' ? 'de' : 'en'];
   const product = () => String(state.payload?.runtime?.productKey || '').toLowerCase();
+  const L = () => {
+    const base = COPY[getLocale() === 'de' ? 'de' : 'en'];
+    return { ...base, ...(product() === 'snapshot' ? base.snapshot : base.assessment) };
+  };
   const endpoint = (name) => `v2Assessment${name}`;
+
+  function areaLabel(value) {
+    const normalized = String(value || '').toLowerCase();
+    const de = getLocale() === 'de';
+    const labels = de
+      ? { aptitude: 'Kognitive Fähigkeiten', personality: 'Persönlichkeit', skills: 'Fachliche Kompetenzen', language: 'Sprachkompetenz' }
+      : { aptitude: 'Cognitive abilities', personality: 'Personality', skills: 'Professional skills', language: 'Language proficiency' };
+    return labels[normalized] || value || (de ? 'Allgemein' : 'General');
+  }
+
+  function publicDocumentUrl(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (/^https?:\/\//i.test(raw)) return raw;
+    const match = raw.match(/^wix:document:\/\/v1\/([^/]+)\//i) || raw.match(/^wix:document:\/\/([^/]+)\//i);
+    return match?.[1] ? `https://static.wixstatic.com/media/${match[1]}` : '';
+  }
+
+  function ensureAssessmentStyles() {
+    if (document.getElementById('clarity-assessment-contrast-v218')) return;
+    const style = document.createElement('style');
+    style.id = 'clarity-assessment-contrast-v218';
+    style.textContent = `
+      #assessmentView .assessment-meta-grid>div{background:#f8fafc!important;border-color:#d7e1ef!important}
+      #assessmentView .assessment-meta-grid span{color:#475467!important}
+      #assessmentView .assessment-meta-grid strong{color:#101828!important}
+      #assessmentView .assessment-message{box-shadow:0 12px 28px rgba(2,12,27,.18)}
+      #assessmentView .assessment-message.assistant{background:linear-gradient(145deg,#102a4e,#0b1d3a)!important;border-color:rgba(34,211,238,.58)!important;color:#f4f8ff!important}
+      #assessmentView .assessment-message.user{background:linear-gradient(145deg,#253b86,#73256f)!important;border-color:rgba(236,72,153,.62)!important;color:#ffffff!important}
+      #assessmentView .assessment-message span{color:#9eeaf5!important}
+      #assessmentView .assessment-message.user span{color:#ffd3ef!important}
+      #assessmentView .assessment-message p{color:inherit!important}
+      #assessmentView .assessment-composer textarea{background:#ffffff!important;color:#101828!important;caret-color:#101828!important;border-color:#cbd5e1!important}
+      #assessmentView .assessment-composer textarea::placeholder{color:#667085!important;opacity:1}
+      #assessmentView .assessment-composer textarea:focus{border-color:#22d3ee!important;box-shadow:0 0 0 4px rgba(34,211,238,.14)!important}
+    `;
+    document.head.appendChild(style);
+  }
 
   function status(text, type = '') {
     const el = $('assessmentStatus');
@@ -93,6 +131,7 @@ export function createAssessmentModule(ctx) {
     if (pollTimer) window.clearTimeout(pollTimer);
     pollTimer = 0;
     polling = false;
+    pollStartedAt = 0;
   }
 
   function renderHistory(history = []) {
@@ -112,9 +151,9 @@ export function createAssessmentModule(ctx) {
   }
 
   function renderMeta(data) {
-    $('assessmentArea').textContent = data.moduleArea || 'personality';
+    $('assessmentArea').textContent = areaLabel(data.moduleArea || 'personality');
     $('assessmentScope').textContent = `${data.questionCount || 0} ${getLocale() === 'de' ? 'Fragen' : 'questions'}`;
-    $('assessmentCredit').textContent = L().creditRule;
+    $('assessmentCredit').textContent = L().processRule;
     const answered = Number(data.answeredCount || 0);
     const expected = Math.max(1, Number(data.expectedAnswers || data.questionCount || 1));
     const pct = Math.min(100, Math.round((answered / expected) * 100));
@@ -141,9 +180,8 @@ export function createAssessmentModule(ctx) {
     $('assessmentSendBtn').classList.toggle('hidden', !running || allAnswered);
     if (completed) {
       closeoutStarted = true;
-      const url = current.report?.preferredPdfUrl || current.report?.unifiedPdfUrl || current.report?.legacyPdfUrl || '';
-      const source = current.report?.preferredSource === 'unified' ? L().unified : L().legacy;
-      $('assessmentReportSource').textContent = source;
+      const url = publicDocumentUrl(current.report?.preferredPdfUrl || current.report?.unifiedPdfUrl || current.report?.legacyPdfUrl || '');
+      $('assessmentReportSource').textContent = L().report;
       $('assessmentReportBtn').disabled = !url;
       $('assessmentReportBtn').dataset.url = url;
       status(url ? L().completedText : L().waitingReport, url ? 'ok' : 'warn');
@@ -166,13 +204,14 @@ export function createAssessmentModule(ctx) {
   async function pollStatus(attempt = 0) {
     if (polling && attempt === 0) return;
     polling = true;
+    if (!pollStartedAt) pollStartedAt = Date.now();
     try {
       const next = await readStatus(attempt >= 2);
       if (next.phase === 'completed' && next.report?.available) {
         clearPoll();
         return;
       }
-      if (attempt >= 15) {
+      if (Date.now() - pollStartedAt >= 12 * 60 * 1000) {
         polling = false;
         status(L().waitingReport, 'warn');
         return;
@@ -184,7 +223,8 @@ export function createAssessmentModule(ctx) {
         return;
       }
     }
-    pollTimer = window.setTimeout(() => pollStatus(attempt + 1), 5000);
+    const delay = attempt < 12 ? 5000 : attempt < 36 ? 10000 : 15000;
+    pollTimer = window.setTimeout(() => pollStatus(attempt + 1), delay);
   }
 
   async function start() {
@@ -272,17 +312,21 @@ export function createAssessmentModule(ctx) {
     setBusy(true, $('assessmentRetryBtn'));
     try {
       const data = await api(endpoint('Retry'), { body: { token: state.token, uid: state.uid, sessionId: current?.sessionId || '' } });
-      render(data.state || data);
-      if ((data.state || data).phase === 'processing') await pollStatus();
-    } catch (error) { status(error.message || String(error), 'err'); }
-    finally { setBusy(false, $('assessmentRetryBtn')); }
+      const next = data.state || data;
+      render(next);
+      if (next.phase === 'processing' || (next.phase === 'completed' && !next.report?.available)) await pollStatus();
+    } catch (error) {
+      if (isAmbiguous(error)) await pollStatus();
+      else status(error.message || String(error), 'err');
+    } finally { setBusy(false, $('assessmentRetryBtn')); }
   }
 
   function applyCopy() {
     const copy = L();
-    $('assessmentTitle').textContent = product() === 'snapshot' ? copy.snapshotTitle : copy.assessmentTitle;
+    ensureAssessmentStyles();
+    $('assessmentTitle').textContent = copy.title;
     $('assessmentText').textContent = copy.intro;
-    $('assessmentReleaseText').textContent = copy.release;
+    $('assessmentReleaseText').textContent = copy.notice;
     $('assessmentStartBtn').textContent = copy.start;
     $('assessmentSendBtn').textContent = copy.send;
     $('assessmentFinishBtn').textContent = copy.finish;
@@ -290,11 +334,20 @@ export function createAssessmentModule(ctx) {
     $('assessmentInput').placeholder = copy.placeholder;
     $('assessmentAreaLabel').textContent = copy.area;
     $('assessmentScopeLabel').textContent = copy.scope;
-    $('assessmentCreditLabel').textContent = copy.credit;
+    $('assessmentCreditLabel').textContent = copy.process;
     $('assessmentProcessingText').textContent = copy.processing;
     $('assessmentCompleteTitle').textContent = copy.completed;
     $('assessmentCompleteText').textContent = copy.completedText;
     $('assessmentReportBtn').textContent = copy.download;
+
+    const eyebrow = document.querySelector('#assessmentView .assessment-head .eyebrow span:last-child');
+    if (eyebrow) eyebrow.textContent = copy.eyebrow;
+    const badge = document.querySelector('#assessmentView .assessment-head > .pill');
+    if (badge) badge.textContent = copy.badge;
+    const startTitle = document.querySelector('#assessmentView .assessment-start-card strong');
+    const startText = document.querySelector('#assessmentView .assessment-start-card p');
+    if (startTitle) startTitle.textContent = copy.startTitle;
+    if (startText) startText.textContent = copy.startText;
   }
 
   async function activate() {
