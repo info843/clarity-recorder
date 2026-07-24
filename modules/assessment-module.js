@@ -1,4 +1,4 @@
-// CLARITY Assessment Universal App module v2.17.0
+// CLARITY Assessment Universal App module v2.17.1
 const COPY = Object.freeze({
   de: {
     snapshotTitle: 'CLARITY Snapshot',
@@ -322,7 +322,12 @@ export function createAssessmentModule(ctx) {
     if (url) window.open(url, '_blank', 'noopener,noreferrer');
   });
   $('assessmentInput')?.addEventListener('keydown', (event) => {
-    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); send(); }
+    if (event.isComposing) return;
+    // Enter submits; Shift+Enter keeps the expected multi-line behavior.
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      if (!busy) send();
+    }
   });
 
   return { activate, refresh: readStatus, destroy: clearPoll, applyLocale: applyCopy };
