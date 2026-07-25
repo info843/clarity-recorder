@@ -1,4 +1,6 @@
-// CLARITY Assessment Universal App module v2.19.3 — single-dispatch closeout — E1.2 unified reporting and secure downloads
+// CLARITY Assessment Universal App module v2.20.0 — E1.4 PERFORMANCE + CONTRACT FREEZE
+// Compact state deltas, one closeout dispatch, status-only polling and immediate
+// fallback-report availability while the Unified PDF finishes asynchronously.
 const COPY = Object.freeze({
   de: {
     assessment: {
@@ -96,6 +98,18 @@ function shouldAdoptState(current, next) {
   return true;
 }
 
+function mergeHistory(base = [], delta = []) {
+  const out = Array.isArray(base) ? [...base] : [];
+  const seen = new Set(out.map((item) => [item?.role, item?.questionIndex, item?.text].join('|')));
+  for (const item of (Array.isArray(delta) ? delta : [])) {
+    const signature = [item?.role, item?.questionIndex, item?.text].join('|');
+    if (!item?.text || seen.has(signature)) continue;
+    seen.add(signature);
+    out.push(item);
+  }
+  return out.slice(-200);
+}
+
 export function createAssessmentModule(ctx) {
   const { $, state, api, show, setStep, getLocale, onFatal } = ctx;
   let busy = false;
@@ -107,6 +121,8 @@ export function createAssessmentModule(ctx) {
   let fallbackAllowed = false;
   let closeoutKickInFlight = false;
   let closeoutKickSessionId = '';
+  let lastHistorySignature = '';
+  let unifiedInspectionPolls = 0;
 
   const product = () => String(state.payload?.runtime?.productKey || '').toLowerCase();
   const L = () => {
@@ -174,6 +190,9 @@ export function createAssessmentModule(ctx) {
   }
 
   function renderHistory(history = []) {
+    const signature = (Array.isArray(history) ? history : []).map((item) => `${item?.role || ''}|${item?.questionIndex || 0}|${item?.text || ''}`).join('¶');
+    if (signature === lastHistorySignature) return;
+    lastHistorySignature = signature;
     const box = $('assessmentMessages');
     box.replaceChildren();
     history.forEach((entry) => {
@@ -203,7 +222,17 @@ export function createAssessmentModule(ctx) {
   function render(data) {
     const next = normalizeUiState(data || current || {});
     if (!shouldAdoptState(current, next)) return;
-    current = next;
+    const previous = current || {};
+    const history = Array.isArray(next.history)
+      ? next.history
+      : mergeHistory(previous.history || [], next.historyDelta || []);
+    current = {
+      ...previous,
+      ...next,
+      report: { ...(previous.report || {}), ...(next.report || {}) },
+      timing: { ...(previous.timing || {}), ...(next.timing || {}) },
+      history
+    };
     renderMeta(current);
     renderHistory(current.history || []);
     const phase = current.phase || 'not_started';
@@ -224,11 +253,18 @@ export function createAssessmentModule(ctx) {
       closeoutStarted = true;
       const unifiedReady = current.report?.unifiedReady === true || Boolean(current.report?.unifiedPdfUrl);
       const fallbackReady = current.report?.available === true || Boolean(current.report?.legacyPdfUrl);
-      const reportAvailable = unifiedReady || (fallbackAllowed && fallbackReady);
-      $('assessmentReportSource').textContent = unifiedReady ? 'Unified PDF' : (fallbackAllowed ? (getLocale() === 'de' ? 'Fallback-Bericht' : 'Fallback report') : (getLocale() === 'de' ? 'Unified PDF wird erstellt' : 'Unified PDF is being created'));
+      fallbackAllowed = fallbackAllowed || fallbackReady;
+      const reportAvailable = unifiedReady || fallbackReady;
+      $('assessmentReportSource').textContent = unifiedReady
+        ? 'Unified PDF'
+        : fallbackReady
+          ? (getLocale() === 'de' ? 'Fallback-Bericht · Unified PDF wird finalisiert' : 'Fallback report · Unified PDF is being finalized')
+          : (getLocale() === 'de' ? 'Bericht wird erstellt' : 'Report is being created');
       $('assessmentReportBtn').disabled = !reportAvailable;
-      status(unifiedReady ? L().completedText : L().waitingReport, unifiedReady ? 'ok' : 'warn');
-      if (unifiedReady || fallbackAllowed) clearPoll();
+      status(unifiedReady ? L().completedText : (fallbackReady
+        ? (getLocale() === 'de' ? 'Der Bericht ist verfügbar. Die einheitliche Unified-Version wird im Hintergrund finalisiert.' : 'The report is available. The unified version is being finalized in the background.')
+        : L().waitingReport), unifiedReady ? 'ok' : 'warn');
+      if (unifiedReady) clearPoll();
     } else if (failed) {
       status(getLocale() === 'de' ? 'Die Verarbeitung wurde technisch unterbrochen. Mit „Status erneut prüfen“ wird derselbe Vorgang ohne neue Abbuchung fortgesetzt.' : 'Processing was interrupted technically. “Check status again” continues the same record without a new charge.', 'err');
     } else if (processing) {
@@ -264,9 +300,16 @@ export function createAssessmentModule(ctx) {
       });
   }
 
-  async function readStatus(includeInspection = false) {
+  async function readStatus(options = {}) {
     const data = await api(endpoint('Status'), {
-      body: { token: state.token, uid: state.uid, sessionId: current?.sessionId || '', includeInspection }
+      body: {
+        token: state.token,
+        uid: state.uid,
+        sessionId: current?.sessionId || '',
+        includeInspection: options.includeInspection === true,
+        includeHistory: options.includeHistory === true,
+        includeReportLookup: options.includeReportLookup === true
+      }
     });
     render(data.state || data);
     return data.state || data;
@@ -277,26 +320,47 @@ export function createAssessmentModule(ctx) {
     polling = true;
     if (!pollStartedAt) pollStartedAt = Date.now();
     try {
-      const next = await readStatus(attempt >= 2);
+      const completedWithFallback = current?.phase === 'completed' && current?.report?.available === true;
+      const includeInspection = completedWithFallback && !current?.report?.unifiedReady && (unifiedInspectionPolls++ % 2 === 0);
+      const next = await readStatus({
+        includeInspection,
+        includeHistory: false,
+        includeReportLookup: completedWithFallback || includeInspection
+      });
+
       if (next.phase === 'completed' && next.report?.unifiedReady) {
         clearPoll();
         return;
       }
-      if (Date.now() - pollStartedAt >= 12 * 60 * 1000) {
+
+      if (next.phase === 'completed' && next.report?.available) {
         fallbackAllowed = true;
-        polling = false;
         render(next);
-        status(getLocale() === 'de' ? 'Der Unified Report ist noch nicht bereit. Der verfügbare Fallback-Bericht kann geöffnet werden.' : 'The Unified report is not ready yet. The available fallback report can be opened.', 'warn');
+      }
+
+      if (Date.now() - pollStartedAt >= 5 * 60 * 1000) {
+        polling = false;
+        if (next.report?.available) {
+          status(getLocale() === 'de'
+            ? 'Der verfügbare Bericht kann geöffnet werden. Die Unified-Version wird weiterhin im Hintergrund erstellt.'
+            : 'The available report can be opened. The unified version continues processing in the background.', 'warn');
+        } else {
+          status(getLocale() === 'de'
+            ? 'Die Verarbeitung läuft weiter. Sie können diese Seite später mit demselben Link erneut öffnen.'
+            : 'Processing continues. You can reopen this page later using the same link.', 'warn');
+        }
         return;
       }
     } catch (error) {
-      if (!isAmbiguous(error) && attempt >= 2) {
+      if (!isAmbiguous(error) && attempt >= 3) {
         polling = false;
         status(error.message || String(error), 'err');
         return;
       }
     }
-    const delay = attempt < 12 ? 5000 : attempt < 36 ? 10000 : 15000;
+
+    const completedPhase = current?.phase === 'completed';
+    const delay = completedPhase ? 25000 : attempt < 6 ? 4000 : attempt < 18 ? 8000 : 12000;
     pollTimer = window.setTimeout(() => pollStatus(attempt + 1), delay);
   }
 
@@ -338,7 +402,7 @@ export function createAssessmentModule(ctx) {
     } catch (error) {
       if (isAmbiguous(error)) {
         status(L().transport, 'warn');
-        const recovered = await readStatus(false).catch(() => null);
+        const recovered = await readStatus({ includeHistory: false, includeReportLookup: false }).catch(() => null);
         autoFinish = recovered && (
           recovered.done === true ||
           Number(recovered.answeredCount || 0) >= Number(recovered.expectedAnswers || recovered.questionCount || Number.MAX_SAFE_INTEGER)
@@ -455,7 +519,7 @@ export function createAssessmentModule(ctx) {
     applyCopy();
     status('', '');
     try {
-      const data = await readStatus(true);
+      const data = await readStatus({ includeInspection: true, includeHistory: true, includeReportLookup: true });
       if (data.phase === 'processing' || (data.phase === 'completed' && !data.report?.unifiedReady)) {
         if (data.phase === 'processing') kickCloseout(false);
         await pollStatus();
