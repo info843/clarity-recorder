@@ -1,4 +1,4 @@
-// CLARITY Assessment Universal App module v2.23.0 — E2.1 AUDIO Q10 + COMMON RUNTIME HARDENING
+// CLARITY Assessment Universal App module v2.23.1 — E2.1.1 RECORDER ROUTE HOTFIX
 // Compact state deltas, one closeout dispatch, status-only polling and immediate
 // fallback-report availability while the Unified PDF finishes asynchronously.
 const COPY = Object.freeze({
@@ -31,7 +31,8 @@ const COPY = Object.freeze({
     audioRecording: 'Audio-Assessment läuft. Bitte beantworten Sie jede Frage mündlich.',
     audioSaving: 'Ihre Audioantworten werden transkribiert und sicher gespeichert …',
     audioRetry: 'Eine Audioantwort konnte noch nicht gespeichert werden. Mit „Status erneut prüfen“ wird derselbe Vorgang ohne neue Abbuchung fortgesetzt.',
-    microphoneRequired: 'Für das Audio-Assessment muss der Zugriff auf das Mikrofon erlaubt werden.'
+    microphoneRequired: 'Für das Audio-Assessment muss der Zugriff auf das Mikrofon erlaubt werden.',
+    audioModuleUnavailable: 'Das Audio-Modul konnte nicht geladen werden. Bitte aktualisieren Sie die Seite. Es wurde noch keine Assessment-Session gestartet und kein Credit verbraucht.'
   },
   en: {
     assessment: {
@@ -62,7 +63,8 @@ const COPY = Object.freeze({
     audioRecording: 'Audio assessment is running. Please answer each question verbally.',
     audioSaving: 'Your audio responses are being transcribed and stored securely …',
     audioRetry: 'An audio response has not been stored yet. “Check status again” continues the same record without a new charge.',
-    microphoneRequired: 'Microphone access must be allowed for the audio assessment.'
+    microphoneRequired: 'Microphone access must be allowed for the audio assessment.',
+    audioModuleUnavailable: 'The audio module could not be loaded. Refresh the page. No assessment session was started and no credit was consumed.'
   }
 });
 
@@ -153,6 +155,8 @@ export function createAssessmentModule(ctx) {
   let mediaResultResolve = null;
   let mediaResultReject = null;
   let mediaFatalError = null;
+  let mediaLoadTimer = 0;
+  let mediaRouteIndex = 0;
   let lastMediaResultPayload = null;
   const failedMediaTurns = new Map();
 
@@ -164,6 +168,10 @@ export function createAssessmentModule(ctx) {
     return { ...base, ...(product() === 'snapshot' ? base.snapshot : base.assessment) };
   };
   const endpoint = (name) => `v2Assessment${name}`;
+  const AUDIO_RECORDER_ROUTES = Object.freeze([
+    '/modules/assessment-audio-recorder.html',
+    '/live.assessment.html'
+  ]);
 
   function createDeferred() {
     let resolve;
@@ -214,6 +222,62 @@ export function createAssessmentModule(ctx) {
     }
   }
 
+  function clearMediaLoadTimer() {
+    if (mediaLoadTimer) window.clearTimeout(mediaLoadTimer);
+    mediaLoadTimer = 0;
+  }
+
+  function mediaRecorderUrl(route) {
+    const runtime = state.payload?.runtime || {};
+    const query = new URLSearchParams({
+      uid: state.uid,
+      companyId: String(runtime.companyId || ''),
+      mode: 'audio',
+      audioOnly: '1',
+      autostart: '0',
+      lang: getLocale(),
+      reportLang: String(runtime.reportLang || getLocale())
+    });
+    return `${route}?${query.toString()}`;
+  }
+
+  function loadMediaRecorderRoute(index = 0) {
+    if (!mediaFrame) return;
+    clearMediaLoadTimer();
+    mediaIframeReady = false;
+    mediaPrepared = false;
+    mediaRouteIndex = Math.max(0, Number(index || 0));
+    const route = AUDIO_RECORDER_ROUTES[mediaRouteIndex];
+    if (!route) {
+      const error = new Error(L().audioModuleUnavailable);
+      error.code = 'ASSESSMENT_AUDIO_MODULE_NOT_DEPLOYED';
+      error.retryable = true;
+      mediaFatalError = error;
+      mediaFrame.style.display = 'none';
+      syncButtonStates();
+      status(error.message, 'err');
+      return;
+    }
+
+    mediaFrame.style.display = 'none';
+    mediaFrame.src = mediaRecorderUrl(route);
+    mediaLoadTimer = window.setTimeout(() => {
+      mediaLoadTimer = 0;
+      if (mediaIframeReady) return;
+      if (mediaRouteIndex + 1 < AUDIO_RECORDER_ROUTES.length) {
+        loadMediaRecorderRoute(mediaRouteIndex + 1);
+        return;
+      }
+      const error = new Error(L().audioModuleUnavailable);
+      error.code = 'ASSESSMENT_AUDIO_MODULE_NOT_DEPLOYED';
+      error.retryable = true;
+      mediaFatalError = error;
+      mediaFrame.style.display = 'none';
+      syncButtonStates();
+      status(error.message, 'err');
+    }, 7000);
+  }
+
   function ensureMediaFrame() {
     if (!isAudioMode()) return null;
     if (mediaFrame?.isConnected) return mediaFrame;
@@ -232,18 +296,8 @@ export function createAssessmentModule(ctx) {
       mediaFrame.allow = 'microphone; autoplay';
       mediaFrame.referrerPolicy = 'strict-origin-when-cross-origin';
       mediaFrame.loading = 'eager';
-      const runtime = state.payload?.runtime || {};
-      const query = new URLSearchParams({
-        uid: state.uid,
-        companyId: String(runtime.companyId || ''),
-        mode: 'audio',
-        audioOnly: '1',
-        autostart: '0',
-        lang: getLocale(),
-        reportLang: String(runtime.reportLang || getLocale())
-      });
-      mediaFrame.src = `/live.assessment.html?${query.toString()}`;
       mediaShell.append(heading, mediaFrame);
+      loadMediaRecorderRoute(0);
 
       const startPanel = $('assessmentStartPanel');
       const parent = startPanel?.parentNode || $('assessmentView');
@@ -256,6 +310,8 @@ export function createAssessmentModule(ctx) {
   }
 
   function resetMediaState({ keepFrame = true } = {}) {
+    clearMediaLoadTimer();
+    mediaRouteIndex = 0;
     mediaIframeReady = false;
     mediaPrepared = false;
     mediaRecordStarted = false;
@@ -421,7 +477,9 @@ export function createAssessmentModule(ctx) {
     const data = message.data || message.payload || {};
 
     if (type === 'clarity.live.ready') {
+      clearMediaLoadTimer();
       mediaIframeReady = true;
+      mediaFrame.style.display = 'block';
       postToMedia('clarity.live.context', mediaRuntimeContext());
       postToMedia('clarity.live.prepare', { enabled: true });
       status(L().audioPreparing, 'warn');
