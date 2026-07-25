@@ -1,4 +1,4 @@
-// CLARITY Assessment Universal App module v2.20.0 — E1.4 PERFORMANCE + CONTRACT FREEZE
+// CLARITY Assessment Universal App module v2.21.0 — E1.5 WORKSPACE-ONLY REPORT POLICY
 // Compact state deltas, one closeout dispatch, status-only polling and immediate
 // fallback-report availability while the Unified PDF finishes asynchronously.
 const COPY = Object.freeze({
@@ -9,7 +9,7 @@ const COPY = Object.freeze({
       notice: 'Mit Enter senden Sie Ihre Antwort. Shift + Enter fügt einen Zeilenumbruch ein.',
       start: 'Assessment starten', starting: 'Assessment wird gestartet …', send: 'Antwort senden', finish: 'Assessment abschließen',
       processing: 'Ihre Antworten werden ausgewertet und der Bericht wird erstellt. Der Status wird automatisch aktualisiert.',
-      completed: 'Assessment abgeschlossen', completedText: 'Der Bericht steht zur Verfügung.',
+      completed: 'Assessment abgeschlossen', completedText: 'Ihre Antworten wurden sicher übermittelt. Das Unternehmen verarbeitet das Ergebnis im CLARITY Workspace. Sie können dieses Fenster schließen.',
       startTitle: 'Vorbereitung', startText: 'Planen Sie für jede Antwort ausreichend Zeit ein und nennen Sie möglichst konkrete Situationen oder Beispiele.'
     },
     snapshot: {
@@ -18,7 +18,7 @@ const COPY = Object.freeze({
       notice: 'Der Snapshot ist ein kurzer strukturierter Überblick und ersetzt kein vollständiges Assessment.',
       start: 'Snapshot starten', starting: 'Snapshot wird gestartet …', send: 'Antwort senden', finish: 'Snapshot abschließen',
       processing: 'Ihre Antworten werden zusammengefasst. Der Status wird automatisch aktualisiert.',
-      completed: 'Snapshot abgeschlossen', completedText: 'Die kompakte Zusammenfassung steht zur Verfügung.',
+      completed: 'Snapshot abgeschlossen', completedText: 'Ihre Antworten wurden sicher übermittelt. Das Unternehmen erhält die Zusammenfassung im CLARITY Workspace. Sie können dieses Fenster schließen.',
       startTitle: 'Kurzer Überblick', startText: 'Beantworten Sie die Fragen kurz und konkret. Je nach Umfang dauert der Snapshot nur wenige Minuten.'
     },
     download: 'Bericht herunterladen', placeholder: 'Ihre Antwort …', answerRequired: 'Bitte geben Sie eine Antwort ein.',
@@ -34,7 +34,7 @@ const COPY = Object.freeze({
       notice: 'Press Enter to send your answer. Shift + Enter inserts a new line.',
       start: 'Start assessment', starting: 'Starting assessment …', send: 'Send answer', finish: 'Complete assessment',
       processing: 'Your answers are being evaluated and the report is being created. The status updates automatically.',
-      completed: 'Assessment completed', completedText: 'The report is available.',
+      completed: 'Assessment completed', completedText: 'Your responses were submitted securely. The organisation will review the result in CLARITY Workspace. You can close this window.',
       startTitle: 'Preparation', startText: 'Take sufficient time for each answer and provide concrete situations or examples where possible.'
     },
     snapshot: {
@@ -43,7 +43,7 @@ const COPY = Object.freeze({
       notice: 'The Snapshot is a short structured overview and does not replace a full assessment.',
       start: 'Start Snapshot', starting: 'Starting Snapshot …', send: 'Send answer', finish: 'Complete Snapshot',
       processing: 'Your answers are being summarized. The status updates automatically.',
-      completed: 'Snapshot completed', completedText: 'The concise summary is available.',
+      completed: 'Snapshot completed', completedText: 'Your responses were submitted securely. The organisation receives the summary in CLARITY Workspace. You can close this window.',
       startTitle: 'Quick overview', startText: 'Answer briefly and concretely. Depending on the scope, the Snapshot takes only a few minutes.'
     },
     download: 'Download report', placeholder: 'Your answer …', answerRequired: 'Please enter an answer.',
@@ -251,20 +251,16 @@ export function createAssessmentModule(ctx) {
     $('assessmentSendBtn').classList.toggle('hidden', !running || allAnswered);
     if (completed) {
       closeoutStarted = true;
-      const unifiedReady = current.report?.unifiedReady === true || Boolean(current.report?.unifiedPdfUrl);
-      const fallbackReady = current.report?.available === true || Boolean(current.report?.legacyPdfUrl);
-      fallbackAllowed = fallbackAllowed || fallbackReady;
-      const reportAvailable = unifiedReady || fallbackReady;
-      $('assessmentReportSource').textContent = unifiedReady
-        ? 'Unified PDF'
-        : fallbackReady
-          ? (getLocale() === 'de' ? 'Fallback-Bericht · Unified PDF wird finalisiert' : 'Fallback report · Unified PDF is being finalized')
-          : (getLocale() === 'de' ? 'Bericht wird erstellt' : 'Report is being created');
-      $('assessmentReportBtn').disabled = !reportAvailable;
-      status(unifiedReady ? L().completedText : (fallbackReady
-        ? (getLocale() === 'de' ? 'Der Bericht ist verfügbar. Die einheitliche Unified-Version wird im Hintergrund finalisiert.' : 'The report is available. The unified version is being finalized in the background.')
-        : L().waitingReport), unifiedReady ? 'ok' : 'warn');
-      if (unifiedReady) clearPoll();
+      clearPoll();
+
+      const source = $('assessmentReportSource');
+      const button = $('assessmentReportBtn');
+      if (source) source.classList.add('hidden');
+      if (button) button.classList.add('hidden');
+      const reportRow = button?.closest?.('.assessment-report-card, .report-card, .actions, .assessment-report-row');
+      if (reportRow) reportRow.classList.add('hidden');
+
+      status(L().completedText, 'ok');
     } else if (failed) {
       status(getLocale() === 'de' ? 'Die Verarbeitung wurde technisch unterbrochen. Mit „Status erneut prüfen“ wird derselbe Vorgang ohne neue Abbuchung fortgesetzt.' : 'Processing was interrupted technically. “Check status again” continues the same record without a new charge.', 'err');
     } else if (processing) {
@@ -328,14 +324,9 @@ export function createAssessmentModule(ctx) {
         includeReportLookup: completedWithFallback || includeInspection
       });
 
-      if (next.phase === 'completed' && next.report?.unifiedReady) {
+      if (next.phase === 'completed') {
         clearPoll();
         return;
-      }
-
-      if (next.phase === 'completed' && next.report?.available) {
-        fallbackAllowed = true;
-        render(next);
       }
 
       if (Date.now() - pollStartedAt >= 5 * 60 * 1000) {
@@ -359,8 +350,7 @@ export function createAssessmentModule(ctx) {
       }
     }
 
-    const completedPhase = current?.phase === 'completed';
-    const delay = completedPhase ? 25000 : attempt < 6 ? 4000 : attempt < 18 ? 8000 : 12000;
+    const delay = attempt < 6 ? 4000 : attempt < 18 ? 8000 : 12000;
     pollTimer = window.setTimeout(() => pollStatus(attempt + 1), delay);
   }
 
@@ -464,23 +454,6 @@ export function createAssessmentModule(ctx) {
     } finally { setBusy(false, $('assessmentRetryBtn')); }
   }
 
-  async function downloadReport() {
-    if (busy) return;
-    const button = $('assessmentReportBtn');
-    setBusy(true, button);
-    status(getLocale() === 'de' ? 'Sicherer Download wird vorbereitet …' : 'Preparing secure download …', 'warn');
-    try {
-      const data = await api(endpoint('Download'), { body: reportIdentity() });
-      const url = data?.url || data?.downloadUrl || data?.data?.url || '';
-      if (!url) throw new Error(getLocale() === 'de' ? 'Der Bericht ist noch nicht zum Download bereit.' : 'The report is not ready for download yet.');
-      window.open(url, '_blank', 'noopener,noreferrer');
-      status(L().completedText, 'ok');
-    } catch (error) {
-      status(error.message || String(error), 'err');
-    } finally {
-      setBusy(false, button);
-    }
-  }
 
   function applyCopy() {
     const copy = L();
@@ -499,7 +472,8 @@ export function createAssessmentModule(ctx) {
     $('assessmentProcessingText').textContent = copy.processing;
     $('assessmentCompleteTitle').textContent = copy.completed;
     $('assessmentCompleteText').textContent = copy.completedText;
-    $('assessmentReportBtn').textContent = copy.download;
+    if ($('assessmentReportBtn')) $('assessmentReportBtn').classList.add('hidden');
+    if ($('assessmentReportSource')) $('assessmentReportSource').classList.add('hidden');
 
     const eyebrow = document.querySelector('#assessmentView .assessment-head .eyebrow span:last-child');
     if (eyebrow) eyebrow.textContent = copy.eyebrow;
@@ -519,8 +493,8 @@ export function createAssessmentModule(ctx) {
     applyCopy();
     status('', '');
     try {
-      const data = await readStatus({ includeInspection: true, includeHistory: true, includeReportLookup: true });
-      if (data.phase === 'processing' || (data.phase === 'completed' && !data.report?.unifiedReady)) {
+      const data = await readStatus({ includeInspection: false, includeHistory: true, includeReportLookup: false });
+      if (data.phase === 'processing') {
         if (data.phase === 'processing') kickCloseout(false);
         await pollStatus();
       }
@@ -534,7 +508,6 @@ export function createAssessmentModule(ctx) {
   $('assessmentSendBtn')?.addEventListener('click', send);
   $('assessmentFinishBtn')?.addEventListener('click', finish);
   $('assessmentRetryBtn')?.addEventListener('click', retry);
-  $('assessmentReportBtn')?.addEventListener('click', downloadReport);
   $('assessmentInput')?.addEventListener('keydown', (event) => {
     if (event.isComposing) return;
     // Enter submits; Shift+Enter keeps the expected multi-line behavior.
