@@ -1,4 +1,4 @@
-<!-- liveAssessment.html — v2.6.7 MIX_ORAL_HANDOFF | CLARITY Assessment only. Stable audio/video v2.6.6 core + deterministic oral part for Mix/Chat handoff. -->
+<!-- liveAssessment.html — v2.7.0 AUDIO_Q10_SLOT_TRANSCRIPTION | CLARITY Assessment. E2.1 device readiness, per-answer candidate audio and platform-managed Mux result. -->
 <!doctype html>
 <html lang="de">
 <head>
@@ -46,7 +46,7 @@
   </div>
 <script>
 (()=>{ 'use strict';
-  if (window.__clarity_assessment_v26_active) return; window.__clarity_assessment_v26_active = true;
+  if (window.__clarity_assessment_v270_active) return; window.__clarity_assessment_v270_active = true;
 
   const Q = new URLSearchParams(location.search);
   const UID = (Q.get('uid') || '').trim();
@@ -60,7 +60,7 @@
   const DEBUG_LOGS = Q.get('debug') === '1' || Q.get('debugLive') === '1' || DEBUG_UI;
   if (AUDIO_ONLY) document.body.classList.add('audio-only'); if (DEBUG_UI) document.body.classList.add('debug-ui');
 
-  const TOKENLESS_VERSION = 'v2.6.7_MIX_ORAL_HANDOFF';
+  const TOKENLESS_VERSION = 'v2.7.0_AUDIO_Q10_SLOT_TRANSCRIPTION';
   const MUX_UPLOAD_URL = `${API_BASE}/api/mux-upload`;
   const MUX_ASSET_URL = `${API_BASE}/api/mux-asset`;
   // Premium TTS is optional and server-proxied. If it fails, the deterministic v2.6 flow continues with browser voice.
@@ -86,9 +86,11 @@
   let localStream = null, mediaRecorder = null, candidateRecorder = null, mixedStream = null;
   let recordAudioCtx = null, recordDestination = null, recordMicSource = null;
   let candidateChunks = [], recordChunks = [], recordingStartedAt = 0, candidateRecordingStartedAt = 0;
+  let candidateSlotIndex = 0, candidateSlotQuestion = '', candidateStopResolve = null, candidateStopPromise = null;
   let uploadStarted = false, uploadFinished = false, lastPutStatus = null;
   let prepared = false, recordEnabled = false, started = false, destroyed = false, finishing = false, finalSent = false;
-  let currentSlot = 0, targetSlots = 10, totalSlots = 10, questions = [];
+  let slotCommitInFlight = false;
+  let currentSlot = 0, targetSlots = 10, totalSlots = 10, startSlotIndex = 1, questions = [];
   let phase = 'IDLE', slotStartedAt = 0, answerWindowOpenedAt = 0, lastVoiceAt = 0, voiceActive = false, slotTimers = [];
   let micAnalyser = null, micBuf = null;
 
@@ -680,7 +682,77 @@ function personalizeAssessmentQuestion(q, position=''){
   async function setupLocalMedia(){ const constraints = { audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true }, video: AUDIO_ONLY ? false : { width:{ideal:1280}, height:{ideal:720} } }; try { localStream = await navigator.mediaDevices.getUserMedia(constraints); if (!AUDIO_ONLY && localStream) $localVideo.srcObject = localStream; setupMicAnalyser(); } catch(e){ setStatus('err', isGerman() ? 'Mikrofon oder Kamera konnten nicht gestartet werden.' : 'Microphone or camera could not be started.'); postToParent('clarity.live.error', { code:'media_permission_error', message:errMsg(e) }); throw e; } }
   function setupMicAnalyser(){ try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const src = ctx.createMediaStreamSource(localStream); micAnalyser = ctx.createAnalyser(); micAnalyser.fftSize = 512; micBuf = new Uint8Array(micAnalyser.frequencyBinCount); src.connect(micAnalyser); const tick = () => { if (destroyed || !micAnalyser) return; micAnalyser.getByteTimeDomainData(micBuf); let dev=0; for(let i=0;i<micBuf.length;i++) dev=Math.max(dev, Math.abs(micBuf[i]-128)); const pct = Math.min(100, dev*2.2); $mic.style.width = pct + '%'; const active = dev > 8; voiceActive = active; if (active && phase !== 'SPEAKING_QUESTION') lastVoiceAt = Date.now(); if (active) postToParent('clarity.avatar.level', { source:'user', value:Math.max(0, Math.min(1, (dev-2)/34)), reason:'v26_mic' }); requestAnimationFrame(tick); }; tick(); } catch(e){ debug('v26_mic_analyser_failed', { message:errMsg(e) }); } }
 
-  function prepareCandidateAudioRecording(){ candidateChunks = []; const tracks = localStream?.getAudioTracks?.() || []; if (!tracks.length) return; const s = new MediaStream(); tracks.forEach(t=>s.addTrack(t)); const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm'; candidateRecorder = new MediaRecorder(s, { mimeType, audioBitsPerSecond: 12000 }); candidateRecorder.onstart = () => { candidateRecordingStartedAt = Date.now(); debug('v26_candidate_audio_started', { mimeType }); }; candidateRecorder.ondataavailable = e => { if (e.data && e.data.size) candidateChunks.push(e.data); }; candidateRecorder.onstop = async () => { const durationMs = candidateRecordingStartedAt ? Date.now()-candidateRecordingStartedAt : 0; const blob = new Blob(candidateChunks, { type:mimeType }); debug('v26_candidate_audio_stopped', { size:blob.size, durationMs }); await sendCandidateAudioToParent(blob, { durationMs, mimeType }); candidateChunks = []; }; }
+  function prepareCandidateAudioRecording(){
+    candidateChunks = [];
+    candidateRecorder = null;
+    candidateSlotIndex = 0;
+    candidateSlotQuestion = '';
+    candidateStopResolve = null;
+    candidateStopPromise = null;
+  }
+  function candidateMimeType(){
+    return MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
+  }
+  function startCandidateSlotRecording(slot){
+    if (finishing || destroyed) return false;
+    const tracks = localStream?.getAudioTracks?.() || [];
+    if (!tracks.length) {
+      postToParent('candidate-audio:error', { code:'candidate_audio_track_missing', message:'No microphone audio track is available.', questionIndex:slot, uid:UID, companyId:COMPANY_ID });
+      return false;
+    }
+    try {
+      if (candidateRecorder && candidateRecorder.state !== 'inactive') candidateRecorder.stop();
+    } catch(_) {}
+    candidateChunks = [];
+    candidateSlotIndex = Number(slot || currentSlot || 0);
+    candidateSlotQuestion = questions[candidateSlotIndex - 1] || '';
+    const stream = new MediaStream();
+    tracks.forEach(track => stream.addTrack(track));
+    const mimeType = candidateMimeType();
+    candidateRecorder = new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 48000 });
+    candidateStopPromise = new Promise(resolve => { candidateStopResolve = resolve; });
+    candidateRecorder.onstart = () => {
+      candidateRecordingStartedAt = Date.now();
+      debug('v270_candidate_slot_started', { slot:candidateSlotIndex, mimeType });
+      postToParent('candidate-audio:slot-started', { questionIndex:candidateSlotIndex, question:candidateSlotQuestion, mimeType, uid:UID, companyId:COMPANY_ID, ...assessmentPayloadBase(), ts:new Date().toISOString() });
+    };
+    candidateRecorder.ondataavailable = event => { if (event.data && event.data.size) candidateChunks.push(event.data); };
+    candidateRecorder.onerror = event => {
+      postToParent('candidate-audio:error', { code:'candidate_audio_recorder_error', message:errMsg(event?.error || event), questionIndex:candidateSlotIndex, uid:UID, companyId:COMPANY_ID });
+    };
+    candidateRecorder.onstop = async () => {
+      const slotIndex = candidateSlotIndex;
+      const question = candidateSlotQuestion;
+      const durationMs = candidateRecordingStartedAt ? Date.now() - candidateRecordingStartedAt : 0;
+      const blob = new Blob(candidateChunks, { type:mimeType });
+      debug('v270_candidate_slot_stopped', { slot:slotIndex, size:blob.size, durationMs });
+      try {
+        await sendCandidateAudioToParent(blob, { durationMs, mimeType, questionIndex:slotIndex, question });
+      } finally {
+        candidateChunks = [];
+        candidateRecordingStartedAt = 0;
+        candidateRecorder = null;
+        const resolve = candidateStopResolve;
+        candidateStopResolve = null;
+        candidateStopPromise = null;
+        if (resolve) resolve({ questionIndex:slotIndex, durationMs, size:blob.size });
+      }
+    };
+    candidateRecorder.start(500);
+    return true;
+  }
+  async function stopCandidateSlotRecording(slot, reason='slot_complete'){
+    const recorder = candidateRecorder;
+    if (!recorder || recorder.state === 'inactive') return;
+    const pending = candidateStopPromise;
+    try { recorder.stop(); } catch(e) {
+      debug('v270_candidate_slot_stop_failed', { slot, reason, message:errMsg(e) });
+      if (candidateStopResolve) candidateStopResolve({ questionIndex:slot, error:errMsg(e) });
+      candidateStopResolve = null;
+      candidateStopPromise = null;
+    }
+    if (pending) await pending;
+  }
   function prepareRecording(){
     recordChunks = [];
     const hasVideo = !AUDIO_ONLY && !!localStream?.getVideoTracks?.().length;
@@ -715,25 +787,25 @@ function personalizeAssessmentQuestion(q, position=''){
     mediaRecorder.onstop = async () => { $recState.textContent='stopped'; const kind = hasVideo ? 'video' : 'audio'; const blob = new Blob(recordChunks, { type: hasVideo ? 'video/webm' : 'audio/webm' }); debug('v264_recorder_stopped_mixed_review', { size:blob.size, kind, chunks:recordChunks.length }); try { await uploadBlobToMux(blob, kind); } catch(e){ debug('v264_upload_exception', { message:errMsg(e) }); } finally { recordChunks = []; } };
     $recState.textContent='ready';
   }
-  function startRecorders(){ try { if (mediaRecorder && mediaRecorder.state === 'inactive') mediaRecorder.start(1000); } catch(e){ debug('v26_record_start_failed', { message:errMsg(e) }); } try { if (candidateRecorder && candidateRecorder.state === 'inactive') candidateRecorder.start(1000); } catch(e){ debug('v26_candidate_start_failed', { message:errMsg(e) }); } }
+  function startRecorders(){ try { if (mediaRecorder && mediaRecorder.state === 'inactive') mediaRecorder.start(1000); } catch(e){ debug('v270_record_start_failed', { message:errMsg(e) }); } }
   function stopRecorders(){ try { if (candidateRecorder && candidateRecorder.state !== 'inactive') candidateRecorder.stop(); } catch(e){ debug('v264_candidate_stop_failed', { message:errMsg(e) }); } try { if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop(); } catch(e){ debug('v264_record_stop_failed', { message:errMsg(e) }); } try { localStream?.getTracks?.().forEach(t=>t.stop()); } catch(_){} try { mixedStream?.getTracks?.().forEach(t=>t.stop()); } catch(_){} try { if (recordAudioCtx && recordAudioCtx.state !== 'closed') recordAudioCtx.close(); } catch(_){} }
 
   function blobToDataUrl(blob){ return new Promise((resolve,reject)=>{ const r=new FileReader(); r.onloadend=()=>resolve(String(r.result||'')); r.onerror=()=>reject(new Error('file_reader_failed')); r.readAsDataURL(blob); }); }
-  async function sendCandidateAudioToParent(blob, meta={}){ try { if (!blob || !blob.size) throw new Error('candidate_audio_empty'); const dataUrl = await blobToDataUrl(blob); postToParent('candidate-audio:finished', { dataUrl, durationMs:meta.durationMs||0, size:blob.size, mimeType:blob.type || meta.mimeType || 'audio/webm', uid:UID, companyId:COMPANY_ID, ...assessmentPayloadBase(), ts:new Date().toISOString() }); } catch(e){ postToParent('candidate-audio:error', { message:errMsg(e), uid:UID, companyId:COMPANY_ID, ts:new Date().toISOString() }); } }
+  async function sendCandidateAudioToParent(blob, meta={}){ try { if (!blob || !blob.size) throw new Error('candidate_audio_empty'); const dataUrl = await blobToDataUrl(blob); postToParent('candidate-audio:slot-finished', { dataUrl, questionIndex:Number(meta.questionIndex||candidateSlotIndex||currentSlot||0), question:clean(meta.question || candidateSlotQuestion || questions[(Number(meta.questionIndex||currentSlot||1)-1)] || ''), durationMs:meta.durationMs||0, size:blob.size, mimeType:blob.type || meta.mimeType || 'audio/webm', mediaTurnId:`${UID || CTX.uid || 'assessment'}:audio-slot:${Number(meta.questionIndex||candidateSlotIndex||currentSlot||0)}`, uid:UID, companyId:COMPANY_ID, ...assessmentPayloadBase(), ts:new Date().toISOString() }); } catch(e){ postToParent('candidate-audio:error', { code:'candidate_audio_slot_export_failed', message:errMsg(e), questionIndex:Number(meta.questionIndex||candidateSlotIndex||currentSlot||0), uid:UID, companyId:COMPANY_ID, ts:new Date().toISOString() }); } }
   async function readJsonSafe(res){ const ct = res.headers.get('content-type') || ''; if (ct.includes('json')) return res.json(); const text = await res.text().catch(()=> ''); throw new Error(`Non-JSON (${res.status}): ${text.slice(0,300)}`); }
-  async function createMuxUpload(blob, kind){ const r = await fetch(MUX_UPLOAD_URL, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ uid:UID, companyId:COMPANY_ID, sessionId:UID, mode:kind === 'audio' ? 'audio' : 'video' }) }); const j = await readJsonSafe(r); if (!r.ok || !j?.ok) throw new Error(j?.message || j?.error || `mux_create_failed_${r.status}`); if (!j.uploadId || !j.uploadUrl) throw new Error('mux_create_missing_fields'); return j; }
+  async function createMuxUpload(blob, kind){ const r = await fetch(MUX_UPLOAD_URL, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ uid:UID || CTX.uid || CTX.linkId || '', companyId:COMPANY_ID || CTX.companyId || '', sessionId:CTX.sessionId || UID || '', mode:kind === 'audio' ? 'audio' : 'video' }) }); const j = await readJsonSafe(r); if (!r.ok || !j?.ok) throw new Error(j?.message || j?.error || `mux_create_failed_${r.status}`); if (!j.uploadId || !j.uploadUrl) throw new Error('mux_create_missing_fields'); return j; }
   async function putToMux(uploadUrl, blob, kind){ $muxState.textContent='uploading'; setProg(35); const put = await fetch(uploadUrl, { method:'PUT', body:blob, headers:{'Content-Type': blob.type || (kind==='audio'?'audio/webm':'video/webm')} }); lastPutStatus = put.status; if (!put.ok){ const txt = await put.text().catch(()=> ''); throw new Error(`mux_put_failed_${put.status}: ${txt.slice(0,200)}`); } setProg(65); }
   async function fetchMuxAsset(uploadId){ const r = await fetch(`${MUX_ASSET_URL}?uploadId=${encodeURIComponent(uploadId)}`); const j = await readJsonSafe(r); if (!r.ok || !j?.ok) throw new Error(j?.message || j?.error || `mux_asset_failed_${r.status}`); return j; }
   async function pollMuxAsset(uploadId, maxMs=120000){ const start=Date.now(); let last=null; $muxState.textContent='processing'; setProg(75); while(Date.now()-start < maxMs){ await new Promise(r=>setTimeout(r,3000)); const j = await fetchMuxAsset(uploadId); last=j; debug('v26_mux_poll', { assetStatus:j?.assetStatus||'', playbackId:j?.playbackId||'', error:j?.error||'' }); if (j.assetStatus === 'ready' && j.playbackId){ setProg(100); $muxState.textContent='ready'; return j; } if (j.assetStatus === 'errored') return j; } return last; }
   async function uploadBlobToMux(blob, kind){ if (uploadStarted) return; uploadStarted = true; uploadFinished = false; try { $muxState.textContent='creating'; setProg(15); setStatus('warn', t('saved')); const created = await createMuxUpload(blob, kind); await putToMux(created.uploadUrl, blob, kind); let asset = await fetchMuxAsset(created.uploadId); if (!(asset?.assetStatus === 'ready' && asset?.playbackId)) asset = await pollMuxAsset(created.uploadId); const durationMs = recordingStartedAt ? Date.now()-recordingStartedAt : 0; const payload = { durationMs, size:blob.size, ...assessmentPayloadBase(), uploadUrl: asset?.downloadUrl || asset?.playbackUrl || '', mux:{ provider:'mux', uploadId:created.uploadId || '', putStatus:lastPutStatus, assetStatus:asset?.assetStatus || '', assetId:asset?.assetId || '', playbackId:asset?.playbackId || '', playbackUrl:asset?.playbackUrl || '', downloadUrl:asset?.downloadUrl || '', audioOnlyUrl:asset?.audioOnlyUrl || '', staticRenditionsStatus:asset?.staticRenditionsStatus || '', error:asset?.error || '' } }; uploadFinished = true; debug('v26_recorder_finished_posted', { durationMs, size:blob.size, kind, muxReady:asset?.assetStatus === 'ready' }); postToParent('recorder:finished', payload); return payload; } catch(e){ const durationMs = recordingStartedAt ? Date.now()-recordingStartedAt : 0; const payload = { durationMs, size:blob?.size || 0, ...assessmentPayloadBase(), uploadUrl:'', mux:{ provider:'mux', uploadId:'', putStatus:lastPutStatus, assetStatus:'', assetId:'', playbackId:'', playbackUrl:'', downloadUrl:'', audioOnlyUrl:'', staticRenditionsStatus:'', error:errMsg(e) } }; postToParent('recorder:finished', payload); postToParent('recorder:upload_error', { message:errMsg(e) }); return payload; } }
 
   async function startAssessment(){ if (started) return; started = true; destroyed = false; finishing = false; finalSent = false; uploadStarted = false; currentSlot = 0; setStatus('info', t('init')); setPhase('STARTING', isGerman()?'Medien werden vorbereitet…':'Preparing media…'); try { questions = buildQuestions(); setSlotUi(0); const questionSnapshot = fullQuestionSnapshot(); debug('v267_question_plan_ready', { targetSlots, totalSlots, hybrid:isHybridAssessmentMode(), area:normalizeArea(CTX.moduleArea), lang:activeLang(), questions:questionSnapshot }); postToParent('clarity.assessment.v2.question_plan', { version:TOKENLESS_VERSION, target:totalSlots, oralTarget:targetSlots, questionCount:totalSlots, totalQuestionCount:totalSlots, mediaQuestionCount:targetSlots, chatQuestionCount:isHybridAssessmentMode()?Math.max(1,totalSlots-targetSlots):0, chatSlotStartIndex:isHybridAssessmentMode()?targetSlots+1:0, chatSlotEndIndex:isHybridAssessmentMode()?totalSlots:0, questions:questionSnapshot, oralQuestions:oralQuestionSnapshot(), moduleArea:normalizeArea(CTX.moduleArea), lang:activeLang(), mode:currentMediaMode(), assessmentMode:normalizedAssessmentMode(), hybridAssessment:isHybridAssessmentMode() }); await setupLocalMedia(); prepareRecording(); prepareCandidateAudioRecording(); prepared = true; postToParent('clarity.live.prepared', { version:TOKENLESS_VERSION, targetSlots, totalSlots, hybridAssessment:isHybridAssessmentMode(), mode:currentMediaMode(), assessmentMode:normalizedAssessmentMode() }); setStatus('ok', t('ready')); setPhase('READY', t('ready')); if (recordEnabled) beginAssessmentFlow(); }
-    catch(e){ postToParent('clarity.live.error', { code:'start_error', message:errMsg(e) }); setStatus('err', errMsg(e)); }
+    catch(e){ started = false; prepared = false; postToParent('clarity.live.error', { code:'start_error', message:errMsg(e) }); setStatus('err', errMsg(e)); }
   }
-  async function beginAssessmentFlow(){ if (!prepared || finishing) return; if (!recordingStartedAt){ startRecorders(); await new Promise(r=>setTimeout(r,700)); } setStatus('ok', t('running')); postToParent('clarity.avatar', { state:'listening', reason:'v26_begin' }); await speak(t('start'), { rate:0.96, reason:'start' }); timer(()=>askSlot(1), 700); }
+  async function beginAssessmentFlow(){ if (!prepared || finishing) return; $btnStop.disabled = false; if (!recordingStartedAt){ startRecorders(); await new Promise(r=>setTimeout(r,700)); } setStatus('ok', t('running')); postToParent('clarity.avatar', { state:'listening', reason:'v270_begin' }); await speak(t('start'), { rate:0.96, reason:'start' }); timer(()=>askSlot(Math.max(1, Math.min(targetSlots, startSlotIndex || 1))), 700); }
   async function askSlot(slot){ if (finishing || destroyed) return; if (slot > targetSlots) { finishAssessment('slot_over_target'); return; } clearSlotTimers(); currentSlot = slot; setSlotUi(slot); slotStartedAt = Date.now(); lastVoiceAt = 0; setPhase('SPEAKING_QUESTION', isGerman() ? `Frage ${slot} wird gestellt…` : `Question ${slot} is being asked…`); const q = questions[slot-1] || (isGerman()?`Bitte beantworten Sie Frage ${slot}.`:`Please answer question ${slot}.`); $question.textContent = q; $hint.textContent = t('wait'); postTurn('assistant', q, slot, 'main_question'); postToParent('clarity.assessment.v2.slot_asked', { slot, questionIndex:slot, target:targetSlots, total:totalSlots, question:q, questionText:q, version:TOKENLESS_VERSION, moduleArea:normalizeArea(CTX.moduleArea), mode:currentMediaMode(), assessmentMode:normalizedAssessmentMode(), hybridAssessment:isHybridAssessmentMode() }); debug('v265_slot_asked', { slot, question:q }); postToParent('clarity.avatar', { state:'ai_speaking', reason:'v26_question' }); await speak(q, { rate:0.93, reason:'question' }); if (finishing || destroyed) return; timer(()=>openAnswerWindow(slot), timing().afterQuestionBufferMs); }
-  function openAnswerWindow(slot){ if (finishing || destroyed || slot !== currentSlot) return; answerWindowOpenedAt = Date.now(); lastVoiceAt = Date.now(); setPhase('LISTENING', t('listen')); $hint.textContent = t('listen'); postToParent('clarity.avatar', { state:'listening', reason:'v26_answer_window' }); debug('v26_answer_window_open', { slot }); const tm = timing(); const check = () => { if (finishing || destroyed || slot !== currentSlot) return; const now = Date.now(); const elapsed = now - answerWindowOpenedAt; const quietFor = now - (lastVoiceAt || answerWindowOpenedAt); const bySilence = elapsed >= tm.minAnswerMs && quietFor >= tm.silenceMs; const byMax = elapsed >= tm.maxAnswerMs; if (bySilence || byMax){ commitSlot(slot, bySilence ? 'silence_after_min' : 'max_answer_time'); return; } timer(check, 1000); }; timer(check, 1000); }
-  function commitSlot(slot, reason){ if (finishing || destroyed || slot !== currentSlot) return; setPhase('COMMITTING', t('wait')); postToParent('clarity.assessment.v2.slot_answered', { slot, questionIndex:slot, target:targetSlots, total:totalSlots, reason, question:questions[slot-1] || '', version:TOKENLESS_VERSION, hybridAssessment:isHybridAssessmentMode() }); debug('v265_slot_answered_committed', { slot, reason }); if (slot >= targetSlots){ finishAssessment('target_reached'); return; } const tm = timing(); timer(()=>askSlot(slot+1), tm.nextQuestionMs); }
+  function openAnswerWindow(slot){ if (finishing || destroyed || slot !== currentSlot) return; answerWindowOpenedAt = Date.now(); lastVoiceAt = Date.now(); startCandidateSlotRecording(slot); setPhase('LISTENING', t('listen')); $hint.textContent = t('listen'); postToParent('clarity.avatar', { state:'listening', reason:'v270_answer_window' }); debug('v270_answer_window_open', { slot }); const tm = timing(); const check = () => { if (finishing || destroyed || slot !== currentSlot) return; const now = Date.now(); const elapsed = now - answerWindowOpenedAt; const quietFor = now - (lastVoiceAt || answerWindowOpenedAt); const bySilence = elapsed >= tm.minAnswerMs && quietFor >= tm.silenceMs; const byMax = elapsed >= tm.maxAnswerMs; if (bySilence || byMax){ commitSlot(slot, bySilence ? 'silence_after_min' : 'max_answer_time'); return; } timer(check, 1000); }; timer(check, 1000); }
+  async function commitSlot(slot, reason){ if (finishing || destroyed || slot !== currentSlot || slotCommitInFlight) return; slotCommitInFlight = true; setPhase('COMMITTING', t('wait')); try { await stopCandidateSlotRecording(slot, reason); postToParent('clarity.assessment.v2.slot_answered', { slot, questionIndex:slot, target:targetSlots, total:totalSlots, reason, question:questions[slot-1] || '', version:TOKENLESS_VERSION, hybridAssessment:isHybridAssessmentMode() }); debug('v270_slot_answered_committed', { slot, reason }); if (slot >= targetSlots){ slotCommitInFlight = false; finishAssessment('target_reached'); return; } const tm = timing(); slotCommitInFlight = false; timer(()=>askSlot(slot+1), tm.nextQuestionMs); } catch(e){ slotCommitInFlight = false; postToParent('clarity.live.error', { code:'slot_commit_failed', message:errMsg(e), questionIndex:slot }); setStatus('err', errMsg(e)); } }
   function finalSpokenCloseText(){
     if (isHybridAssessmentMode()) return handoffText();
     const lk = activeLang();
@@ -743,8 +815,8 @@ function personalizeAssessmentQuestion(q, position=''){
     if (lk === 'it') return 'Grazie. L’assessment viene ora elaborato. La preghiamo di restare ancora un momento su questa pagina.';
     return 'Thank you. The assessment is now being processed. Please stay on this page for a moment.';
   }
-  function stopCandidateOnlyCapture(){
-    try { if (candidateRecorder && candidateRecorder.state !== 'inactive') candidateRecorder.stop(); } catch(e){ debug('v266_candidate_only_stop_failed', { message:errMsg(e) }); }
+  async function stopCandidateOnlyCapture(){
+    try { await stopCandidateSlotRecording(currentSlot, 'assessment_finish'); } catch(e){ debug('v270_candidate_only_stop_failed', { message:errMsg(e) }); }
     try { localStream?.getAudioTracks?.().forEach(t => { try { t.enabled = false; } catch(_) {} }); } catch(_) {}
   }
 
@@ -765,6 +837,7 @@ function personalizeAssessmentQuestion(q, position=''){
   function finishAssessment(reason='finish'){
     if (finishing) return;
     finishing = true;
+    $btnStop.disabled = true;
     clearSlotTimers();
     setPhase('FINISHING', t('processing'));
     setStatus('warn', t('processing'));
@@ -775,7 +848,7 @@ function personalizeAssessmentQuestion(q, position=''){
     timer(async ()=>{
       // First stop/mute candidate-only evidence capture, but keep the mixed review recorder alive.
       // This restores the audible final close while keeping analysis audio clean.
-      stopCandidateOnlyCapture();
+      await stopCandidateOnlyCapture();
       await new Promise(r => setTimeout(r, 250));
       await speakFinalBeforeRecorderStop();
       finalSent = true;
@@ -787,13 +860,13 @@ function personalizeAssessmentQuestion(q, position=''){
       postToParent('clarity.live.ended', { reason, version:TOKENLESS_VERSION });
     }, timing().finalStopMs);
   }
-  function manualStop(reason='manual_stop'){ debug('v26_manual_stop', { reason, currentSlot }); finishAssessment(reason); }
+  function manualStop(reason='manual_stop'){ if (!recordEnabled || !recordingStartedAt) return; debug('v270_manual_stop', { reason, currentSlot }); finishAssessment(reason); }
 
-  function handleMessage(ev){ let msg = ev?.data; try { if (typeof msg === 'string') msg = JSON.parse(msg); } catch(_){} if (!msg || typeof msg !== 'object') return; const type = msg.type; const data = msg.data || msg.payload || {}; if (type === 'clarity.live.context' || type === 'clarity.live.prime'){ CTX = { ...CTX, ...(data||{}) }; CTX.lang = firstNonEmpty(CTX.userCommLang, CTX.interviewLang, CTX.interviewLanguage, CTX.lang, Q.get('lang'), 'en'); CTX.reportLang = firstNonEmpty(CTX.reportLang, CTX.reportLanguage, Q.get('reportLang'), CTX.lang); CTX.ttsVoice = firstNonEmpty(CTX.ttsVoice, data.ttsVoice, Q.get('ttsVoice'), Q.get('voice'), 'marin'); $btnStop.textContent = t('endBtn'); setStatus('info', t('init')); debug('v267_context_received', { mode:CTX.mode, assessmentMode:CTX.assessmentMode, moduleArea:CTX.moduleArea, questionCount:CTX.questionCount, totalQuestionCount:CTX.totalQuestionCount, mediaQuestionCount:CTX.mediaQuestionCount, lang:CTX.lang }); return; } if (type === 'clarity.live.record'){ recordEnabled = data?.enabled !== false; debug('v26_record_enabled', { recordEnabled, prepared }); if (recordEnabled && prepared && !recordingStartedAt) beginAssessmentFlow(); return; } if (type === 'clarity.live.start'){ startAssessment(); return; } if (type === 'clarity.live.hangup' || type === 'clarity.live.stop' || type === 'recorder:stop'){ manualStop(type); return; } }
+  function handleMessage(ev){ let msg = ev?.data; try { if (typeof msg === 'string') msg = JSON.parse(msg); } catch(_){} if (!msg || typeof msg !== 'object') return; const type = msg.type; const data = msg.data || msg.payload || {}; if (type === 'clarity.live.context' || type === 'clarity.live.prime'){ CTX = { ...CTX, ...(data||{}) }; startSlotIndex = Math.max(1, Number(data.startQuestionIndex || CTX.startQuestionIndex || 1)); CTX.lang = firstNonEmpty(CTX.userCommLang, CTX.interviewLang, CTX.interviewLanguage, CTX.lang, Q.get('lang'), 'en'); CTX.reportLang = firstNonEmpty(CTX.reportLang, CTX.reportLanguage, Q.get('reportLang'), CTX.lang); CTX.ttsVoice = firstNonEmpty(CTX.ttsVoice, data.ttsVoice, Q.get('ttsVoice'), Q.get('voice'), 'marin'); $btnStop.textContent = t('endBtn'); setStatus('info', t('init')); debug('v270_context_received', { mode:CTX.mode, assessmentMode:CTX.assessmentMode, moduleArea:CTX.moduleArea, questionCount:CTX.questionCount, totalQuestionCount:CTX.totalQuestionCount, mediaQuestionCount:CTX.mediaQuestionCount, sessionId:CTX.sessionId, lang:CTX.lang }); return; } if (type === 'clarity.live.prepare' || type === 'clarity.live.start'){ startAssessment(); return; } if (type === 'clarity.live.record'){ recordEnabled = data?.enabled !== false; debug('v270_record_enabled', { recordEnabled, prepared, sessionId:CTX.sessionId }); if (recordEnabled && prepared && !recordingStartedAt) beginAssessmentFlow(); return; } if (type === 'clarity.live.hangup' || type === 'clarity.live.stop' || type === 'recorder:stop'){ manualStop(type); return; } }
   window.addEventListener('message', handleMessage);
   $btnStop.addEventListener('click', () => manualStop('local_button'));
 
-  function boot(){ setStatus('info', t('init')); $btnStop.textContent = t('endBtn'); setSlotUi(0); postToParent('clarity.live.ready', { version:TOKENLESS_VERSION, tokenless:true, mode:currentMediaMode(), assessmentMode:normalizedAssessmentMode(), hybridAssessment:isHybridAssessmentMode() }); debug('v26_ready_posted', { uid:UID, companyId:COMPANY_ID, audioOnly:AUDIO_ONLY }); if (Q.get('autostart') !== '0') setTimeout(()=>startAssessment(), 500); }
+  function boot(){ setStatus('info', t('init')); $btnStop.textContent = t('endBtn'); $btnStop.disabled = true; setSlotUi(0); postToParent('clarity.live.ready', { version:TOKENLESS_VERSION, tokenless:true, mode:currentMediaMode(), assessmentMode:normalizedAssessmentMode(), hybridAssessment:isHybridAssessmentMode() }); debug('v270_ready_posted', { uid:UID, companyId:COMPANY_ID, audioOnly:AUDIO_ONLY }); if (Q.get('autostart') === '1') setTimeout(()=>startAssessment(), 500); }
   try { if ('speechSynthesis' in window) { speechSynthesis.getVoices(); window.speechSynthesis.onvoiceschanged = () => { try { speechSynthesis.getVoices(); } catch(_){} }; } } catch(_){}
   boot();
 })();
