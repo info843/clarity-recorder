@@ -1,4 +1,4 @@
-// CLARITY Assessment Universal App module v2.23.2 — E2.1.2 COMPANY CONTEXT + NO-SPEECH CLOSEOUT
+// CLARITY Assessment Universal App module v2.24.0 — E2.2 VIDEO Q10 READINESS + CONSENT
 // Compact state deltas, one closeout dispatch, status-only polling and immediate
 // fallback-report availability while the Unified PDF finishes asynchronously.
 const COPY = Object.freeze({
@@ -32,7 +32,14 @@ const COPY = Object.freeze({
     audioSaving: 'Ihre Audioantworten werden transkribiert und sicher gespeichert …',
     audioRetry: 'Eine Audioantwort konnte noch nicht gespeichert werden. Mit „Status erneut prüfen“ wird derselbe Vorgang ohne neue Abbuchung fortgesetzt.',
     microphoneRequired: 'Für das Audio-Assessment muss der Zugriff auf das Mikrofon erlaubt werden.',
-    audioModuleUnavailable: 'Das Audio-Modul konnte nicht geladen werden. Bitte aktualisieren Sie die Seite. Es wurde noch keine Assessment-Session gestartet und kein Credit verbraucht.'
+    audioModuleUnavailable: 'Das Audio-Modul konnte nicht geladen werden. Bitte aktualisieren Sie die Seite. Es wurde noch keine Assessment-Session gestartet und kein Credit verbraucht.',
+    videoPreparing: 'Video-Consent, Kamera und Mikrofon werden vorbereitet …', videoReady: 'Kamera und Mikrofon geprüft. Das Video-Assessment ist bereit.',
+    videoRecording: 'Video-Assessment läuft. Bitte beantworten Sie jede Frage mündlich in die Kamera.',
+    videoSaving: 'Ihre Videoantworten werden transkribiert und sicher gespeichert …',
+    videoRetry: 'Eine Videoantwort oder die Videoaufnahme konnte noch nicht gespeichert werden. Mit „Status erneut prüfen“ wird derselbe Vorgang ohne neue Abbuchung fortgesetzt.',
+    videoConsentRequired: 'Bitte bestätigen Sie die Video- und Audioaufnahme. Erst danach werden Kamera und Mikrofon geprüft.',
+    videoConsentLabel: 'Ich stimme der Video- und Audioaufnahme für dieses CLARITY Assessment zu.',
+    videoModuleUnavailable: 'Das Video-Modul konnte nicht geladen werden. Bitte aktualisieren Sie die Seite. Es wurde noch keine Assessment-Session gestartet und kein Credit verbraucht.'
   },
   en: {
     assessment: {
@@ -64,7 +71,14 @@ const COPY = Object.freeze({
     audioSaving: 'Your audio responses are being transcribed and stored securely …',
     audioRetry: 'An audio response has not been stored yet. “Check status again” continues the same record without a new charge.',
     microphoneRequired: 'Microphone access must be allowed for the audio assessment.',
-    audioModuleUnavailable: 'The audio module could not be loaded. Refresh the page. No assessment session was started and no credit was consumed.'
+    audioModuleUnavailable: 'The audio module could not be loaded. Refresh the page. No assessment session was started and no credit was consumed.',
+    videoPreparing: 'Preparing video consent, camera and microphone …', videoReady: 'Camera and microphone checked. The video assessment is ready.',
+    videoRecording: 'Video assessment is running. Please answer each question verbally on camera.',
+    videoSaving: 'Your video responses are being transcribed and stored securely …',
+    videoRetry: 'A video response or the video recording has not been stored yet. “Check status again” continues the same record without a new charge.',
+    videoConsentRequired: 'Confirm video and audio recording first. Camera and microphone are checked only after confirmation.',
+    videoConsentLabel: 'I consent to video and audio recording for this CLARITY Assessment.',
+    videoModuleUnavailable: 'The video module could not be loaded. Refresh the page. No assessment session was started and no credit was consumed.'
   }
 });
 
@@ -158,20 +172,24 @@ export function createAssessmentModule(ctx) {
   let mediaLoadTimer = 0;
   let mediaRouteIndex = 0;
   let lastMediaResultPayload = null;
+  let videoConsentControl = null;
   const failedMediaTurns = new Map();
 
   const product = () => String(state.payload?.runtime?.productKey || '').toLowerCase();
   const runtimeMode = () => String(current?.mode || state.payload?.runtime?.mode || state.payload?.runtime?.workflowSnapshot?.mode || 'chat').toLowerCase().replace(/[+\s-]+/g, '_');
   const isAudioMode = () => product() === 'assessment' && runtimeMode() === 'audio';
+  const isVideoMode = () => product() === 'assessment' && runtimeMode() === 'video';
+  const isMediaMode = () => isAudioMode() || isVideoMode();
+  const mediaCopy = (audioKey, videoKey) => isVideoMode() ? L()[videoKey] : L()[audioKey];
   const L = () => {
     const base = COPY[getLocale() === 'de' ? 'de' : 'en'];
     return { ...base, ...(product() === 'snapshot' ? base.snapshot : base.assessment) };
   };
   const endpoint = (name) => `v2Assessment${name}`;
-  const AUDIO_RECORDER_ROUTES = Object.freeze([
-    '/modules/assessment-audio-recorder.html',
-    '/live.assessment.html'
-  ]);
+  const MEDIA_RECORDER_ROUTES = Object.freeze({
+    audio: ['/modules/assessment-audio-recorder.html', '/live.assessment.html'],
+    video: ['/modules/assessment-video-recorder.html', '/live.assessment.html']
+  });
 
   function resolvedCompanyId() {
     const runtime = state.payload?.runtime || {};
@@ -210,8 +228,8 @@ export function createAssessmentModule(ctx) {
       linkId: state.uid,
       companyId: resolvedCompanyId(),
       sessionId: String(current?.sessionId || '').trim(),
-      mode: 'audio',
-      assessmentMode: 'audio',
+      mode: isVideoMode() ? 'video' : 'audio',
+      assessmentMode: isVideoMode() ? 'video' : 'audio',
       productKey: 'assessment',
       productType: 'modul1',
       moduleArea: current?.moduleArea || runtime.moduleArea || runtime.configurationSnapshot?.moduleArea || 'personality',
@@ -246,8 +264,8 @@ export function createAssessmentModule(ctx) {
     const query = new URLSearchParams({
       uid: state.uid,
       companyId: resolvedCompanyId(),
-      mode: 'audio',
-      audioOnly: '1',
+      mode: isVideoMode() ? 'video' : 'audio',
+      audioOnly: isVideoMode() ? '0' : '1',
       autostart: '0',
       lang: getLocale(),
       reportLang: String(runtime.reportLang || getLocale())
@@ -261,10 +279,11 @@ export function createAssessmentModule(ctx) {
     mediaIframeReady = false;
     mediaPrepared = false;
     mediaRouteIndex = Math.max(0, Number(index || 0));
-    const route = AUDIO_RECORDER_ROUTES[mediaRouteIndex];
+    const routes = MEDIA_RECORDER_ROUTES[isVideoMode() ? 'video' : 'audio'];
+    const route = routes[mediaRouteIndex];
     if (!route) {
-      const error = new Error(L().audioModuleUnavailable);
-      error.code = 'ASSESSMENT_AUDIO_MODULE_NOT_DEPLOYED';
+      const error = new Error(isVideoMode() ? L().videoModuleUnavailable : L().audioModuleUnavailable);
+      error.code = isVideoMode() ? 'ASSESSMENT_VIDEO_MODULE_NOT_DEPLOYED' : 'ASSESSMENT_AUDIO_MODULE_NOT_DEPLOYED';
       error.retryable = true;
       mediaFatalError = error;
       mediaFrame.style.display = 'none';
@@ -278,12 +297,12 @@ export function createAssessmentModule(ctx) {
     mediaLoadTimer = window.setTimeout(() => {
       mediaLoadTimer = 0;
       if (mediaIframeReady) return;
-      if (mediaRouteIndex + 1 < AUDIO_RECORDER_ROUTES.length) {
+      if (mediaRouteIndex + 1 < routes.length) {
         loadMediaRecorderRoute(mediaRouteIndex + 1);
         return;
       }
-      const error = new Error(L().audioModuleUnavailable);
-      error.code = 'ASSESSMENT_AUDIO_MODULE_NOT_DEPLOYED';
+      const error = new Error(isVideoMode() ? L().videoModuleUnavailable : L().audioModuleUnavailable);
+      error.code = isVideoMode() ? 'ASSESSMENT_VIDEO_MODULE_NOT_DEPLOYED' : 'ASSESSMENT_AUDIO_MODULE_NOT_DEPLOYED';
       error.retryable = true;
       mediaFatalError = error;
       mediaFrame.style.display = 'none';
@@ -293,21 +312,21 @@ export function createAssessmentModule(ctx) {
   }
 
   function ensureMediaFrame() {
-    if (!isAudioMode()) return null;
+    if (!isMediaMode()) return null;
     if (mediaFrame?.isConnected) return mediaFrame;
 
-    mediaShell = document.getElementById('clarityAssessmentAudioShell');
+    mediaShell = document.getElementById('clarityAssessmentMediaShell');
     if (!mediaShell) {
       mediaShell = document.createElement('section');
-      mediaShell.id = 'clarityAssessmentAudioShell';
-      mediaShell.className = 'clarity-assessment-audio-shell';
+      mediaShell.id = 'clarityAssessmentMediaShell';
+      mediaShell.className = 'clarity-assessment-media-shell';
       const heading = document.createElement('div');
-      heading.className = 'clarity-assessment-audio-heading';
-      heading.textContent = getLocale() === 'de' ? 'Audio-Assessment' : 'Audio assessment';
+      heading.className = 'clarity-assessment-media-heading';
+      heading.textContent = isVideoMode() ? (getLocale() === 'de' ? 'Video-Assessment' : 'Video assessment') : (getLocale() === 'de' ? 'Audio-Assessment' : 'Audio assessment');
       mediaFrame = document.createElement('iframe');
-      mediaFrame.id = 'clarityAssessmentAudioFrame';
-      mediaFrame.title = getLocale() === 'de' ? 'CLARITY Audio-Assessment' : 'CLARITY audio assessment';
-      mediaFrame.allow = 'microphone; autoplay';
+      mediaFrame.id = 'clarityAssessmentMediaFrame';
+      mediaFrame.title = isVideoMode() ? (getLocale() === 'de' ? 'CLARITY Video-Assessment' : 'CLARITY video assessment') : (getLocale() === 'de' ? 'CLARITY Audio-Assessment' : 'CLARITY audio assessment');
+      mediaFrame.allow = isVideoMode() ? 'camera; microphone; autoplay' : 'microphone; autoplay';
       mediaFrame.referrerPolicy = 'strict-origin-when-cross-origin';
       mediaFrame.loading = 'eager';
       mediaShell.append(heading, mediaFrame);
@@ -321,6 +340,54 @@ export function createAssessmentModule(ctx) {
       mediaFrame = mediaShell.querySelector('iframe');
     }
     return mediaFrame;
+  }
+
+  function videoConsentAccepted() {
+    return !isVideoMode() || videoConsentControl?.querySelector('input')?.checked === true;
+  }
+
+  function ensureVideoConsentControl() {
+    if (!isVideoMode()) return null;
+    if (videoConsentControl?.isConnected) return videoConsentControl;
+    videoConsentControl = document.createElement('section');
+    videoConsentControl.id = 'clarityAssessmentVideoConsent';
+    videoConsentControl.className = 'clarity-assessment-video-consent';
+    const label = document.createElement('label');
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.id = 'clarityAssessmentVideoConsentCheckbox';
+    const copy = document.createElement('span');
+    copy.textContent = L().videoConsentLabel;
+    label.append(checkbox, copy);
+    videoConsentControl.append(label);
+    const startPanel = $('assessmentStartPanel');
+    startPanel?.parentNode?.insertBefore(videoConsentControl, startPanel);
+    checkbox.addEventListener('change', () => {
+      syncButtonStates();
+      if (checkbox.checked) {
+        ensureMediaFrame();
+        if (mediaIframeReady) {
+          postToMedia('clarity.live.context', mediaRuntimeContext());
+          postToMedia('clarity.live.prepare', { enabled:true });
+          status(L().videoPreparing, 'warn');
+        }
+      } else {
+        mediaPrepared = false;
+        status(L().videoConsentRequired, 'warn');
+      }
+    });
+    return videoConsentControl;
+  }
+
+  function requestMediaPreparation() {
+    if (!isMediaMode() || !mediaIframeReady) return;
+    if (isVideoMode() && !videoConsentAccepted()) {
+      status(L().videoConsentRequired, 'warn');
+      return;
+    }
+    postToMedia('clarity.live.context', mediaRuntimeContext());
+    postToMedia('clarity.live.prepare', { enabled:true });
+    status(mediaCopy('audioPreparing','videoPreparing'), 'warn');
   }
 
   function resetMediaState({ keepFrame = true } = {}) {
@@ -369,7 +436,7 @@ export function createAssessmentModule(ctx) {
 
   async function persistMediaTurn(payload = {}) {
     const questionIndex = Number(payload.questionIndex || 0);
-    if (!questionIndex || !payload.dataUrl) throw new Error('Audio answer payload is incomplete.');
+    if (!questionIndex || !payload.dataUrl) throw new Error('Assessment media answer payload is incomplete.');
     const body = {
       token: state.token,
       uid: state.uid,
@@ -379,8 +446,9 @@ export function createAssessmentModule(ctx) {
       dataUrl: payload.dataUrl,
       mimeType: payload.mimeType || 'audio/webm',
       durationMs: Number(payload.durationMs || 0),
-      mediaTurnId: payload.mediaTurnId || `${state.uid}:audio-slot:${questionIndex}`,
-      idempotencyKey: payload.mediaTurnId || `${state.uid}:audio-slot:${questionIndex}`,
+      mediaTurnId: payload.mediaTurnId || `${state.uid}:${isVideoMode() ? 'video' : 'audio'}-slot:${questionIndex}`,
+      idempotencyKey: payload.mediaTurnId || `${state.uid}:${isVideoMode() ? 'video' : 'audio'}-slot:${questionIndex}`,
+      captureSource: isVideoMode() ? 'video' : 'audio',
       language: getLocale(),
       companyId: resolvedCompanyId(),
       noSpeechDetected: payload.noSpeechDetected === true,
@@ -404,7 +472,7 @@ export function createAssessmentModule(ctx) {
     const companyId = resolvedCompanyId();
     if (!companyId) {
       const error = new Error(getLocale() === 'de'
-        ? 'Der Unternehmenskontext des Audio-Assessments ist noch nicht vollständig geladen.'
+        ? 'Der Unternehmenskontext des Medien-Assessments ist noch nicht vollständig geladen.'
         : 'The Assessment company context has not finished loading.');
       error.code = 'ASSESSMENT_COMPANY_CONTEXT_MISSING';
       error.retryable = true;
@@ -416,7 +484,7 @@ export function createAssessmentModule(ctx) {
       uid: state.uid,
       companyId,
       sessionId: current?.sessionId || payload.sessionId || '',
-      mode: 'audio',
+      mode: isVideoMode() ? 'video' : 'audio',
       platformManaged: true
     };
     return withMediaRetry(() => api(endpoint('MediaResult'), { body }), 3);
@@ -434,8 +502,8 @@ export function createAssessmentModule(ctx) {
       mediaResultPromise,
       new Promise((_, reject) => window.setTimeout(() => {
         const error = new Error(getLocale() === 'de'
-          ? 'Die Audio-Datei wird noch verarbeitet. Bitte prüfen Sie den Status erneut.'
-          : 'The audio file is still processing. Please check the status again.');
+          ? (isVideoMode() ? 'Die Video-Datei wird noch verarbeitet. Bitte prüfen Sie den Status erneut.' : 'Die Audio-Datei wird noch verarbeitet. Bitte prüfen Sie den Status erneut.')
+          : (isVideoMode() ? 'The video file is still processing. Please check the status again.' : 'The audio file is still processing. Please check the status again.'));
         error.code = 'ASSESSMENT_MEDIA_RESULT_TIMEOUT';
         error.retryable = true;
         reject(error);
@@ -443,14 +511,14 @@ export function createAssessmentModule(ctx) {
     ]);
   }
 
-  async function finalizeAudioAssessment() {
-    if (!isAudioMode() || mediaFinalizeStarted || !mediaEnded) return;
+  async function finalizeMediaAssessment() {
+    if (!isMediaMode() || mediaFinalizeStarted || !mediaEnded) return;
     mediaFinalizeStarted = true;
-    status(L().audioSaving, 'warn');
+    status(mediaCopy('audioSaving','videoSaving'), 'warn');
     try {
       await mediaTurnChain;
       if (failedMediaTurns.size) {
-        const error = new Error(L().audioRetry);
+        const error = new Error(mediaCopy('audioRetry','videoRetry'));
         error.code = 'ASSESSMENT_MEDIA_TURNS_INCOMPLETE';
         error.retryable = true;
         throw error;
@@ -459,7 +527,7 @@ export function createAssessmentModule(ctx) {
       const expected = Number(current?.expectedAnswers || current?.questionCount || 10);
       const refreshed = await readStatus({ includeHistory: false, includeReportLookup: false });
       if (Number(refreshed?.answeredCount || 0) < expected) {
-        const error = new Error(L().audioRetry);
+        const error = new Error(mediaCopy('audioRetry','videoRetry'));
         error.code = 'ASSESSMENT_MEDIA_TRANSCRIPTS_INCOMPLETE';
         error.retryable = true;
         throw error;
@@ -472,16 +540,16 @@ export function createAssessmentModule(ctx) {
       closeoutStarted = false;
       $('assessmentProcessingPanel')?.classList.remove('hidden');
       $('assessmentRetryBtn')?.classList.remove('hidden');
-      status(error.message || L().audioRetry, 'err');
+      status(error.message || mediaCopy('audioRetry','videoRetry'), 'err');
     }
   }
 
   async function retryFailedMedia() {
-    if (!isAudioMode()) return false;
+    if (!isMediaMode()) return false;
     const pending = [...failedMediaTurns.values()];
     if (!pending.length && !mediaFatalError && !lastMediaResultPayload) return false;
     mediaFatalError = null;
-    status(L().audioSaving, 'warn');
+    status(mediaCopy('audioSaving','videoSaving'), 'warn');
     for (const payload of pending) {
       await persistMediaTurn(payload);
     }
@@ -493,12 +561,12 @@ export function createAssessmentModule(ctx) {
       lastMediaResultPayload = null;
     }
     mediaFinalizeStarted = false;
-    await finalizeAudioAssessment();
+    await finalizeMediaAssessment();
     return true;
   }
 
   function handleMediaMessage(event) {
-    if (!isAudioMode() || !mediaFrame || event.source !== mediaFrame.contentWindow) return;
+    if (!isMediaMode() || !mediaFrame || event.source !== mediaFrame.contentWindow) return;
     const message = event?.data || {};
     const type = String(message.type || '');
     const data = message.data || message.payload || {};
@@ -508,8 +576,7 @@ export function createAssessmentModule(ctx) {
       mediaIframeReady = true;
       mediaFrame.style.display = 'block';
       postToMedia('clarity.live.context', mediaRuntimeContext());
-      postToMedia('clarity.live.prepare', { enabled: true });
-      status(L().audioPreparing, 'warn');
+      requestMediaPreparation();
       return;
     }
 
@@ -517,7 +584,7 @@ export function createAssessmentModule(ctx) {
       mediaPrepared = true;
       postToMedia('clarity.live.context', mediaRuntimeContext());
       syncButtonStates();
-      status(moduleReady ? L().audioReady : L().preparing, moduleReady ? 'ok' : 'warn');
+      status(moduleReady ? mediaCopy('audioReady','videoReady') : L().preparing, moduleReady ? 'ok' : 'warn');
       return;
     }
 
@@ -528,14 +595,14 @@ export function createAssessmentModule(ctx) {
         .then(() => persistMediaTurn(data))
         .catch((error) => {
           mediaFatalError = error;
-          status(error.message || L().audioRetry, 'err');
+          status(error.message || mediaCopy('audioRetry','videoRetry'), 'err');
         });
       return;
     }
 
     if (type === 'candidate-audio:error' || type === 'clarity.live.error') {
       const error = new Error(String(data.message || L().microphoneRequired));
-      error.code = String(data.code || 'ASSESSMENT_AUDIO_DEVICE_ERROR');
+      error.code = String(data.code || (isVideoMode() ? 'ASSESSMENT_VIDEO_DEVICE_ERROR' : 'ASSESSMENT_AUDIO_DEVICE_ERROR'));
       error.retryable = true;
       mediaFatalError = error;
       if (!mediaRecordStarted) {
@@ -558,11 +625,11 @@ export function createAssessmentModule(ctx) {
         .catch((error) => {
           mediaFatalError = error;
           mediaResultReject?.(error);
-          status(error.message || L().audioRetry, 'err');
+          status(error.message || mediaCopy('audioRetry','videoRetry'), 'err');
           throw error;
         });
       mediaResultPromise = operation;
-      // The promise is intentionally retained for finalizeAudioAssessment(). Attach a
+      // The promise is intentionally retained for finalizeMediaAssessment(). Attach a
       // terminal observer so a recorder failure is not emitted as an unhandled rejection.
       operation.catch(() => null);
       return;
@@ -571,8 +638,8 @@ export function createAssessmentModule(ctx) {
     if (type === 'clarity.live.ended') {
       mediaEnded = true;
       $('assessmentProcessingPanel')?.classList.remove('hidden');
-      status(L().audioSaving, 'warn');
-      window.setTimeout(() => finalizeAudioAssessment(), 100);
+      status(mediaCopy('audioSaving','videoSaving'), 'warn');
+      window.setTimeout(() => finalizeMediaAssessment(), 100);
     }
   }
 
@@ -607,11 +674,15 @@ export function createAssessmentModule(ctx) {
       #assessmentView .assessment-composer textarea{background:#ffffff!important;color:#101828!important;caret-color:#101828!important;border-color:#cbd5e1!important}
       #assessmentView .assessment-composer textarea::placeholder{color:#667085!important;opacity:1}
       #assessmentView .assessment-composer textarea:focus{border-color:#22d3ee!important;box-shadow:0 0 0 4px rgba(34,211,238,.14)!important}
-      #assessmentView .clarity-assessment-audio-shell{margin:18px 0;border:1px solid rgba(34,211,238,.28);border-radius:24px;overflow:hidden;background:#071526;box-shadow:0 20px 48px rgba(2,12,27,.28)}
-      #assessmentView .clarity-assessment-audio-heading{padding:14px 18px;color:#f8fafc;font-weight:800;border-bottom:1px solid rgba(148,163,184,.18)}
-      #assessmentView .clarity-assessment-audio-shell iframe{display:block;width:100%;min-height:560px;border:0;background:#fff}
-      #assessmentView.audio-mode #assessmentMessages,#assessmentView.audio-mode #assessmentComposer{display:none!important}
-      #assessmentView.audio-mode .clarity-assessment-audio-shell.hidden{display:none!important}
+      #assessmentView .clarity-assessment-media-shell{margin:18px 0;border:1px solid rgba(34,211,238,.28);border-radius:24px;overflow:hidden;background:#071526;box-shadow:0 20px 48px rgba(2,12,27,.28)}
+      #assessmentView .clarity-assessment-media-heading{padding:14px 18px;color:#f8fafc;font-weight:800;border-bottom:1px solid rgba(148,163,184,.18)}
+      #assessmentView .clarity-assessment-media-shell iframe{display:block;width:100%;min-height:560px;border:0;background:#fff}
+      #assessmentView.media-mode #assessmentMessages,#assessmentView.media-mode #assessmentComposer{display:none!important}
+      #assessmentView.media-mode .clarity-assessment-media-shell.hidden{display:none!important}
+      #assessmentView.video-mode .clarity-assessment-media-shell iframe{min-height:680px}
+      #assessmentView .clarity-assessment-video-consent{margin:16px 0;padding:16px 18px;border:1px solid rgba(34,211,238,.34);border-radius:18px;background:rgba(7,21,38,.72);color:#f8fafc}
+      #assessmentView .clarity-assessment-video-consent label{display:flex;gap:12px;align-items:flex-start;font-weight:700;line-height:1.45;cursor:pointer}
+      #assessmentView .clarity-assessment-video-consent input{margin-top:3px;width:18px;height:18px;accent-color:#22d3ee}
     `;
     document.head.appendChild(style);
   }
@@ -627,7 +698,7 @@ export function createAssessmentModule(ctx) {
     return current?.phase === 'not_started' &&
       current?.readiness?.startAllowed === true &&
       moduleReady === true &&
-      (!isAudioMode() || (mediaIframeReady === true && mediaPrepared === true));
+      (!isMediaMode() || (mediaIframeReady === true && mediaPrepared === true && videoConsentAccepted()));
   }
 
   function syncButtonStates() {
@@ -636,7 +707,7 @@ export function createAssessmentModule(ctx) {
       startButton.disabled = busy || !startAllowed();
       startButton.setAttribute('aria-disabled', startButton.disabled ? 'true' : 'false');
       startButton.setAttribute('aria-busy', busy ? 'true' : 'false');
-      startButton.textContent = startAllowed() ? L().start : (isAudioMode() ? L().audioPreparing : L().preparing);
+      startButton.textContent = startAllowed() ? L().start : (isMediaMode() ? mediaCopy('audioPreparing','videoPreparing') : L().preparing);
     }
     ['assessmentSendBtn','assessmentFinishBtn','assessmentRetryBtn'].forEach((id) => {
       const el = $(id);
@@ -663,8 +734,8 @@ export function createAssessmentModule(ctx) {
     moduleReady = phase === 'not_started' && readiness.startAllowed === true;
     syncButtonStates();
     if (phase === 'not_started') {
-      if (moduleReady && (!isAudioMode() || mediaPrepared)) status(isAudioMode() ? L().audioReady : L().ready, 'ok');
-      else if (!busy) status(isAudioMode() ? L().audioPreparing : L().preparing, 'warn');
+      if (moduleReady && (!isMediaMode() || (mediaPrepared && videoConsentAccepted()))) status(isMediaMode() ? mediaCopy('audioReady','videoReady') : L().ready, 'ok');
+      else if (!busy) status(isVideoMode() && !videoConsentAccepted() ? L().videoConsentRequired : (isMediaMode() ? mediaCopy('audioPreparing','videoPreparing') : L().preparing), 'warn');
     } else {
       clearReadinessPoll();
     }
@@ -730,19 +801,23 @@ export function createAssessmentModule(ctx) {
     const processing = phase === 'processing';
     const completed = phase === 'completed';
     const failed = phase === 'failed';
-    const audio = isAudioMode();
-    $('assessmentView')?.classList.toggle('audio-mode', audio);
-    if (audio) ensureMediaFrame();
-    mediaShell?.classList.toggle('hidden', !audio || processing || completed || failed);
+    const media = isMediaMode();
+    const video = isVideoMode();
+    $('assessmentView')?.classList.toggle('media-mode', media);
+    $('assessmentView')?.classList.toggle('video-mode', video);
+    if (video) ensureVideoConsentControl();
+    if (media) ensureMediaFrame();
+    videoConsentControl?.classList.toggle('hidden', !video || !notStarted);
+    mediaShell?.classList.toggle('hidden', !media || processing || completed || failed);
     $('assessmentStartPanel').classList.toggle('hidden', !notStarted);
-    $('assessmentChatPanel').classList.toggle('hidden', audio || !(running || processing));
+    $('assessmentChatPanel').classList.toggle('hidden', media || !(running || processing));
     $('assessmentProcessingPanel').classList.toggle('hidden', !(processing || failed));
     $('assessmentCompletePanel').classList.toggle('hidden', !completed);
-    $('assessmentComposer').classList.toggle('hidden', audio || !running);
+    $('assessmentComposer').classList.toggle('hidden', media || !running);
     const allAnswered = Number(current.answeredCount || 0) >= Number(current.expectedAnswers || current.questionCount || 1);
-    $('assessmentFinishBtn').classList.toggle('hidden', audio || !running || !allAnswered);
-    $('assessmentSendBtn').classList.toggle('hidden', audio || !running || allAnswered);
-    if (audio && running && mediaRecordStarted) status(L().audioRecording, 'ok');
+    $('assessmentFinishBtn').classList.toggle('hidden', media || !running || !allAnswered);
+    $('assessmentSendBtn').classList.toggle('hidden', media || !running || allAnswered);
+    if (media && running && mediaRecordStarted) status(mediaCopy('audioRecording','videoRecording'), 'ok');
     if (completed) {
       closeoutStarted = true;
       clearPoll();
@@ -760,7 +835,7 @@ export function createAssessmentModule(ctx) {
     } else if (processing) {
       status(L().processing, 'warn');
     } else if (running) {
-      status(audio && mediaRecordStarted ? L().audioRecording : '', audio && mediaRecordStarted ? 'ok' : '');
+      status(media && mediaRecordStarted ? mediaCopy('audioRecording','videoRecording') : '', media && mediaRecordStarted ? 'ok' : '');
     }
   }
 
@@ -891,8 +966,8 @@ export function createAssessmentModule(ctx) {
     if (!startAllowed()) {
       moduleReady = false;
       syncButtonStates();
-      status(isAudioMode() ? L().audioPreparing : L().preparing, 'warn');
-      if (isAudioMode()) { ensureMediaFrame(); if (mediaIframeReady) { postToMedia('clarity.live.context', mediaRuntimeContext()); postToMedia('clarity.live.prepare', { enabled:true }); } }
+      status(isVideoMode() && !videoConsentAccepted() ? L().videoConsentRequired : (isMediaMode() ? mediaCopy('audioPreparing','videoPreparing') : L().preparing), 'warn');
+      if (isMediaMode()) { ensureMediaFrame(); requestMediaPreparation(); }
       pollReadiness();
       return;
     }
@@ -906,7 +981,14 @@ export function createAssessmentModule(ctx) {
         body: {
           token: state.token,
           uid: state.uid,
-          idempotencyKey: `${runtimeAccessId}:assessment-start`
+          idempotencyKey: `${runtimeAccessId}:assessment-start`,
+          mediaConsent: isVideoMode() ? {
+            accepted: videoConsentAccepted(),
+            audioAccepted: videoConsentAccepted(),
+            videoAccepted: videoConsentAccepted(),
+            acceptedAt: new Date().toISOString(),
+            version: 'assessment_media_consent_v1'
+          } : undefined
         }
       });
       const next = data.state || data;
@@ -920,11 +1002,11 @@ export function createAssessmentModule(ctx) {
         throw error;
       }
       render(next);
-      if (isAudioMode() && next.phase === 'running') {
+      if (isMediaMode() && next.phase === 'running') {
         mediaRecordStarted = true;
         postToMedia('clarity.live.context', mediaRuntimeContext());
         postToMedia('clarity.live.record', { enabled: true, sessionId: next.sessionId || current?.sessionId || '' });
-        status(L().audioRecording, 'ok');
+        status(mediaCopy('audioRecording','videoRecording'), 'ok');
       }
     } catch (error) {
 
@@ -934,17 +1016,17 @@ export function createAssessmentModule(ctx) {
           current = { ...(current || {}), readiness: error.details.readiness, phase: 'not_started' };
         }
         syncButtonStates();
-        status(isAudioMode() ? L().audioPreparing : L().preparing, 'warn');
+        status(isVideoMode() && !videoConsentAccepted() ? L().videoConsentRequired : (isMediaMode() ? mediaCopy('audioPreparing','videoPreparing') : L().preparing), 'warn');
         pollReadiness();
       } else if (isAmbiguous(error) || String(error?.code || '') === 'ASSESSMENT_START_QUESTION_MISSING') {
         status(L().transport, 'warn');
         const recovered = await readStatus({ includeHistory: true, includeReportLookup: false }).catch(() => null);
         if (recovered?.phase === 'not_started') pollReadiness();
-        else if (recovered?.phase === 'running' && isAudioMode()) {
+        else if (recovered?.phase === 'running' && isMediaMode()) {
           mediaRecordStarted = true;
           postToMedia('clarity.live.context', mediaRuntimeContext());
           postToMedia('clarity.live.record', { enabled:true, sessionId:recovered.sessionId || current?.sessionId || '' });
-          status(L().audioRecording, 'ok');
+          status(mediaCopy('audioRecording','videoRecording'), 'ok');
         } else if (recovered?.phase === 'processing') await pollStatus();
       } else {
         status(error.message || String(error), 'err');
@@ -1011,7 +1093,7 @@ export function createAssessmentModule(ctx) {
       } else {
         closeoutStarted = false;
         status(error.message || String(error), 'err');
-        if (!isAudioMode()) $('assessmentComposer').classList.remove('hidden');
+        if (!isMediaMode()) $('assessmentComposer').classList.remove('hidden');
       }
     } finally {
       setBusy(false, $('assessmentFinishBtn'));
@@ -1022,7 +1104,7 @@ export function createAssessmentModule(ctx) {
     if (busy) return;
     setBusy(true, $('assessmentRetryBtn'));
     try {
-      if (isAudioMode() && await retryFailedMedia()) return;
+      if (isMediaMode() && await retryFailedMedia()) return;
       const data = await api(endpoint('Retry'), { body: { token: state.token, uid: state.uid, sessionId: current?.sessionId || '' } });
       const next = data.state || data;
       render(next);
@@ -1043,7 +1125,7 @@ export function createAssessmentModule(ctx) {
     $('assessmentTitle').textContent = copy.title;
     $('assessmentText').textContent = copy.intro;
     $('assessmentReleaseText').textContent = copy.notice;
-    $('assessmentStartBtn').textContent = startAllowed() ? copy.start : (isAudioMode() ? copy.audioPreparing : copy.preparing);
+    $('assessmentStartBtn').textContent = startAllowed() ? copy.start : (isMediaMode() ? mediaCopy('audioPreparing','videoPreparing') : copy.preparing);
     $('assessmentSendBtn').textContent = copy.send;
     $('assessmentFinishBtn').textContent = copy.finish;
     $('assessmentRetryBtn').textContent = copy.retry;
@@ -1077,16 +1159,14 @@ export function createAssessmentModule(ctx) {
     show('assessmentView');
     applyCopy();
     syncButtonStates();
-    status(L().preparing, 'warn');
+    status(isVideoMode() ? L().videoConsentRequired : L().preparing, 'warn');
     try {
       const data = await readStatus({ includeInspection: false, includeHistory: true, includeReportLookup: false });
       adoptReadiness(data);
-      if (isAudioMode() && data.phase === 'not_started') {
+      if (isMediaMode() && data.phase === 'not_started') {
+        if (isVideoMode()) ensureVideoConsentControl();
         ensureMediaFrame();
-        if (mediaIframeReady) {
-          postToMedia('clarity.live.context', mediaRuntimeContext());
-          postToMedia('clarity.live.prepare', { enabled:true });
-        }
+        requestMediaPreparation();
       }
       if (data.phase === 'not_started' && !startAllowed()) {
         pollReadiness();
