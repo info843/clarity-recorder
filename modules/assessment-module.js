@@ -1,4 +1,4 @@
-// CLARITY Assessment Universal App module v2.21.0 — E1.5 WORKSPACE-ONLY REPORT POLICY
+// CLARITY Assessment Universal App module v2.22.0 — E2.0 EXPERIENCE READINESS GATE
 // Compact state deltas, one closeout dispatch, status-only polling and immediate
 // fallback-report availability while the Unified PDF finishes asynchronously.
 const COPY = Object.freeze({
@@ -7,7 +7,7 @@ const COPY = Object.freeze({
       title: 'CLARITY Assessment', eyebrow: 'CLARITY Assessment · Schriftlich', badge: 'Sicherer Ablauf',
       intro: 'Beantworten Sie die Fragen möglichst konkret und in Ihren eigenen Worten. Beispiele helfen dabei, Ihre Angaben nachvollziehbar einzuordnen.',
       notice: 'Mit Enter senden Sie Ihre Antwort. Shift + Enter fügt einen Zeilenumbruch ein.',
-      start: 'Assessment starten', starting: 'Assessment wird gestartet …', send: 'Antwort senden', finish: 'Assessment abschließen',
+      start: 'Assessment starten', preparing: 'Assessment wird vorbereitet …', ready: 'Assessment ist bereit.', starting: 'Assessment wird gestartet …', send: 'Antwort senden', finish: 'Assessment abschließen',
       processing: 'Ihre Antworten werden ausgewertet und der Bericht wird erstellt. Der Status wird automatisch aktualisiert.',
       completed: 'Assessment abgeschlossen', completedText: 'Ihre Antworten wurden sicher übermittelt. Das Unternehmen verarbeitet das Ergebnis im CLARITY Workspace. Sie können dieses Fenster schließen.',
       startTitle: 'Vorbereitung', startText: 'Planen Sie für jede Antwort ausreichend Zeit ein und nennen Sie möglichst konkrete Situationen oder Beispiele.'
@@ -16,7 +16,7 @@ const COPY = Object.freeze({
       title: 'CLARITY Snapshot', eyebrow: 'CLARITY Snapshot · Kurzcheck', badge: 'Kompakter Ablauf',
       intro: 'Beantworten Sie die vereinbarten Kurzfragen in eigenen Worten. Der Snapshot fasst die Antworten anschließend kompakt zusammen.',
       notice: 'Der Snapshot ist ein kurzer strukturierter Überblick und ersetzt kein vollständiges Assessment.',
-      start: 'Snapshot starten', starting: 'Snapshot wird gestartet …', send: 'Antwort senden', finish: 'Snapshot abschließen',
+      start: 'Snapshot starten', preparing: 'Snapshot wird vorbereitet …', ready: 'Snapshot ist bereit.', starting: 'Snapshot wird gestartet …', send: 'Antwort senden', finish: 'Snapshot abschließen',
       processing: 'Ihre Antworten werden zusammengefasst. Der Status wird automatisch aktualisiert.',
       completed: 'Snapshot abgeschlossen', completedText: 'Ihre Antworten wurden sicher übermittelt. Das Unternehmen erhält die Zusammenfassung im CLARITY Workspace. Sie können dieses Fenster schließen.',
       startTitle: 'Kurzer Überblick', startText: 'Beantworten Sie die Fragen kurz und konkret. Je nach Umfang dauert der Snapshot nur wenige Minuten.'
@@ -25,14 +25,15 @@ const COPY = Object.freeze({
     question: 'Frage', answered: 'beantwortet', area: 'Bereich', format: 'Format', shortCheck: 'Kurzcheck', scope: 'Umfang', process: 'Ablauf',
     processRule: 'Auswertung nach der letzten Antwort', retry: 'Status erneut prüfen', report: 'Bericht',
     waitingReport: 'Der Bericht wird noch vorbereitet. Die Seite prüft den Status weiter.',
-    transport: 'Die Serverantwort ist noch unklar. Der tatsächliche Status wird geprüft.'
+    transport: 'Die Serverantwort ist noch unklar. Der tatsächliche Status wird geprüft.',
+    readinessDelayed: 'Die Vorbereitung dauert länger als erwartet. Der Start bleibt gesperrt, bis alle Moduldaten vollständig geladen sind.'
   },
   en: {
     assessment: {
       title: 'CLARITY Assessment', eyebrow: 'CLARITY Assessment · Written', badge: 'Secure workflow',
       intro: 'Answer the questions as concretely as possible and in your own words. Examples help make your information easier to assess.',
       notice: 'Press Enter to send your answer. Shift + Enter inserts a new line.',
-      start: 'Start assessment', starting: 'Starting assessment …', send: 'Send answer', finish: 'Complete assessment',
+      start: 'Start assessment', preparing: 'Preparing assessment …', ready: 'Assessment is ready.', starting: 'Starting assessment …', send: 'Send answer', finish: 'Complete assessment',
       processing: 'Your answers are being evaluated and the report is being created. The status updates automatically.',
       completed: 'Assessment completed', completedText: 'Your responses were submitted securely. The organisation will review the result in CLARITY Workspace. You can close this window.',
       startTitle: 'Preparation', startText: 'Take sufficient time for each answer and provide concrete situations or examples where possible.'
@@ -41,7 +42,7 @@ const COPY = Object.freeze({
       title: 'CLARITY Snapshot', eyebrow: 'CLARITY Snapshot · Quick check', badge: 'Concise workflow',
       intro: 'Answer the agreed short questions in your own words. The Snapshot then creates a concise summary.',
       notice: 'The Snapshot is a short structured overview and does not replace a full assessment.',
-      start: 'Start Snapshot', starting: 'Starting Snapshot …', send: 'Send answer', finish: 'Complete Snapshot',
+      start: 'Start Snapshot', preparing: 'Preparing Snapshot …', ready: 'Snapshot is ready.', starting: 'Starting Snapshot …', send: 'Send answer', finish: 'Complete Snapshot',
       processing: 'Your answers are being summarized. The status updates automatically.',
       completed: 'Snapshot completed', completedText: 'Your responses were submitted securely. The organisation receives the summary in CLARITY Workspace. You can close this window.',
       startTitle: 'Quick overview', startText: 'Answer briefly and concretely. Depending on the scope, the Snapshot takes only a few minutes.'
@@ -50,7 +51,8 @@ const COPY = Object.freeze({
     question: 'Question', answered: 'answered', area: 'Area', format: 'Format', shortCheck: 'Quick check', scope: 'Scope', process: 'Process',
     processRule: 'Evaluation after the final answer', retry: 'Check status again', report: 'Report',
     waitingReport: 'The report is still being prepared. This page continues checking the status.',
-    transport: 'The server response is still unclear. The actual status is being checked.'
+    transport: 'The server response is still unclear. The actual status is being checked.',
+    readinessDelayed: 'Preparation is taking longer than expected. Start remains locked until all module data is fully loaded.'
   }
 });
 
@@ -123,6 +125,10 @@ export function createAssessmentModule(ctx) {
   let closeoutKickSessionId = '';
   let lastHistorySignature = '';
   let unifiedInspectionPolls = 0;
+  let moduleReady = false;
+  let readinessTimer = 0;
+  let readinessStartedAt = 0;
+  let readinessAttempt = 0;
 
   const product = () => String(state.payload?.runtime?.productKey || '').toLowerCase();
   const L = () => {
@@ -173,13 +179,50 @@ export function createAssessmentModule(ctx) {
     el.className = `status ${type}`.trim();
   }
 
+  function startAllowed() {
+    return current?.phase === 'not_started' &&
+      current?.readiness?.startAllowed === true &&
+      moduleReady === true;
+  }
+
+  function syncButtonStates() {
+    const startButton = $('assessmentStartBtn');
+    if (startButton) {
+      startButton.disabled = busy || !startAllowed();
+      startButton.setAttribute('aria-disabled', startButton.disabled ? 'true' : 'false');
+      startButton.setAttribute('aria-busy', busy ? 'true' : 'false');
+      startButton.textContent = moduleReady ? L().start : L().preparing;
+    }
+    ['assessmentSendBtn','assessmentFinishBtn','assessmentRetryBtn'].forEach((id) => {
+      const el = $(id);
+      if (el) el.disabled = busy;
+    });
+  }
+
   function setBusy(value, button = null) {
     busy = value;
-    ['assessmentStartBtn','assessmentSendBtn','assessmentFinishBtn','assessmentRetryBtn'].forEach((id) => {
-      const el = $(id);
-      if (el) el.disabled = value;
-    });
+    syncButtonStates();
     if (button) button.classList.toggle('busy', value);
+  }
+
+  function clearReadinessPoll() {
+    if (readinessTimer) window.clearTimeout(readinessTimer);
+    readinessTimer = 0;
+    readinessStartedAt = 0;
+    readinessAttempt = 0;
+  }
+
+  function adoptReadiness(data = {}) {
+    const phase = String(data.phase || current?.phase || 'not_started');
+    const readiness = data.readiness || current?.readiness || {};
+    moduleReady = phase === 'not_started' && readiness.startAllowed === true;
+    syncButtonStates();
+    if (phase === 'not_started') {
+      if (moduleReady) status(L().ready, 'ok');
+      else if (!busy) status(L().preparing, 'warn');
+    } else {
+      clearReadinessPoll();
+    }
   }
 
   function clearPoll() {
@@ -235,6 +278,7 @@ export function createAssessmentModule(ctx) {
     };
     renderMeta(current);
     renderHistory(current.history || []);
+    adoptReadiness(current);
     const phase = current.phase || 'not_started';
     const notStarted = phase === 'not_started';
     const running = phase === 'running';
@@ -354,17 +398,91 @@ export function createAssessmentModule(ctx) {
     pollTimer = window.setTimeout(() => pollStatus(attempt + 1), delay);
   }
 
+  async function pollReadiness() {
+    if (readinessTimer || moduleReady || current?.phase !== 'not_started') return;
+    if (!readinessStartedAt) readinessStartedAt = Date.now();
+
+    try {
+      const next = await readStatus({
+        includeInspection: false,
+        includeHistory: false,
+        includeReportLookup: false
+      });
+      adoptReadiness(next);
+      if (moduleReady || next.phase !== 'not_started') {
+        clearReadinessPoll();
+        return;
+      }
+    } catch (error) {
+      if (!isAmbiguous(error) && String(error?.code || '') !== 'ASSESSMENT_MODULE_NOT_READY') {
+        status(error.message || String(error), 'err');
+      }
+    }
+
+    if (Date.now() - readinessStartedAt > 45000) {
+      status(L().readinessDelayed, 'warn');
+      readinessTimer = window.setTimeout(() => {
+        readinessTimer = 0;
+        pollReadiness();
+      }, 5000);
+      return;
+    }
+
+    const delay = readinessAttempt < 5 ? 900 : readinessAttempt < 12 ? 1600 : 2600;
+    readinessAttempt += 1;
+    readinessTimer = window.setTimeout(() => {
+      readinessTimer = 0;
+      pollReadiness();
+    }, delay);
+  }
+
   async function start() {
     if (busy) return;
+    if (!startAllowed()) {
+      moduleReady = false;
+      syncButtonStates();
+      status(L().preparing, 'warn');
+      pollReadiness();
+      return;
+    }
+
+    clearReadinessPoll();
     setBusy(true, $('assessmentStartBtn'));
     status(L().starting, 'warn');
     try {
-      const data = await api(endpoint('Start'), { body: { token: state.token, uid: state.uid } });
-      render(data.state || data);
+      const runtimeAccessId = String(state.payload?.runtime?.runtimeAccessId || state.uid || '').trim();
+      const data = await api(endpoint('Start'), {
+        body: {
+          token: state.token,
+          uid: state.uid,
+          idempotencyKey: `${runtimeAccessId}:assessment-start`
+        }
+      });
+      const next = data.state || data;
+      const firstQuestion = data.firstQuestion || data.chat?.firstQuestion ||
+        (Array.isArray(next.history) ? next.history.find(item => item?.role === 'assistant' && item?.text) : null);
+      if (next.phase === 'running' && !String(firstQuestion?.text || '').trim()) {
+        const error = new Error(getLocale() === 'de'
+          ? 'Die erste Frage wurde noch nicht bereitgestellt. Der Status wird erneut geprüft.'
+          : 'The first question has not been prepared yet. Status will be checked again.');
+        error.code = 'ASSESSMENT_START_QUESTION_MISSING';
+        throw error;
+      }
+      render(next);
     } catch (error) {
-      if (isAmbiguous(error)) {
+      if (String(error?.code || '') === 'ASSESSMENT_MODULE_NOT_READY') {
+        moduleReady = false;
+        if (error?.details?.readiness) {
+          current = { ...(current || {}), readiness: error.details.readiness, phase: 'not_started' };
+        }
+        syncButtonStates();
+        status(L().preparing, 'warn');
+        pollReadiness();
+      } else if (isAmbiguous(error) || String(error?.code || '') === 'ASSESSMENT_START_QUESTION_MISSING') {
         status(L().transport, 'warn');
-        await pollStatus();
+        const recovered = await readStatus({ includeHistory: true, includeReportLookup: false }).catch(() => null);
+        if (recovered?.phase === 'not_started') pollReadiness();
+        else if (recovered?.phase === 'processing') await pollStatus();
       } else {
         status(error.message || String(error), 'err');
       }
@@ -461,7 +579,7 @@ export function createAssessmentModule(ctx) {
     $('assessmentTitle').textContent = copy.title;
     $('assessmentText').textContent = copy.intro;
     $('assessmentReleaseText').textContent = copy.notice;
-    $('assessmentStartBtn').textContent = copy.start;
+    $('assessmentStartBtn').textContent = moduleReady ? copy.start : copy.preparing;
     $('assessmentSendBtn').textContent = copy.send;
     $('assessmentFinishBtn').textContent = copy.finish;
     $('assessmentRetryBtn').textContent = copy.retry;
@@ -487,19 +605,25 @@ export function createAssessmentModule(ctx) {
 
   async function activate() {
     clearPoll();
+    clearReadinessPoll();
     closeoutStarted = false;
+    moduleReady = false;
     setStep('module');
     show('assessmentView');
     applyCopy();
-    status('', '');
+    syncButtonStates();
+    status(L().preparing, 'warn');
     try {
       const data = await readStatus({ includeInspection: false, includeHistory: true, includeReportLookup: false });
-      if (data.phase === 'processing') {
-        if (data.phase === 'processing') kickCloseout(false);
+      adoptReadiness(data);
+      if (data.phase === 'not_started' && !moduleReady) {
+        pollReadiness();
+      } else if (data.phase === 'processing') {
+        kickCloseout(false);
         await pollStatus();
       }
     } catch (error) {
-      if (isAmbiguous(error)) await pollStatus();
+      if (isAmbiguous(error)) pollReadiness();
       else if (onFatal) onFatal(error);
     }
   }
@@ -517,5 +641,10 @@ export function createAssessmentModule(ctx) {
     }
   });
 
-  return { activate, refresh: readStatus, destroy: clearPoll, applyLocale: applyCopy };
+  return {
+    activate,
+    refresh: readStatus,
+    destroy() { clearPoll(); clearReadinessPoll(); },
+    applyLocale: applyCopy
+  };
 }
