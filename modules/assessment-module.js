@@ -1,4 +1,4 @@
-// CLARITY Assessment Universal App module v2.23.1 — E2.1.1 RECORDER ROUTE HOTFIX
+// CLARITY Assessment Universal App module v2.23.2 — E2.1.2 COMPANY CONTEXT + NO-SPEECH CLOSEOUT
 // Compact state deltas, one closeout dispatch, status-only polling and immediate
 // fallback-report availability while the Unified PDF finishes asynchronously.
 const COPY = Object.freeze({
@@ -173,6 +173,20 @@ export function createAssessmentModule(ctx) {
     '/live.assessment.html'
   ]);
 
+  function resolvedCompanyId() {
+    const runtime = state.payload?.runtime || {};
+    return String(
+      current?.runtime?.companyId ||
+      current?.companyId ||
+      runtime.companyId ||
+      state.payload?.companyId ||
+      state.payload?.link?.companyId ||
+      runtime.brandingSnapshot?.companyId ||
+      state.payload?.brandingSnapshot?.companyId ||
+      ''
+    ).trim();
+  }
+
   function createDeferred() {
     let resolve;
     let reject;
@@ -194,7 +208,7 @@ export function createAssessmentModule(ctx) {
     return {
       uid: state.uid,
       linkId: state.uid,
-      companyId: String(runtime.companyId || '').trim(),
+      companyId: resolvedCompanyId(),
       sessionId: String(current?.sessionId || '').trim(),
       mode: 'audio',
       assessmentMode: 'audio',
@@ -231,7 +245,7 @@ export function createAssessmentModule(ctx) {
     const runtime = state.payload?.runtime || {};
     const query = new URLSearchParams({
       uid: state.uid,
-      companyId: String(runtime.companyId || ''),
+      companyId: resolvedCompanyId(),
       mode: 'audio',
       audioOnly: '1',
       autostart: '0',
@@ -367,7 +381,11 @@ export function createAssessmentModule(ctx) {
       durationMs: Number(payload.durationMs || 0),
       mediaTurnId: payload.mediaTurnId || `${state.uid}:audio-slot:${questionIndex}`,
       idempotencyKey: payload.mediaTurnId || `${state.uid}:audio-slot:${questionIndex}`,
-      language: getLocale()
+      language: getLocale(),
+      companyId: resolvedCompanyId(),
+      noSpeechDetected: payload.noSpeechDetected === true,
+      voiceDetected: payload.voiceDetected !== false,
+      voiceActivityMs: Number(payload.voiceActivityMs || 0)
     };
     const saved = await withMediaRetry(() => api(endpoint('MediaTurn'), { body }), 3);
     failedMediaTurns.delete(questionIndex);
@@ -383,11 +401,20 @@ export function createAssessmentModule(ctx) {
       error.retryable = true;
       throw error;
     }
+    const companyId = resolvedCompanyId();
+    if (!companyId) {
+      const error = new Error(getLocale() === 'de'
+        ? 'Der Unternehmenskontext des Audio-Assessments ist noch nicht vollständig geladen.'
+        : 'The Assessment company context has not finished loading.');
+      error.code = 'ASSESSMENT_COMPANY_CONTEXT_MISSING';
+      error.retryable = true;
+      throw error;
+    }
     const body = {
       ...payload,
       token: state.token,
       uid: state.uid,
-      companyId: state.payload?.runtime?.companyId || '',
+      companyId,
       sessionId: current?.sessionId || payload.sessionId || '',
       mode: 'audio',
       platformManaged: true
@@ -535,6 +562,9 @@ export function createAssessmentModule(ctx) {
           throw error;
         });
       mediaResultPromise = operation;
+      // The promise is intentionally retained for finalizeAudioAssessment(). Attach a
+      // terminal observer so a recorder failure is not emitted as an unhandled rejection.
+      operation.catch(() => null);
       return;
     }
 
