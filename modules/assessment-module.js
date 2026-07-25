@@ -1,4 +1,4 @@
-// CLARITY Assessment Universal App module v2.24.0 — E2.2 VIDEO Q10 READINESS + CONSENT
+// CLARITY Assessment Universal App module v2.25.0 — E2.3 AUDIO + CHAT Q10 HANDOVER
 // Compact state deltas, one closeout dispatch, status-only polling and immediate
 // fallback-report availability while the Unified PDF finishes asynchronously.
 const COPY = Object.freeze({
@@ -33,6 +33,9 @@ const COPY = Object.freeze({
     audioRetry: 'Eine Audioantwort konnte noch nicht gespeichert werden. Mit „Status erneut prüfen“ wird derselbe Vorgang ohne neue Abbuchung fortgesetzt.',
     microphoneRequired: 'Für das Audio-Assessment muss der Zugriff auf das Mikrofon erlaubt werden.',
     audioModuleUnavailable: 'Das Audio-Modul konnte nicht geladen werden. Bitte aktualisieren Sie die Seite. Es wurde noch keine Assessment-Session gestartet und kein Credit verbraucht.',
+    mixPreparing: 'Mikrofon und Audio-Chat-Modul werden vorbereitet …', mixReady: 'Mikrofon geprüft. Audio + Chat ist bereit.',
+    mixRecording: 'Mündlicher Teil Q1–Q7 läuft. Danach folgen Q8–Q10 im Chat.', mixHandover: 'Der mündliche Teil ist abgeschlossen. Der Chatteil Q8–Q10 wird geöffnet …',
+    mixSaving: 'Audio und Antworten werden sicher gespeichert …', mixRetry: 'Der Audio- oder Chatteil konnte noch nicht vollständig gespeichert werden. Derselbe Vorgang kann ohne neue Abbuchung fortgesetzt werden.',
     videoPreparing: 'Video-Consent, Kamera und Mikrofon werden vorbereitet …', videoReady: 'Kamera und Mikrofon geprüft. Das Video-Assessment ist bereit.',
     videoRecording: 'Video-Assessment läuft. Bitte beantworten Sie jede Frage mündlich in die Kamera.',
     videoSaving: 'Ihre Videoantworten werden transkribiert und sicher gespeichert …',
@@ -72,6 +75,9 @@ const COPY = Object.freeze({
     audioRetry: 'An audio response has not been stored yet. “Check status again” continues the same record without a new charge.',
     microphoneRequired: 'Microphone access must be allowed for the audio assessment.',
     audioModuleUnavailable: 'The audio module could not be loaded. Refresh the page. No assessment session was started and no credit was consumed.',
+    mixPreparing: 'Preparing microphone and Audio + Chat module …', mixReady: 'Microphone checked. Audio + Chat is ready.',
+    mixRecording: 'Spoken part Q1–Q7 is running. Q8–Q10 will follow in chat.', mixHandover: 'The spoken part is complete. Opening chat questions Q8–Q10 …',
+    mixSaving: 'Audio and responses are being stored securely …', mixRetry: 'The audio or chat part has not been stored completely. The same record can continue without a new charge.',
     videoPreparing: 'Preparing video consent, camera and microphone …', videoReady: 'Camera and microphone checked. The video assessment is ready.',
     videoRecording: 'Video assessment is running. Please answer each question verbally on camera.',
     videoSaving: 'Your video responses are being transcribed and stored securely …',
@@ -162,6 +168,8 @@ export function createAssessmentModule(ctx) {
   let mediaRecordStarted = false;
   let mediaEnded = false;
   let mediaFinalizeStarted = false;
+  let hybridChatActive = false;
+  let hybridHandoverStarted = false;
   let mediaTurnChain = Promise.resolve();
   let mediaTurnCount = 0;
   let mediaResultDeferred = null;
@@ -177,10 +185,12 @@ export function createAssessmentModule(ctx) {
 
   const product = () => String(state.payload?.runtime?.productKey || '').toLowerCase();
   const runtimeMode = () => String(current?.mode || state.payload?.runtime?.mode || state.payload?.runtime?.workflowSnapshot?.mode || 'chat').toLowerCase().replace(/[+\s-]+/g, '_');
-  const isAudioMode = () => product() === 'assessment' && runtimeMode() === 'audio';
+  const isAudioChatMode = () => product() === 'assessment' && runtimeMode() === 'audio_chat';
+  const isAudioMode = () => product() === 'assessment' && ['audio','audio_chat'].includes(runtimeMode());
   const isVideoMode = () => product() === 'assessment' && runtimeMode() === 'video';
+  const isHybridMode = () => isAudioChatMode();
   const isMediaMode = () => isAudioMode() || isVideoMode();
-  const mediaCopy = (audioKey, videoKey) => isVideoMode() ? L()[videoKey] : L()[audioKey];
+  const mediaCopy = (audioKey, videoKey) => isHybridMode() ? L()[audioKey.replace(/^audio/,'mix')] || L()[audioKey] : isVideoMode() ? L()[videoKey] : L()[audioKey];
   const L = () => {
     const base = COPY[getLocale() === 'de' ? 'de' : 'en'];
     return { ...base, ...(product() === 'snapshot' ? base.snapshot : base.assessment) };
@@ -188,7 +198,8 @@ export function createAssessmentModule(ctx) {
   const endpoint = (name) => `v2Assessment${name}`;
   const MEDIA_RECORDER_ROUTES = Object.freeze({
     audio: ['/modules/assessment-audio-recorder.html', '/live.assessment.html'],
-    video: ['/modules/assessment-video-recorder.html', '/live.assessment.html']
+    video: ['/modules/assessment-video-recorder.html', '/live.assessment.html'],
+    audio_chat: ['/modules/assessment-audio-chat-recorder.html', '/live.assessment.html']
   });
 
   function resolvedCompanyId() {
@@ -228,14 +239,19 @@ export function createAssessmentModule(ctx) {
       linkId: state.uid,
       companyId: resolvedCompanyId(),
       sessionId: String(current?.sessionId || '').trim(),
-      mode: isVideoMode() ? 'video' : 'audio',
-      assessmentMode: isVideoMode() ? 'video' : 'audio',
+      mode: isAudioChatMode() ? 'audio_chat' : isVideoMode() ? 'video' : 'audio',
+      assessmentMode: isAudioChatMode() ? 'audio_chat' : isVideoMode() ? 'video' : 'audio',
+      mediaMode: isVideoMode() ? 'video' : 'audio',
       productKey: 'assessment',
       productType: 'modul1',
       moduleArea: current?.moduleArea || runtime.moduleArea || runtime.configurationSnapshot?.moduleArea || 'personality',
       questionCount: Number(current?.questionCount || media.questionCount || questions.length || 10),
       totalQuestionCount: Number(current?.questionCount || media.questionCount || questions.length || 10),
-      mediaQuestionCount: Number(current?.questionCount || media.questionCount || questions.length || 10),
+      mediaQuestionCount: isHybridMode() ? 7 : Number(current?.questionCount || media.questionCount || questions.length || 10),
+      chatQuestionCount: isHybridMode() ? 3 : 0,
+      chatSlotStartIndex: isHybridMode() ? 8 : 0,
+      chatSlotEndIndex: isHybridMode() ? 10 : 0,
+      hybridAssessment: isHybridMode(),
       assessmentQuestionSnapshot: questions,
       questions,
       position: runtime.position || runtime.configurationSnapshot?.position || '',
@@ -264,7 +280,7 @@ export function createAssessmentModule(ctx) {
     const query = new URLSearchParams({
       uid: state.uid,
       companyId: resolvedCompanyId(),
-      mode: isVideoMode() ? 'video' : 'audio',
+      mode: isAudioChatMode() ? 'audio_chat' : isVideoMode() ? 'video' : 'audio',
       audioOnly: isVideoMode() ? '0' : '1',
       autostart: '0',
       lang: getLocale(),
@@ -279,7 +295,7 @@ export function createAssessmentModule(ctx) {
     mediaIframeReady = false;
     mediaPrepared = false;
     mediaRouteIndex = Math.max(0, Number(index || 0));
-    const routes = MEDIA_RECORDER_ROUTES[isVideoMode() ? 'video' : 'audio'];
+    const routes = MEDIA_RECORDER_ROUTES[isAudioChatMode() ? 'audio_chat' : isVideoMode() ? 'video' : 'audio'];
     const route = routes[mediaRouteIndex];
     if (!route) {
       const error = new Error(isVideoMode() ? L().videoModuleUnavailable : L().audioModuleUnavailable);
@@ -322,10 +338,10 @@ export function createAssessmentModule(ctx) {
       mediaShell.className = 'clarity-assessment-media-shell';
       const heading = document.createElement('div');
       heading.className = 'clarity-assessment-media-heading';
-      heading.textContent = isVideoMode() ? (getLocale() === 'de' ? 'Video-Assessment' : 'Video assessment') : (getLocale() === 'de' ? 'Audio-Assessment' : 'Audio assessment');
+      heading.textContent = isAudioChatMode() ? (getLocale() === 'de' ? 'Audio + Chat Assessment' : 'Audio + Chat assessment') : isVideoMode() ? (getLocale() === 'de' ? 'Video-Assessment' : 'Video assessment') : (getLocale() === 'de' ? 'Audio-Assessment' : 'Audio assessment');
       mediaFrame = document.createElement('iframe');
       mediaFrame.id = 'clarityAssessmentMediaFrame';
-      mediaFrame.title = isVideoMode() ? (getLocale() === 'de' ? 'CLARITY Video-Assessment' : 'CLARITY video assessment') : (getLocale() === 'de' ? 'CLARITY Audio-Assessment' : 'CLARITY audio assessment');
+      mediaFrame.title = isAudioChatMode() ? (getLocale() === 'de' ? 'CLARITY Audio + Chat Assessment' : 'CLARITY Audio + Chat assessment') : isVideoMode() ? (getLocale() === 'de' ? 'CLARITY Video-Assessment' : 'CLARITY video assessment') : (getLocale() === 'de' ? 'CLARITY Audio-Assessment' : 'CLARITY audio assessment');
       mediaFrame.allow = isVideoMode() ? 'camera; microphone; autoplay' : 'microphone; autoplay';
       mediaFrame.referrerPolicy = 'strict-origin-when-cross-origin';
       mediaFrame.loading = 'eager';
@@ -398,6 +414,8 @@ export function createAssessmentModule(ctx) {
     mediaRecordStarted = false;
     mediaEnded = false;
     mediaFinalizeStarted = false;
+    hybridChatActive = false;
+    hybridHandoverStarted = false;
     mediaTurnChain = Promise.resolve();
     mediaTurnCount = 0;
     mediaFatalError = null;
@@ -484,7 +502,7 @@ export function createAssessmentModule(ctx) {
       uid: state.uid,
       companyId,
       sessionId: current?.sessionId || payload.sessionId || '',
-      mode: isVideoMode() ? 'video' : 'audio',
+      mode: isAudioChatMode() ? 'audio_chat' : isVideoMode() ? 'video' : 'audio',
       platformManaged: true
     };
     return withMediaRetry(() => api(endpoint('MediaResult'), { body }), 3);
@@ -511,6 +529,27 @@ export function createAssessmentModule(ctx) {
     ]);
   }
 
+  async function beginHybridChatHandover() {
+    if (!isHybridMode() || hybridHandoverStarted) return;
+    hybridHandoverStarted = true;
+    status(L().mixHandover, 'warn');
+    try {
+      const runtimeAccessId = String(state.payload?.runtime?.runtimeAccessId || state.uid || '').trim();
+      const data = await api(endpoint('Start'), { body: { token:state.token, uid:state.uid, sessionId:current?.sessionId||'', handoverToChat:true, idempotencyKey:`${runtimeAccessId}:assessment-audio-chat-handover` } });
+      hybridChatActive = true;
+      mediaRecordStarted = false;
+      mediaShell?.classList.add('hidden');
+      render(data.state || data);
+      status(getLocale()==='de' ? 'Der Chatteil Q8–Q10 ist bereit.' : 'Chat questions Q8–Q10 are ready.', 'ok');
+      $('assessmentInput')?.focus();
+    } catch (error) {
+      hybridHandoverStarted = false;
+      mediaFatalError = error;
+      status(error.message || L().mixRetry, 'err');
+      $('assessmentRetryBtn')?.classList.remove('hidden');
+    }
+  }
+
   async function finalizeMediaAssessment() {
     if (!isMediaMode() || mediaFinalizeStarted || !mediaEnded) return;
     mediaFinalizeStarted = true;
@@ -524,7 +563,7 @@ export function createAssessmentModule(ctx) {
         throw error;
       }
       await waitForMediaResult();
-      const expected = Number(current?.expectedAnswers || current?.questionCount || 10);
+      const expected = isHybridMode() ? Number(current?.media?.mediaQuestionCount || 7) : Number(current?.expectedAnswers || current?.questionCount || 10);
       const refreshed = await readStatus({ includeHistory: false, includeReportLookup: false });
       if (Number(refreshed?.answeredCount || 0) < expected) {
         const error = new Error(mediaCopy('audioRetry','videoRetry'));
@@ -533,7 +572,8 @@ export function createAssessmentModule(ctx) {
         throw error;
       }
       mediaFinalizeStarted = false;
-      await finish();
+      if (isHybridMode()) await beginHybridChatHandover();
+      else await finish();
     } catch (error) {
       mediaFinalizeStarted = false;
       mediaFatalError = error;
@@ -632,6 +672,12 @@ export function createAssessmentModule(ctx) {
       // The promise is intentionally retained for finalizeMediaAssessment(). Attach a
       // terminal observer so a recorder failure is not emitted as an unhandled rejection.
       operation.catch(() => null);
+      return;
+    }
+
+    if (type === 'clarity.assessment.v2.oral_completed') {
+      mediaEnded = true;
+      status(L().mixHandover, 'warn');
       return;
     }
 
@@ -801,23 +847,25 @@ export function createAssessmentModule(ctx) {
     const processing = phase === 'processing';
     const completed = phase === 'completed';
     const failed = phase === 'failed';
+    if (isHybridMode() && ['chat','processing','completed'].includes(String(current.hybridPhase||'').toLowerCase())) hybridChatActive = true;
     const media = isMediaMode();
     const video = isVideoMode();
-    $('assessmentView')?.classList.toggle('media-mode', media);
+    const mediaStage = media && !(isHybridMode() && hybridChatActive);
+    $('assessmentView')?.classList.toggle('media-mode', mediaStage);
     $('assessmentView')?.classList.toggle('video-mode', video);
     if (video) ensureVideoConsentControl();
     if (media) ensureMediaFrame();
     videoConsentControl?.classList.toggle('hidden', !video || !notStarted);
-    mediaShell?.classList.toggle('hidden', !media || processing || completed || failed);
+    mediaShell?.classList.toggle('hidden', !mediaStage || processing || completed || failed);
     $('assessmentStartPanel').classList.toggle('hidden', !notStarted);
-    $('assessmentChatPanel').classList.toggle('hidden', media || !(running || processing));
+    $('assessmentChatPanel').classList.toggle('hidden', mediaStage || !(running || processing));
     $('assessmentProcessingPanel').classList.toggle('hidden', !(processing || failed));
     $('assessmentCompletePanel').classList.toggle('hidden', !completed);
-    $('assessmentComposer').classList.toggle('hidden', media || !running);
+    $('assessmentComposer').classList.toggle('hidden', mediaStage || !running);
     const allAnswered = Number(current.answeredCount || 0) >= Number(current.expectedAnswers || current.questionCount || 1);
-    $('assessmentFinishBtn').classList.toggle('hidden', media || !running || !allAnswered);
-    $('assessmentSendBtn').classList.toggle('hidden', media || !running || allAnswered);
-    if (media && running && mediaRecordStarted) status(mediaCopy('audioRecording','videoRecording'), 'ok');
+    $('assessmentFinishBtn').classList.toggle('hidden', mediaStage || !running || !allAnswered);
+    $('assessmentSendBtn').classList.toggle('hidden', mediaStage || !running || allAnswered);
+    if (mediaStage && running && mediaRecordStarted) status(mediaCopy('audioRecording','videoRecording'), 'ok');
     if (completed) {
       closeoutStarted = true;
       clearPoll();
@@ -835,7 +883,7 @@ export function createAssessmentModule(ctx) {
     } else if (processing) {
       status(L().processing, 'warn');
     } else if (running) {
-      status(media && mediaRecordStarted ? mediaCopy('audioRecording','videoRecording') : '', media && mediaRecordStarted ? 'ok' : '');
+      status(mediaStage && mediaRecordStarted ? mediaCopy('audioRecording','videoRecording') : '', mediaStage && mediaRecordStarted ? 'ok' : '');
     }
   }
 
@@ -1122,7 +1170,7 @@ export function createAssessmentModule(ctx) {
   function applyCopy() {
     const copy = L();
     ensureAssessmentStyles();
-    $('assessmentTitle').textContent = copy.title;
+    $('assessmentTitle').textContent = isAudioChatMode() ? (getLocale()==='de' ? 'CLARITY Assessment · Audio + Chat' : 'CLARITY Assessment · Audio + Chat') : copy.title;
     $('assessmentText').textContent = copy.intro;
     $('assessmentReleaseText').textContent = copy.notice;
     $('assessmentStartBtn').textContent = startAllowed() ? copy.start : (isMediaMode() ? mediaCopy('audioPreparing','videoPreparing') : copy.preparing);
