@@ -1,4 +1,4 @@
-// CLARITY Assessment Universal App module v2.25.0 — E2.3 AUDIO + CHAT Q10 HANDOVER
+// CLARITY Assessment Universal App module v2.26.0 — E2.4 VIDEO + CHAT Q10 HANDOVER
 // Compact state deltas, one closeout dispatch, status-only polling and immediate
 // fallback-report availability while the Unified PDF finishes asynchronously.
 const COPY = Object.freeze({
@@ -184,12 +184,19 @@ export function createAssessmentModule(ctx) {
   const failedMediaTurns = new Map();
 
   const product = () => String(state.payload?.runtime?.productKey || '').toLowerCase();
-  const runtimeMode = () => String(current?.mode || state.payload?.runtime?.mode || state.payload?.runtime?.workflowSnapshot?.mode || 'chat').toLowerCase().replace(/[+\s-]+/g, '_');
+  const runtimeMode = () => {
+    const raw = String(current?.mode || state.payload?.runtime?.mode || state.payload?.runtime?.workflowSnapshot?.mode || 'chat').toLowerCase().replace(/[+\s-]+/g, '_');
+    if (['chat_audio','audiochat'].includes(raw)) return 'audio_chat';
+    if (['chat_video','videochat','mix','mixmode'].includes(raw)) return 'video_chat';
+    return raw;
+  };
   const isAudioChatMode = () => product() === 'assessment' && runtimeMode() === 'audio_chat';
+  const isVideoChatMode = () => product() === 'assessment' && runtimeMode() === 'video_chat';
   const isAudioMode = () => product() === 'assessment' && ['audio','audio_chat'].includes(runtimeMode());
-  const isVideoMode = () => product() === 'assessment' && runtimeMode() === 'video';
-  const isHybridMode = () => isAudioChatMode();
+  const isVideoMode = () => product() === 'assessment' && ['video','video_chat'].includes(runtimeMode());
+  const isHybridMode = () => isAudioChatMode() || isVideoChatMode();
   const isMediaMode = () => isAudioMode() || isVideoMode();
+  const assessmentMediaMode = () => isVideoChatMode() ? 'video_chat' : assessmentMediaMode();
   const mediaCopy = (audioKey, videoKey) => isHybridMode() ? L()[audioKey.replace(/^audio/,'mix')] || L()[audioKey] : isVideoMode() ? L()[videoKey] : L()[audioKey];
   const L = () => {
     const base = COPY[getLocale() === 'de' ? 'de' : 'en'];
@@ -199,7 +206,8 @@ export function createAssessmentModule(ctx) {
   const MEDIA_RECORDER_ROUTES = Object.freeze({
     audio: ['/modules/assessment-audio-recorder.html', '/live.assessment.html'],
     video: ['/modules/assessment-video-recorder.html', '/live.assessment.html'],
-    audio_chat: ['/modules/assessment-audio-chat-recorder.html', '/live.assessment.html']
+    audio_chat: ['/modules/assessment-audio-chat-recorder.html', '/live.assessment.html'],
+    video_chat: ['/modules/assessment-video-chat-recorder.html', '/modules/assessment-audio-chat-recorder.html', '/live.assessment.html']
   });
 
   function resolvedCompanyId() {
@@ -239,8 +247,8 @@ export function createAssessmentModule(ctx) {
       linkId: state.uid,
       companyId: resolvedCompanyId(),
       sessionId: String(current?.sessionId || '').trim(),
-      mode: isAudioChatMode() ? 'audio_chat' : isVideoMode() ? 'video' : 'audio',
-      assessmentMode: isAudioChatMode() ? 'audio_chat' : isVideoMode() ? 'video' : 'audio',
+      mode: assessmentMediaMode(),
+      assessmentMode: assessmentMediaMode(),
       mediaMode: isVideoMode() ? 'video' : 'audio',
       productKey: 'assessment',
       productType: 'modul1',
@@ -280,7 +288,7 @@ export function createAssessmentModule(ctx) {
     const query = new URLSearchParams({
       uid: state.uid,
       companyId: resolvedCompanyId(),
-      mode: isAudioChatMode() ? 'audio_chat' : isVideoMode() ? 'video' : 'audio',
+      mode: assessmentMediaMode(),
       audioOnly: isVideoMode() ? '0' : '1',
       autostart: '0',
       lang: getLocale(),
@@ -295,7 +303,7 @@ export function createAssessmentModule(ctx) {
     mediaIframeReady = false;
     mediaPrepared = false;
     mediaRouteIndex = Math.max(0, Number(index || 0));
-    const routes = MEDIA_RECORDER_ROUTES[isAudioChatMode() ? 'audio_chat' : isVideoMode() ? 'video' : 'audio'];
+    const routes = MEDIA_RECORDER_ROUTES[assessmentMediaMode()];
     const route = routes[mediaRouteIndex];
     if (!route) {
       const error = new Error(isVideoMode() ? L().videoModuleUnavailable : L().audioModuleUnavailable);
@@ -502,7 +510,7 @@ export function createAssessmentModule(ctx) {
       uid: state.uid,
       companyId,
       sessionId: current?.sessionId || payload.sessionId || '',
-      mode: isAudioChatMode() ? 'audio_chat' : isVideoMode() ? 'video' : 'audio',
+      mode: assessmentMediaMode(),
       platformManaged: true
     };
     return withMediaRetry(() => api(endpoint('MediaResult'), { body }), 3);
@@ -535,7 +543,7 @@ export function createAssessmentModule(ctx) {
     status(L().mixHandover, 'warn');
     try {
       const runtimeAccessId = String(state.payload?.runtime?.runtimeAccessId || state.uid || '').trim();
-      const data = await api(endpoint('Start'), { body: { token:state.token, uid:state.uid, sessionId:current?.sessionId||'', handoverToChat:true, idempotencyKey:`${runtimeAccessId}:assessment-audio-chat-handover` } });
+      const data = await api(endpoint('Start'), { body: { token:state.token, uid:state.uid, sessionId:current?.sessionId||'', handoverToChat:true, idempotencyKey:`${runtimeAccessId}:assessment-${assessmentMediaMode()}-handover` } });
       hybridChatActive = true;
       mediaRecordStarted = false;
       mediaShell?.classList.add('hidden');
