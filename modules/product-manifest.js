@@ -37,23 +37,25 @@ export const PRODUCT_MANIFEST = Object.freeze({
     icon: 'AS',
     title: { de: 'CLARITY Assessment', en: 'CLARITY Assessment' },
     description: {
-      de: 'Strukturierter Assessment-Flow. In diesem Release ist der Chat-Modus freigegeben.',
-      en: 'Structured assessment workflow. This release enables chat mode.'
+      de: 'Strukturierter Assessment-Flow. Q10 ist in Chat, Audio, Video, Audio + Chat und Video + Chat freigegeben.',
+      en: 'Structured assessment workflow. Q10 is released for chat, audio, video, Audio + Chat and Video + Chat.'
     },
     steps: ['profile', 'consent', 'questions', 'analysis', 'completion'],
     media: false,
     executable: true,
-    releaseScope: 'chat_only'
+    releaseScope: 'q10_chat_audio_video_audio_chat_video_chat'
   }),
   interview: Object.freeze({
     icon: 'IV',
     title: { de: 'CLARITY Interview', en: 'CLARITY Interview' },
     description: {
-      de: 'Geführtes strukturiertes Interview in Audio-, Video- oder Mix-Modus.',
-      en: 'Guided structured interview in audio, video or mixed mode.'
+      de: 'Strukturiertes Interview. In Block I1 ist Chat Q10 freigegeben; Audio, Video und Mix folgen auf derselben technischen Basis.',
+      en: 'Structured Interview. Block I1 releases Chat Q10; audio, video and mix follow on the same technical foundation.'
     },
-    steps: ['profile', 'consent', 'preflight', 'module'],
-    media: true
+    steps: ['profile', 'consent', 'interview', 'analysis', 'completion'],
+    media: false,
+    executable: true,
+    releaseScope: 'chat_q10'
   }),
   ai_literacy: Object.freeze({
     icon: 'AI',
