@@ -2,7 +2,7 @@
 // CLARITY Universal App - Interview module I1.7.2 v1.1.1
 // Lost-response recovery for committed starts and idempotent chat messages.
 
-const MODULE_VERSION='1.1.1-i1-7-2';
+const MODULE_VERSION='1.1.2-i1-7-2-2';
 const FRAME_BY_MODE=Object.freeze({
   chat:`./modules/interview-chat.html?v=${MODULE_VERSION}`,
   audio:'./modules/interview-audio-recorder.html?v=1.0.0',
@@ -24,8 +24,8 @@ export function createInterviewModule(ctx){
   const mode=()=>normalizeMode(runtime().mode||runtime().workflowSnapshot?.mode||'chat');
   function shell(){let host=document.getElementById('interviewModuleShell');if(host)return host;host=document.createElement('section');host.id='interviewModuleShell';host.className='interview-module-shell';host.style.cssText='margin-top:18px;min-height:620px;border:1px solid rgba(91,92,240,.2);border-radius:24px;overflow:hidden;background:#061326;box-shadow:0 24px 70px rgba(5,18,38,.18)';const moduleView=$('moduleView');moduleView.appendChild(host);return host}
   function send(type,payload={}){if(!frame?.contentWindow)return;frame.contentWindow.postMessage({channel:'CLARITY_INTERVIEW_V2',type,payload},location.origin)}
-  function initFrame(){if(!ready){pendingInit=true;return}pendingInit=false;send('INIT',{uid:state.uid,token:state.token,locale:getLocale(),runtime:runtime(),branding:state.payload?.branding||{},release:{chat:true,audio:false,video:false,mix:false},moduleVersion:MODULE_VERSION})}
-  async function rawAction(name,payload={}){const endpoint={status:'v2InterviewStatus',start:'v2InterviewStart',message:'v2InterviewMessage',finish:'v2InterviewFinish',retry:'v2InterviewRetry'}[name];if(!endpoint)throw Object.assign(new Error(`Unknown Interview action '${name}'.`),{code:'INTERVIEW_ACTION_UNKNOWN'});return api(endpoint,{body:{token:state.token,uid:state.uid,...payload}})}
+  function initFrame(){if(!ready){pendingInit=true;return}pendingInit=false;send('INIT',{uid:state.uid,token:state.token,locale:getLocale(),runtime:runtime(),branding:state.payload?.branding||{},release:{chat:true,audio:false,video:false,mix:false},moduleVersion:MODULE_VERSION,debug:new URLSearchParams(location.search).get('debug')==='1'})}
+  async function rawAction(name,payload={}){const endpoint={status:'v2InterviewStatus',start:'v2InterviewStart',message:'v2InterviewMessage',finish:'v2InterviewFinish',retry:'v2InterviewRetry'}[name];if(!endpoint)throw Object.assign(new Error(`Unknown Interview action '${name}'.`),{code:'INTERVIEW_ACTION_UNKNOWN'});return api(endpoint,{body:{token:state.token,uid:state.uid,clientModuleVersion:MODULE_VERSION,...payload}})}
   async function recoverStatus(payload={},attempts=4){let lastError=null;for(let attempt=0;attempt<attempts;attempt+=1){if(attempt)await sleep(700*(attempt+1));try{return await rawAction('status',{sessionId:payload.sessionId||'',includeHistory:true})}catch(error){lastError=error;if(!isTransportError(error))throw error}}throw lastError||Object.assign(new Error('Interview recovery status could not be loaded.'),{code:'INTERVIEW_RECOVERY_FAILED'})}
   async function action(name,payload={}){
     try{return await rawAction(name,payload)}catch(firstError){
