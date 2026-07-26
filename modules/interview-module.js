@@ -1,8 +1,8 @@
 // modules/interview-module.js
-// CLARITY Universal App - Interview module I1.7.2 v1.1.1
+// CLARITY Universal App - Interview module I1.7.4 v1.1.2
 // Lost-response recovery for committed starts and idempotent chat messages.
 
-const MODULE_VERSION='1.1.1-i1-7-2';
+const MODULE_VERSION='1.1.2-i1-7-4';
 const FRAME_BY_MODE=Object.freeze({
   chat:`./modules/interview-chat.html?v=${MODULE_VERSION}`,
   audio:'./modules/interview-audio-recorder.html?v=1.0.0',
