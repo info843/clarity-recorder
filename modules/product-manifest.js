@@ -49,13 +49,13 @@ export const PRODUCT_MANIFEST = Object.freeze({
     icon: 'IV',
     title: { de: 'CLARITY Interview', en: 'CLARITY Interview' },
     description: {
-      de: 'Strukturiertes Interview. In Block I1 ist Chat Q10 freigegeben; Audio, Video und Mix folgen auf derselben technischen Basis.',
-      en: 'Structured Interview. Block I1 releases Chat Q10; audio, video and mix follow on the same technical foundation.'
+      de: 'Strukturiertes Interview. Chat Q10 und Audio Q10 sind freigegeben; Video und Mix folgen auf derselben technischen Basis.',
+      en: 'Structured Interview. Chat Q10 and Audio Q10 are released; video and mix follow on the same technical foundation.'
     },
     steps: ['profile', 'consent', 'interview', 'analysis', 'completion'],
-    media: false,
+    media: true,
     executable: true,
-    releaseScope: 'chat_q10'
+    releaseScope: 'q10_chat_audio'
   }),
   ai_literacy: Object.freeze({
     icon: 'AI',
