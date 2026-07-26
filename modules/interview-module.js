@@ -2,7 +2,7 @@
 // CLARITY Universal App - Interview module I1.7.2 v1.1.1
 // Lost-response recovery for committed starts and idempotent chat messages.
 
-const MODULE_VERSION='1.2.1-i2-audio-q10';
+const MODULE_VERSION='1.2.2-i2-audio-microphone-preflight';
 const FRAME_BY_MODE=Object.freeze({
   chat:`./modules/interview-chat.html?v=${MODULE_VERSION}`,
   audio:`./modules/interview-audio-recorder.html?v=${MODULE_VERSION}`,
@@ -49,7 +49,7 @@ export function createInterviewModule(ctx){
     }
   }
   function wireMessages(){if(messageHandler)return;messageHandler=async(event)=>{if(event.origin!==location.origin||event.source!==frame?.contentWindow)return;const msg=event.data||{};if(msg.channel!=='CLARITY_INTERVIEW_V2')return;if(msg.type==='READY'){ready=true;initFrame();return}if(msg.type==='HEIGHT'){const h=Math.max(620,Math.min(1800,Number(msg.payload?.height||0)||800));frame.style.height=`${h}px`;return}if(msg.type==='FATAL'){onFatal?.(msg.payload||{});return}if(msg.type==='ACTION'){const requestId=String(msg.requestId||'');try{const data=await action(String(msg.action||''),msg.payload||{});send('RESPONSE',{requestId,ok:true,data})}catch(error){send('RESPONSE',{requestId,ok:false,error:errorShape(error)})}}};window.addEventListener('message',messageHandler)}
-  async function activate(){if(active){initFrame();return}active=true;setStep('module');show('moduleView');const m=mode();const src=FRAME_BY_MODE[m]||FRAME_BY_MODE.chat;const host=shell();host.innerHTML='';frame=document.createElement('iframe');frame.id='interviewModuleFrame';frame.title='CLARITY Interview';frame.src=src;frame.allow='microphone; camera; autoplay; clipboard-read; clipboard-write';frame.referrerPolicy='no-referrer';frame.loading='eager';frame.style.cssText='display:block;width:100%;height:820px;border:0;background:#061326';host.appendChild(frame);wireMessages();frame.addEventListener('load',()=>{ready=false;setTimeout(initFrame,40)});$('startModuleBtn').disabled=true;$('statusBtn').classList.add('hidden')}
+  async function activate(){if(active){initFrame();return}active=true;setStep('module');show('moduleView');const m=mode();const src=FRAME_BY_MODE[m]||FRAME_BY_MODE.chat;const host=shell();host.innerHTML='';frame=document.createElement('iframe');frame.id='interviewModuleFrame';frame.title='CLARITY Interview';frame.src=src;frame.allow='microphone; camera; autoplay';frame.setAttribute('allow','microphone; camera; autoplay');frame.referrerPolicy='no-referrer';frame.loading='eager';frame.style.cssText='display:block;width:100%;height:820px;border:0;background:#061326';host.appendChild(frame);wireMessages();frame.addEventListener('load',()=>{ready=false;setTimeout(initFrame,40)});$('startModuleBtn').disabled=true;$('statusBtn').classList.add('hidden')}
   function destroy(){if(messageHandler){window.removeEventListener('message',messageHandler);messageHandler=null}frame?.remove();frame=null;ready=false;active=false}
   return{activate,destroy,refresh(){if(active)send('REFRESH',{token:state.token,runtime:runtime(),branding:state.payload?.branding||{}})},updateToken(){if(active)initFrame()}}
 }
