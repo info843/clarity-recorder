@@ -2,7 +2,7 @@
 // CLARITY Universal App - Interview module I1.7.2 v1.1.1
 // Lost-response recovery for committed starts and idempotent chat messages.
 
-const MODULE_VERSION='1.5.1-i4-0-1-audio-video-mix-consolidated';
+const MODULE_VERSION='1.5.2-i4-0-2-start-transport-recovery';
 const ACTION_TIMEOUT_MS=Object.freeze({preflight:14000,status:25000,audioToken:20000,start:45000,message:65000,finish:90000,retry:90000,audioChunk:90000,audioFinalize:140000,audioUploadStatus:30000,videoChunk:90000,videoFinalize:180000,videoUploadStatus:30000});
 const FRAME_BY_MODE=Object.freeze({
   chat:`./modules/interview-chat.html?v=${MODULE_VERSION}`,
@@ -42,20 +42,40 @@ export function createInterviewModule(ctx){
     }
   }
   async function recoverStatus(payload={},attempts=4){let lastError=null;for(let attempt=0;attempt<attempts;attempt+=1){if(attempt)await sleep(700*(attempt+1));try{return await rawAction('status',{sessionId:payload.sessionId||'',includeHistory:true})}catch(error){lastError=error;if(!isTransportError(error))throw error}}throw lastError||Object.assign(new Error('Interview recovery status could not be loaded.'),{code:'INTERVIEW_RECOVERY_FAILED'})}
+  async function recoverCommittedStart(payload={},firstError=null){
+    const startedAt=Date.now();
+    const delays=[650,850,1050,1250,1500,1800,2200,2600,3000,3500,4000,4500];
+    let lastState=null;let lastError=firstError;
+    for(let attempt=0;attempt<delays.length;attempt+=1){
+      await sleep(delays[attempt]);
+      try{
+        const stateData=await rawAction('status',{sessionId:payload.sessionId||'',includeHistory:true});
+        lastState=stateData;
+        const phase=String(stateData?.phase||stateData?.status||'').toLowerCase();
+        const committed=Boolean(stateData?.sessionId)&&['running','processing','completed'].includes(phase);
+        console.info(`[CLARITY INTERVIEW MODULE] start recovery status ${JSON.stringify({attempt:attempt+1,phase,sessionId:stateData?.sessionId||'',committed,durationMs:Date.now()-startedAt,moduleVersion:MODULE_VERSION})}`);
+        if(committed)return{ok:true,recovered:true,idempotentReplay:true,state:stateData,firstQuestion:stateData.currentQuestion||null,diagnostics:{startRecoveryAttempts:attempt+1,startRecoveryDurationMs:Date.now()-startedAt}};
+        if(String(stateData?.startStatus||'').toLowerCase()==='failed'){
+          throw Object.assign(new Error(stateData?.startErrorMessage||'Interview start could not be committed.'),{code:stateData?.startErrorCode||'INTERVIEW_START_COMMIT_FAILED',details:{state:stateData}})
+        }
+      }catch(error){
+        lastError=error;
+        if(!isTransportError(error))throw error
+      }
+    }
+    const error=Object.assign(new Error('The Interview start is still being committed. Please use reconnect once; no second credit will be consumed.'),{code:'INTERVIEW_START_COMMIT_RECOVERY_TIMEOUT',details:{lastPhase:lastState?.phase||lastState?.status||'',sessionId:lastState?.sessionId||'',durationMs:Date.now()-startedAt,originalError:firstError?.message||'',lastError:lastError?.message||''}});
+    throw error
+  }
   async function action(name,payload={}){
     try{return await rawAction(name,payload)}catch(firstError){
       if(!isTransportError(firstError))throw firstError;
       console.warn('[CLARITY INTERVIEW] Response transport interrupted; starting idempotent recovery.',{name,error:firstError?.message});
       if(name==='start'){
-        // A Wix timeout can occur after the canonical session has already been
-        // committed. Recover through status first; never launch a hidden second
-        // billable start request, which previously produced duplicate start events.
-        await sleep(900);
-        try{
-          const stateData=await recoverStatus(payload,8);
-          if(stateData?.sessionId&&['running','processing','completed'].includes(String(stateData.phase||'')))return{ok:true,recovered:true,idempotentReplay:true,state:stateData,firstQuestion:stateData.currentQuestion||null};
-        }catch(statusError){if(!isTransportError(statusError))throw statusError}
-        throw firstError
+        // Wix can terminate the HTTP response while the canonical commercial
+        // commit is still completing. A single successful status read may still
+        // report phase=created, so keep polling until the same idempotent start
+        // reaches running/processing/completed. Never issue a hidden second start.
+        return recoverCommittedStart(payload,firstError)
       }
       if(name==='message'){
         await sleep(900);
