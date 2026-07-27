@@ -2,18 +2,18 @@
 // CLARITY Universal App - Interview module I1.7.2 v1.1.1
 // Lost-response recovery for committed starts and idempotent chat messages.
 
-const MODULE_VERSION='1.4.0-i3-video-q10-standard-controlled';
+const MODULE_VERSION='1.5.0-i4-mix-video-chat-controlled-handover';
 const ACTION_TIMEOUT_MS=Object.freeze({preflight:14000,status:25000,audioToken:20000,start:45000,message:65000,finish:90000,retry:90000,audioChunk:90000,audioFinalize:140000,audioUploadStatus:30000,videoChunk:90000,videoFinalize:180000,videoUploadStatus:30000});
 const FRAME_BY_MODE=Object.freeze({
   chat:`./modules/interview-chat.html?v=${MODULE_VERSION}`,
   audio:`./modules/interview-audio-recorder.html?v=${MODULE_VERSION}`,
   video:`./modules/interview-video-recorder.html?v=${MODULE_VERSION}`,
-  audio_chat:'./modules/interview-mix-recorder.html?v=1.0.0&capture=audio',
-  video_chat:'./modules/interview-mix-recorder.html?v=1.0.0&capture=video',
-  mix:'./modules/interview-mix-recorder.html?v=1.0.0&capture=video'
+  audio_chat:`./modules/interview-mix-recorder.html?v=${MODULE_VERSION}&capture=video`,
+  video_chat:`./modules/interview-mix-recorder.html?v=${MODULE_VERSION}&capture=video`,
+  mix:`./modules/interview-mix-recorder.html?v=${MODULE_VERSION}&capture=video`
 });
 
-function normalizeMode(value){const mode=String(value||'chat').toLowerCase().replace(/[+\s-]+/g,'_');if(['text','written','structured_chat'].includes(mode))return'chat';if(['audio_only','voice'].includes(mode))return'audio';if(['video_only'].includes(mode))return'video';if(['chat_audio','audiochat'].includes(mode))return'audio_chat';if(['chat_video','videochat','hybrid'].includes(mode))return'video_chat';return mode}
+function normalizeMode(value){const mode=String(value||'chat').toLowerCase().replace(/[+\s-]+/g,'_');if(['text','written','structured_chat'].includes(mode))return'chat';if(['audio_only','voice'].includes(mode))return'audio';if(['video_only'].includes(mode))return'video';if(['chat_audio','audiochat'].includes(mode))return'audio_chat';if(['chat_video','videochat','video_chat','hybrid','mix','mixed','mixed_mode'].includes(mode))return'mix';return mode}
 function errorShape(error){return{code:String(error?.code||'INTERVIEW_MODULE_ERROR'),message:String(error?.message||error||'Interview module request failed.'),details:error?.details||null,transport:isTransportError(error)}}
 function isTransportError(error){const value=`${error?.name||''} ${error?.code||''} ${error?.message||error||''}`.toLowerCase();return error instanceof TypeError||/failed to fetch|networkerror|network error|load failed|fetch failed|request timed out|interview_request_timeout/.test(value)}
 function sleep(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
@@ -25,7 +25,7 @@ export function createInterviewModule(ctx){
   const mode=()=>normalizeMode(runtime().mode||runtime().workflowSnapshot?.mode||'chat');
   function shell(){let host=document.getElementById('interviewModuleShell');if(host)return host;host=document.createElement('section');host.id='interviewModuleShell';host.className='interview-module-shell';host.style.cssText='margin-top:18px;min-height:620px;border:1px solid rgba(91,92,240,.2);border-radius:24px;overflow:hidden;background:#061326;box-shadow:0 24px 70px rgba(5,18,38,.18)';const moduleView=$('moduleView');moduleView.appendChild(host);return host}
   function send(type,payload={}){if(!frame?.contentWindow)return;frame.contentWindow.postMessage({channel:'CLARITY_INTERVIEW_V2',type,payload},location.origin)}
-  function initFrame(){if(!ready){pendingInit=true;return}pendingInit=false;send('INIT',{uid:state.uid,token:state.token,locale:getLocale(),runtime:runtime(),branding:state.payload?.branding||{},release:{chat:true,audio:mode()==='audio',video:mode()==='video',mix:false},moduleVersion:MODULE_VERSION,debug:new URLSearchParams(location.search).get('debug')==='1'})}
+  function initFrame(){if(!ready){pendingInit=true;return}pendingInit=false;send('INIT',{uid:state.uid,token:state.token,locale:getLocale(),runtime:runtime(),branding:state.payload?.branding||{},release:{chat:true,audio:mode()==='audio',video:mode()==='video',mix:mode()==='mix'},moduleVersion:MODULE_VERSION,debug:new URLSearchParams(location.search).get('debug')==='1'})}
   async function rawAction(name,payload={}){
     const endpoint={preflight:'v2InterviewPreflight',status:'v2InterviewStatus',start:'v2InterviewStart',message:'v2InterviewMessage',finish:'v2InterviewFinish',retry:'v2InterviewRetry',audioToken:'v2InterviewAudioToken',audioChunk:'v2InterviewAudioChunk',audioFinalize:'v2InterviewAudioFinalize',audioUploadStatus:'v2InterviewAudioUploadStatus',videoChunk:'v2InterviewAudioChunk',videoFinalize:'v2InterviewAudioFinalize',videoUploadStatus:'v2InterviewAudioUploadStatus'}[name];
     if(!endpoint)throw Object.assign(new Error(`Unknown Interview action '${name}'.`),{code:'INTERVIEW_ACTION_UNKNOWN'});
