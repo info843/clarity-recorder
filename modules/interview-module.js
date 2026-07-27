@@ -2,7 +2,7 @@
 // CLARITY Universal App - Interview module I1.7.2 v1.1.1
 // Lost-response recovery for committed starts and idempotent chat messages.
 
-const MODULE_VERSION='1.2.7-i2-action-envelope-routing-fix';
+const MODULE_VERSION='1.2.8-i2-question-speech-start-recovery';
 const ACTION_TIMEOUT_MS=Object.freeze({preflight:14000,status:25000,audioToken:20000,start:45000,message:65000,finish:90000,retry:90000,audioChunk:90000,audioFinalize:140000,audioUploadStatus:30000});
 const FRAME_BY_MODE=Object.freeze({
   chat:`./modules/interview-chat.html?v=${MODULE_VERSION}`,
@@ -47,8 +47,15 @@ export function createInterviewModule(ctx){
       if(!isTransportError(firstError))throw firstError;
       console.warn('[CLARITY INTERVIEW] Response transport interrupted; starting idempotent recovery.',{name,error:firstError?.message});
       if(name==='start'){
+        // A Wix timeout can occur after the canonical session has already been
+        // committed. Recover through status first; never launch a hidden second
+        // billable start request, which previously produced duplicate start events.
         await sleep(900);
-        try{return await rawAction('start',payload)}catch(secondError){if(!isTransportError(secondError))throw secondError;const stateData=await recoverStatus(payload);if(stateData?.sessionId&&['running','processing','completed'].includes(String(stateData.phase||'')))return{ok:true,recovered:true,idempotentReplay:true,state:stateData,firstQuestion:stateData.currentQuestion||null};throw secondError}
+        try{
+          const stateData=await recoverStatus(payload,8);
+          if(stateData?.sessionId&&['running','processing','completed'].includes(String(stateData.phase||'')))return{ok:true,recovered:true,idempotentReplay:true,state:stateData,firstQuestion:stateData.currentQuestion||null};
+        }catch(statusError){if(!isTransportError(statusError))throw statusError}
+        throw firstError
       }
       if(name==='message'){
         await sleep(900);
