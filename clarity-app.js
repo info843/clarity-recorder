@@ -3,7 +3,7 @@ import { createCvModule } from './modules/cv-module.js';
 import { createVideoPresentationModule } from './modules/video-presentation-module.js';
 import { createAiLiteracyModule } from './modules/ai-literacy-module.js?v=2.15.0';
 import { createAssessmentModule } from './modules/assessment-module.js?v=2.17.0';
-import { createInterviewModule } from './modules/interview-module.js?v=1.2.4-i2-audio-live-meter-preflight-recovery';
+import { createInterviewModule } from './modules/interview-module.js?v=1.2.5-i2-audio-preconnect-instant-start';
 
 const API_BASE = 'https://www.clarity-nvl.com/_functions';
 const state = {
@@ -70,10 +70,35 @@ function renderPayload(){
   $('summaryCompany').textContent=b.brandName||b.companyId||'CLARITY';$('summaryReport').textContent=langName(r.reportLang);$('summaryUnits').textContent=String(r.requiredUnits??0);$('summaryStatus').textContent=r.status||'—';
   $('moduleReadiness').textContent=m.startEnabled?t('routerReady'):t('modulePending');$('moduleDevice').textContent=t('responsive');$('finalWorkflow').textContent=r.workflowKey||'—';$('finalStatus').textContent=m.readiness||'—';$('startModuleBtn').disabled=!m.startEnabled;$('mediaConsentRow').classList.toggle('hidden',!m.media);applyBranding(b);
 }
-async function apiRaw(path,{method='POST',body=null,query={}}={}){const url=new URL(`${API_BASE}/${path}`);Object.entries(query).forEach(([k,v])=>{if(v!==undefined&&v!==null&&v!=='')url.searchParams.set(k,v)});const response=await fetch(url,{method,headers:{'Content-Type':'application/json','Accept':'application/json'},body:body?JSON.stringify(body):undefined,credentials:'omit',cache:'no-store'});const data=await response.json().catch(()=>({}));if(!response.ok||data?.ok===false){const errorPayload=typeof data?.error==='object'?data.error:{};const e=new Error(errorPayload.message||data?.message||`HTTP ${response.status}`);e.code=errorPayload.code||data?.code||data?.error||`HTTP_${response.status}`;e.details=errorPayload.details||data?.details||null;throw e}return data}
+async function apiRaw(path,{method='POST',body=null,query={},timeoutMs=120000}={}){
+  const url=new URL(`${API_BASE}/${path}`);
+  Object.entries(query).forEach(([k,v])=>{if(v!==undefined&&v!==null&&v!=='')url.searchParams.set(k,v)});
+  const controller=typeof AbortController!=='undefined'?new AbortController():null;
+  const boundedTimeout=Math.max(5000,Math.min(180000,Number(timeoutMs)||120000));
+  const startedAt=Date.now();
+  const timer=controller?setTimeout(()=>controller.abort(),boundedTimeout):null;
+  try{
+    const response=await fetch(url,{method,headers:{'Content-Type':'application/json','Accept':'application/json'},body:body?JSON.stringify(body):undefined,credentials:'omit',cache:'no-store',signal:controller?.signal});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok||data?.ok===false){
+      const errorPayload=typeof data?.error==='object'?data.error:{};
+      const e=new Error(errorPayload.message||data?.message||`HTTP ${response.status}`);
+      e.code=errorPayload.code||data?.code||data?.error||`HTTP_${response.status}`;
+      e.details=errorPayload.details||data?.details||null;
+      e.httpStatus=response.status;e.durationMs=Date.now()-startedAt;throw e
+    }
+    return data
+  }catch(error){
+    if(error?.name==='AbortError'){
+      const e=new Error(`Request '${path}' timed out after ${boundedTimeout} ms.`);
+      e.code='UNIVERSAL_API_TIMEOUT';e.transport=true;e.path=path;e.timeoutMs=boundedTimeout;e.durationMs=Date.now()-startedAt;throw e
+    }
+    throw error
+  }finally{if(timer)clearTimeout(timer)}
+}
 function isUniversalTokenError(error){return['UNIVERSAL_TOKEN_INVALID','UNIVERSAL_TOKEN_NONCE_MISMATCH','UNIVERSAL_TOKEN_SCOPE_INVALID','UNIVERSAL_TOKEN_UID_MISMATCH','UNIVERSAL_TOKEN_COMPANY_MISMATCH','UNIVERSAL_TOKEN_ACCESS_MISMATCH'].includes(String(error?.code||''))}
 async function refreshUniversalToken(){if(tokenRefreshPromise)return tokenRefreshPromise;tokenRefreshPromise=(async()=>{const data=await apiRaw('v2AppBootstrap',{method:'GET',query:{uid:state.uid,userAgent:navigator.userAgent,deviceClass:deviceClass()}});if(!data?.token)throw Object.assign(new Error('The Universal App session could not be renewed.'),{code:'UNIVERSAL_TOKEN_REFRESH_FAILED'});state.token=data.token;state.payload={...(state.payload||{}),...data,runtime:{...(state.payload?.runtime||{}),...(data.runtime||{})},branding:data.branding||state.payload?.branding};state.module=resolveModuleView(state.payload,state.locale);renderPayload();return state.token})().finally(()=>{tokenRefreshPromise=null});return tokenRefreshPromise}
-async function api(path,options={}){const request={method:options.method||'POST',body:options.body?{...options.body}:null,query:{...(options.query||{})}};try{return await apiRaw(path,request)}catch(error){if(path==='v2AppBootstrap'||!isUniversalTokenError(error))throw error;await refreshUniversalToken();if(request.body&&('token'in request.body||'sessionToken'in request.body)){request.body.token=state.token;delete request.body.sessionToken}return apiRaw(path,request)}}
+async function api(path,options={}){const request={method:options.method||'POST',body:options.body?{...options.body}:null,query:{...(options.query||{})},timeoutMs:options.timeoutMs};try{return await apiRaw(path,request)}catch(error){if(path==='v2AppBootstrap'||!isUniversalTokenError(error))throw error;await refreshUniversalToken();if(request.body&&('token'in request.body||'sessionToken'in request.body)){request.body.token=state.token;delete request.body.sessionToken}return apiRaw(path,request)}}
 function deviceClass(){const w=Math.min(screen.width||innerWidth,innerWidth);return w<600?'mobile':w<1024?'tablet':'desktop'}
 function prefill(){const p=state.payload?.runtime?.candidateProfile||{};$('firstName').value=p.firstName||'';$('lastName').value=p.lastName||'';$('email').value=p.email||'';$('externalReference').value=p.externalReference||''}
 async function fail(error){try{await applyBranding({brandingMode:'clarity',brandName:'CLARITY',legalProductName:'CLARITY Decision Intelligence Platform',logoUrl:'./assets/clarity-logo.png'})}catch(_){}revealApp();show('errorView');$('errorText').textContent=error?.message||t('unavailableText');$('errorCode').textContent=error?.code||'UNIVERSAL_APP_ERROR'}
