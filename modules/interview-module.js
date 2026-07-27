@@ -2,7 +2,8 @@
 // CLARITY Universal App - Interview module I1.7.2 v1.1.1
 // Lost-response recovery for committed starts and idempotent chat messages.
 
-const MODULE_VERSION='1.2.4-i2-audio-live-meter-preflight-recovery';
+const MODULE_VERSION='1.2.5-i2-audio-preconnect-instant-start';
+const ACTION_TIMEOUT_MS=Object.freeze({preflight:18000,status:25000,audioToken:30000,start:45000,message:65000,finish:90000,retry:90000,audioChunk:90000,audioFinalize:140000,audioUploadStatus:30000});
 const FRAME_BY_MODE=Object.freeze({
   chat:`./modules/interview-chat.html?v=${MODULE_VERSION}`,
   audio:`./modules/interview-audio-recorder.html?v=${MODULE_VERSION}`,
@@ -25,7 +26,21 @@ export function createInterviewModule(ctx){
   function shell(){let host=document.getElementById('interviewModuleShell');if(host)return host;host=document.createElement('section');host.id='interviewModuleShell';host.className='interview-module-shell';host.style.cssText='margin-top:18px;min-height:620px;border:1px solid rgba(91,92,240,.2);border-radius:24px;overflow:hidden;background:#061326;box-shadow:0 24px 70px rgba(5,18,38,.18)';const moduleView=$('moduleView');moduleView.appendChild(host);return host}
   function send(type,payload={}){if(!frame?.contentWindow)return;frame.contentWindow.postMessage({channel:'CLARITY_INTERVIEW_V2',type,payload},location.origin)}
   function initFrame(){if(!ready){pendingInit=true;return}pendingInit=false;send('INIT',{uid:state.uid,token:state.token,locale:getLocale(),runtime:runtime(),branding:state.payload?.branding||{},release:{chat:true,audio:mode()==='audio',video:false,mix:false},moduleVersion:MODULE_VERSION,debug:new URLSearchParams(location.search).get('debug')==='1'})}
-  async function rawAction(name,payload={}){const endpoint={preflight:'v2InterviewPreflight',status:'v2InterviewStatus',start:'v2InterviewStart',message:'v2InterviewMessage',finish:'v2InterviewFinish',retry:'v2InterviewRetry',audioToken:'v2InterviewAudioToken',audioChunk:'v2InterviewAudioChunk',audioFinalize:'v2InterviewAudioFinalize',audioUploadStatus:'v2InterviewAudioUploadStatus'}[name];if(!endpoint)throw Object.assign(new Error(`Unknown Interview action '${name}'.`),{code:'INTERVIEW_ACTION_UNKNOWN'});return api(endpoint,{body:{token:state.token,uid:state.uid,clientModuleVersion:MODULE_VERSION,...payload}})}
+  async function rawAction(name,payload={}){
+    const endpoint={preflight:'v2InterviewPreflight',status:'v2InterviewStatus',start:'v2InterviewStart',message:'v2InterviewMessage',finish:'v2InterviewFinish',retry:'v2InterviewRetry',audioToken:'v2InterviewAudioToken',audioChunk:'v2InterviewAudioChunk',audioFinalize:'v2InterviewAudioFinalize',audioUploadStatus:'v2InterviewAudioUploadStatus'}[name];
+    if(!endpoint)throw Object.assign(new Error(`Unknown Interview action '${name}'.`),{code:'INTERVIEW_ACTION_UNKNOWN'});
+    const timeoutMs=ACTION_TIMEOUT_MS[name]||90000;
+    const startedAt=Date.now();
+    console.info(`[CLARITY INTERVIEW MODULE] action started ${JSON.stringify({name,endpoint,timeoutMs,uid:state.uid,moduleVersion:MODULE_VERSION})}`);
+    try{
+      const data=await api(endpoint,{body:{token:state.token,uid:state.uid,clientModuleVersion:MODULE_VERSION,...payload},timeoutMs});
+      console.info(`[CLARITY INTERVIEW MODULE] action completed ${JSON.stringify({name,endpoint,durationMs:Date.now()-startedAt,moduleVersion:MODULE_VERSION})}`);
+      return data
+    }catch(error){
+      console.error(`[CLARITY INTERVIEW MODULE] action failed ${JSON.stringify({name,endpoint,code:error?.code||'',message:error?.message||'',details:error?.details||null,durationMs:Date.now()-startedAt,moduleVersion:MODULE_VERSION})}`);
+      throw error
+    }
+  }
   async function recoverStatus(payload={},attempts=4){let lastError=null;for(let attempt=0;attempt<attempts;attempt+=1){if(attempt)await sleep(700*(attempt+1));try{return await rawAction('status',{sessionId:payload.sessionId||'',includeHistory:true})}catch(error){lastError=error;if(!isTransportError(error))throw error}}throw lastError||Object.assign(new Error('Interview recovery status could not be loaded.'),{code:'INTERVIEW_RECOVERY_FAILED'})}
   async function action(name,payload={}){
     try{return await rawAction(name,payload)}catch(firstError){
@@ -44,6 +59,14 @@ export function createInterviewModule(ctx){
       }
       if(name==='audioFinalize'){for(let attempt=0;attempt<8;attempt+=1){await sleep(1200);try{const media=await rawAction('audioUploadStatus',{sessionId:payload.sessionId||'',uploadId:payload.uploadId||''});if(media?.ready)return{ok:true,recovered:true,idempotentReplay:true,...media}}catch(_){}}throw firstError}
       if(name==='audioChunk')throw firstError;
+      if(name==='audioToken'){
+        let lastError=firstError;
+        for(let attempt=0;attempt<2;attempt+=1){
+          await sleep(800*(attempt+1));
+          try{return await rawAction('audioToken',payload)}catch(error){lastError=error;if(!isTransportError(error))throw error}
+        }
+        throw lastError
+      }
       if(name==='preflight'){
         for(let attempt=0;attempt<2;attempt+=1){
           await sleep(600*(attempt+1));
