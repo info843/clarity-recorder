@@ -2,7 +2,7 @@
 // CLARITY Universal App - Interview module I1.7.2 v1.1.1
 // Lost-response recovery for committed starts and idempotent chat messages.
 
-const MODULE_VERSION='1.2.3-i2-audio-backend-preflight';
+const MODULE_VERSION='1.2.4-i2-audio-live-meter-preflight-recovery';
 const FRAME_BY_MODE=Object.freeze({
   chat:`./modules/interview-chat.html?v=${MODULE_VERSION}`,
   audio:`./modules/interview-audio-recorder.html?v=${MODULE_VERSION}`,
@@ -44,6 +44,13 @@ export function createInterviewModule(ctx){
       }
       if(name==='audioFinalize'){for(let attempt=0;attempt<8;attempt+=1){await sleep(1200);try{const media=await rawAction('audioUploadStatus',{sessionId:payload.sessionId||'',uploadId:payload.uploadId||''});if(media?.ready)return{ok:true,recovered:true,idempotentReplay:true,...media}}catch(_){}}throw firstError}
       if(name==='audioChunk')throw firstError;
+      if(name==='preflight'){
+        for(let attempt=0;attempt<2;attempt+=1){
+          await sleep(600*(attempt+1));
+          try{return await rawAction('preflight',payload)}catch(error){if(!isTransportError(error))throw error}
+        }
+        throw firstError
+      }
       if(name==='status')return recoverStatus(payload,5);
       throw firstError
     }
