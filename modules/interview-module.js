@@ -2,7 +2,7 @@
 // CLARITY Universal App - Interview module I1.7.2 v1.1.1
 // Lost-response recovery for committed starts and idempotent chat messages.
 
-const MODULE_VERSION='1.5.0-i4-mix-video-chat-controlled-handover';
+const MODULE_VERSION='1.5.1-i4-0-1-audio-video-mix-consolidated';
 const ACTION_TIMEOUT_MS=Object.freeze({preflight:14000,status:25000,audioToken:20000,start:45000,message:65000,finish:90000,retry:90000,audioChunk:90000,audioFinalize:140000,audioUploadStatus:30000,videoChunk:90000,videoFinalize:180000,videoUploadStatus:30000});
 const FRAME_BY_MODE=Object.freeze({
   chat:`./modules/interview-chat.html?v=${MODULE_VERSION}`,
@@ -13,7 +13,7 @@ const FRAME_BY_MODE=Object.freeze({
   mix:`./modules/interview-mix-recorder.html?v=${MODULE_VERSION}&capture=video`
 });
 
-function normalizeMode(value){const mode=String(value||'chat').toLowerCase().replace(/[+\s-]+/g,'_');if(['text','written','structured_chat'].includes(mode))return'chat';if(['audio_only','voice'].includes(mode))return'audio';if(['video_only'].includes(mode))return'video';if(['chat_audio','audiochat'].includes(mode))return'audio_chat';if(['chat_video','videochat','video_chat','hybrid','mix','mixed','mixed_mode'].includes(mode))return'mix';return mode}
+function normalizeMode(value){const mode=String(value||'chat').toLowerCase().replace(/[+\s-]+/g,'_');if(['text','written','structured_chat'].includes(mode))return'chat';if(['audio_only','voice'].includes(mode))return'audio';if(['video_only'].includes(mode))return'video';if(['chat_audio','audiochat','audio_chat'].includes(mode))return'mix';if(['chat_video','videochat','video_chat','hybrid','mix','mixed','mixed_mode'].includes(mode))return'mix';return mode}
 function errorShape(error){return{code:String(error?.code||'INTERVIEW_MODULE_ERROR'),message:String(error?.message||error||'Interview module request failed.'),details:error?.details||null,transport:isTransportError(error)}}
 function isTransportError(error){const value=`${error?.name||''} ${error?.code||''} ${error?.message||error||''}`.toLowerCase();return error instanceof TypeError||/failed to fetch|networkerror|network error|load failed|fetch failed|request timed out|interview_request_timeout/.test(value)}
 function sleep(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
