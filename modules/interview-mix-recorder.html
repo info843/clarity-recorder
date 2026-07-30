@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 
-<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width,initial-scale=1" name="viewport"/><title>CLARITY Interview Mix Q10 · I4.1.0</title>
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width,initial-scale=1" name="viewport"/><title>CLARITY Interview Mix Q10 · I4.2.0</title>
 <style>
 :root{font-family:Inter,system-ui,-apple-system,Segoe UI,Arial,sans-serif;color:#f4f8ff;background:#061326;--accent:#22d3ee;--secondary:#7c6cff;--muted:#9fb2c9;--surface:rgba(13,34,58,.84);--background:#061326;--text:#f4f8ff;--border:rgba(119,164,211,.22);--ok:#5ee7a7;--warn:#ffd166;--err:#ff9aa4}*{box-sizing:border-box}body{margin:0;min-height:100vh;color:var(--text);background:radial-gradient(circle at 8% 0%,color-mix(in srgb,var(--accent) 14%,transparent),transparent 32%),radial-gradient(circle at 92% 12%,color-mix(in srgb,var(--secondary) 13%,transparent),transparent 28%),var(--background)}.app{max-width:980px;margin:auto;padding:28px}.head{display:flex;justify-content:space-between;gap:18px;align-items:center;margin-bottom:18px}.brand-line{display:flex;gap:14px;align-items:center}.brand-logo{display:none;max-width:112px;max-height:54px;object-fit:contain;border-radius:10px;background:rgba(255,255,255,.94);padding:6px}.eyebrow{font-size:12px;letter-spacing:.13em;text-transform:uppercase;color:var(--accent);font-weight:800}.head h1{font-size:clamp(25px,4vw,42px);margin:6px 0 2px}.badge{padding:8px 12px;border-radius:999px;background:color-mix(in srgb,var(--accent) 10%,transparent);border:1px solid color-mix(in srgb,var(--accent) 28%,transparent);color:color-mix(in srgb,var(--accent) 65%,white);font-size:12px;font-weight:800}.card{background:var(--surface);border:1px solid var(--border);border-radius:22px;padding:22px;box-shadow:0 24px 70px rgba(0,0,0,.24);backdrop-filter:blur(16px)}.notice{display:flex;gap:12px;padding:14px;border-radius:15px;background:color-mix(in srgb,var(--secondary) 11%,transparent);border:1px solid color-mix(in srgb,var(--secondary) 24%,transparent);color:color-mix(in srgb,var(--text) 90%,var(--secondary));font-size:14px;line-height:1.55}.progress{display:flex;align-items:center;gap:14px;margin:20px 0}.bar{height:8px;flex:1;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden}.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--secondary));transition:.3s}.meta{font-size:13px;color:var(--muted);white-space:nowrap}.question{margin:18px 0;padding:20px;border-radius:18px;background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 8%,transparent),color-mix(in srgb,var(--secondary) 8%,transparent));border:1px solid color-mix(in srgb,var(--accent) 20%,transparent)}.question small{display:block;color:var(--accent);font-weight:800;margin-bottom:8px}.question strong{font-size:19px;line-height:1.5}.audio-panel{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}.panel{padding:16px;border-radius:17px;background:rgba(2,14,28,.55);border:1px solid var(--border)}.panel strong{display:block;margin-bottom:6px}.level{height:10px;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden;margin-top:10px}.level i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--ok));transition:width .08s}.transcript{min-height:92px;padding:14px;border-radius:15px;background:rgba(255,255,255,.045);border:1px solid var(--border);color:var(--text);line-height:1.55;white-space:pre-wrap}.status-line{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:14px 0}.pill{padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid var(--border);color:var(--muted);font-size:12px;font-weight:750}.pill.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 35%,transparent)}.pill.warn{color:var(--warn)}.pill.err{color:var(--err)}.actions{display:flex;justify-content:flex-end;gap:10px;margin-top:14px}.btn{border:0;border-radius:13px;padding:12px 17px;font-weight:800;cursor:pointer}.btn.primary{color:#03131f;background:linear-gradient(90deg,var(--accent),var(--secondary))}.btn.secondary{color:var(--text);background:rgba(255,255,255,.08);border:1px solid var(--border)}.btn.final{color:#fff;background:linear-gradient(90deg,#7c3aed,#db2777);border:1px solid rgba(244,114,182,.45);box-shadow:0 10px 28px rgba(219,39,119,.22)}.preflight-actions{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:14px}.btn:disabled{opacity:.5;cursor:not-allowed}.hidden{display:none!important}.state{text-align:center;padding:45px 20px}.state h2{font-size:27px;margin:8px}.state p{color:var(--muted);line-height:1.6;max-width:680px;margin:10px auto}.spinner{width:42px;height:42px;border-radius:50%;border:4px solid rgba(255,255,255,.12);border-top-color:var(--accent);animation:spin 1s linear infinite;margin:auto}@keyframes spin{to{transform:rotate(360deg)}}.debug{margin-top:14px;padding:12px;border-radius:12px;background:#020b16;border:1px solid rgba(34,211,238,.22);color:#a9dff0;font:11px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;word-break:break-word;text-align:left}.fine{font-size:12px;color:var(--muted);margin-top:10px}.chat-composer{display:none;margin-top:16px;padding:16px;border-radius:17px;background:rgba(2,14,28,.68);border:1px solid var(--border)}.chat-composer.active{display:block}.chat-composer textarea{width:100%;min-height:130px;resize:vertical;border-radius:14px;border:1px solid var(--border);background:rgba(255,255,255,.055);color:var(--text);padding:14px;font:inherit;line-height:1.55}.chat-composer .chat-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:10px}.phase-banner{display:flex;justify-content:space-between;gap:12px;align-items:center;margin:14px 0;padding:10px 13px;border-radius:13px;background:rgba(255,255,255,.045);border:1px solid var(--border);font-size:13px;color:var(--muted)}.error{color:var(--err)}@media(max-width:680px){.app{padding:16px}.head{align-items:flex-start;flex-direction:column}.card{padding:17px}.audio-panel{grid-template-columns:1fr}.actions{flex-direction:column}.btn{width:100%}}
 </style></head><body><main class="app"><header class="head"><div class="brand-line"><img alt="" class="brand-logo" id="brandLogo"/><div><div class="eyebrow" id="eyebrow">CLARITY Interview · Mix Q10</div><h1 id="title">Structured Mix Interview</h1><div id="subtitle" style="color:var(--muted)">Seven video questions followed by three chat questions, each with an opportunity to add to the answer.</div></div></div><span class="badge" id="badge">Secure video + chat workflow</span></header>
@@ -10,7 +10,7 @@
 <section class="card hidden state" id="errorView"><div class="error" style="font-size:40px">!</div><h2 id="errorTitle">Mix Interview interrupted</h2><p id="errorText"></p><button class="btn secondary" id="retryBtn">Try again</button></section></main><audio autoplay="" id="remoteAudio"></audio>
 <script>
 const CHANNEL = 'CLARITY_INTERVIEW_V2';
-const CLIENT_VERSION = '1.1.0-i4-1-0-mixed-media-evidence-gate';
+const CLIENT_VERSION = '1.2.1-i4-2-0-e2e-final';
 const API_BASE = location.origin.replace(/\/+$/, '');
 const MUX_UPLOAD_URL = `${API_BASE}/api/mux-upload`;
 const MUX_ASSET_URL = `${API_BASE}/api/mux-asset`;
@@ -18,6 +18,8 @@ const INTRO_PAUSE_MS = 900;
 const NEXT_QUESTION_PAUSE_MS = 750;
 const ANSWER_SETTLE_MS = 4000;
 const ANSWER_FINAL_GUARD_MS = 700;
+const ANSWER_INPUT_WARMUP_MS = 500;
+const ANSWER_INPUT_READY_TIMEOUT_MS = 6500;
 const OPTIONAL_TURN_IDLE_ADVANCE_MS = 10000;
 const MAIN_TURN_IDLE_NOTICE_MS = 15000;
 const TRANSCRIPTION_COMPLETION_TIMEOUT_MS = 15000;
@@ -50,7 +52,7 @@ let voicePreparing = false;
 let voicePreparePromise = null;
 let voiceLastError = null;
 let voiceTokenInfo = null;
-let pc = null, dc = null, micStream = null, micTrack = null, cameraTrack = null, realtimeMicTrack = null, realtimeMicStream = null, recordingMicTrack = null, recordingVideoTrack = null, recordingMicStream = null, remoteAudio = null, mediaRecorder = null, recordChunks = [], recordedBlob = null, recordingStartedAt = 0, recordingStopPromise = null, audioContext = null, recordingAudioContext = null, recordingMixDestination = null, recordingMicSourceNode = null, recordingRemoteSourceNode = null, recordingRemoteStream = null, recordingMixedAudioTrack = null, analyser = null, meterFrame = null, lastQuestion = null, lastTranscript = '', processedItems = new Set(), speakingQuestion = false, activeSpeechPurpose = 'idle', introPendingQuestion = null, completionStarted = false, completionFinalizing = false, completionFinalized = false, uploadId = '', uploadResult = null, pollTimer = null, speechDrainTimer = null, speechStartTimer = null, activeSpeechRequestId = '', activeSpeechInstructions = '', speechAudioStarted = false, speechRetryCount = 0, awaitingCandidateAnswer = false, answerSpeechActive = false, answerSegments = [], answerPartial = '', answerCommitTimer = null, answerFinalGuardTimer = null, answerTranscriptionTimer = null, answerIdleTimer = null, answerTurnId = 0, answerGateOpenedAt = 0, lastSpeechStartedAt = 0, lastSpeechStoppedAt = 0, lastSemanticActivityAt = 0, answerTranscriptRevision = 0, answerHadSpeech = false, voiceRecoveryPromise = null, voiceHealthTimer = null, realtimeConnectionId = 0, realtimeDisconnectAt = 0, lastRealtimeEventAt = 0, lastRealtimeInputAt = 0, lastLocalSignalAt = 0, localSignalStartedAt = 0, lastVoiceRecoveryAt = 0, voiceRecoveryCount = 0, voiceRecoveryTurnId = -1;
+let pc = null, dc = null, micStream = null, micTrack = null, cameraTrack = null, realtimeMicTrack = null, realtimeMicStream = null, recordingMicTrack = null, recordingVideoTrack = null, recordingMicStream = null, remoteAudio = null, mediaRecorder = null, recordChunks = [], recordedBlob = null, recordingStartedAt = 0, recordingStopPromise = null, audioContext = null, recordingAudioContext = null, recordingMixDestination = null, recordingMicSourceNode = null, recordingRemoteSourceNode = null, recordingRemoteStream = null, recordingMixedAudioTrack = null, analyser = null, meterFrame = null, lastQuestion = null, lastTranscript = '', lastCommittedTranscript = '', processedItems = new Set(), speakingQuestion = false, activeSpeechPurpose = 'idle', introPendingQuestion = null, completionStarted = false, completionFinalizing = false, completionFinalized = false, uploadId = '', uploadResult = null, pollTimer = null, speechDrainTimer = null, speechStartTimer = null, activeSpeechRequestId = '', activeSpeechInstructions = '', speechAudioStarted = false, speechRetryCount = 0, awaitingCandidateAnswer = false, answerSpeechActive = false, answerSegments = [], answerPartial = '', answerCommitTimer = null, answerFinalGuardTimer = null, answerTranscriptionTimer = null, answerIdleTimer = null, answerTurnId = 0, answerGateOpenedAt = 0, answerInputOpening = false, lastSpeechStartedAt = 0, lastSpeechStoppedAt = 0, lastSemanticActivityAt = 0, answerTranscriptRevision = 0, answerHadSpeech = false, voiceRecoveryPromise = null, voiceHealthTimer = null, realtimeConnectionId = 0, realtimeDisconnectAt = 0, lastRealtimeEventAt = 0, lastRealtimeInputAt = 0, lastLocalSignalAt = 0, localSignalStartedAt = 0, lastVoiceRecoveryAt = 0, voiceRecoveryCount = 0, voiceRecoveryTurnId = -1;
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const first = (...v) => v.find(x => x !== undefined && x !== null && String(x).trim() !== '') || '';
@@ -88,6 +90,7 @@ function resetIncompleteCaptureForRetry() {
     answerPartial = '';
     processedItems.clear();
     lastTranscript = '';
+    lastCommittedTranscript = '';
     answerTranscriptRevision = Number(answerTranscriptRevision || 0) + 1;
     lastSemanticActivityAt = Date.now();
     awaitingCandidateAnswer = true;
@@ -153,7 +156,7 @@ function closeRecordingAudioGraph() {
     recordingMixedAudioTrack = null;
 }
 
-const STR = { de: { title: 'Strukturiertes Video-Interview', subtitle: 'Zehn Hauptfragen mit Gelegenheit für Ergänzungen.', badge: 'Sicherer Video-Ablauf', intro: 'Nutzen Sie einen ruhigen Raum und möglichst Kopfhörer. Nach jeder Hauptfrage können Sie Ihre Antwort ergänzen oder ausdrücklich fortfahren.', progress: n => `${n} von 10 Hauptfragen beantwortet`, main: i => `Hauptfrage ${i} von 10`, supplement: i => `Ergänzungsrunde zu Hauptfrage ${i}`, finalOpen: 'Abschließende Ergänzung', follow: (i, j) => `Nachfrage ${i}.${j}`, mic: 'Kamera und Mikrofon', micText: 'Werden vor dem Creditverbrauch geprüft.', speech: 'Live-Transkript', wait: 'Das Interview wartet auf Ihren Start.', startTitle: 'Bereit zur Vorbereitung', startText: 'Das Interview beginnt erst, wenn Mikrofon und sichere Sprachverbindung bereit sind und Sie unten starten.', start: 'Video-Interview starten', checkMic: 'Kamera und Mikrofon prüfen', prepareVoice: 'Sprachverbindung erneut vorbereiten', reconnectVoice: 'Sprachverbindung wiederherstellen', reconnecting: 'Sprachverbindung wird wiederhergestellt …', checkingMic: 'Kamera und Mikrofon werden geprüft …', micPermission: 'Kamera- und Mikrofonfreigabe erforderlich', backend: 'Backend', repeat: 'Frage wiederholen', rephrase: 'Verständlicher formulieren', continue: 'Weiter zur nächsten Frage', endInterview: 'Interview beenden', welcomeVisible: 'Willkommen. Der Intervieweinstieg wird vorbereitet.', processingTitle: 'Video-Interview wird gesichert', processingText: 'Ihre Antworten sind vollständig. Die Aufnahme wird gesichert und das Workspace-Ergebnis vorbereitet.', processingRetryText: 'Ihre Antworten sind vollständig. Die Aufnahme ist im Browser gesichert. Die technische Verarbeitung kann erneut gestartet werden.', retryProcessing: 'Verarbeitung erneut versuchen', completedTitle: 'Interview abgeschlossen', completedText: 'Vielen Dank. Der Kunde erhält das strukturierte Ergebnis und den Bericht im CLARITY Workspace.', errorTitle: 'Video-Interview unterbrochen', retry: 'Erneut versuchen', listening: 'Bitte antworten Sie jetzt.', transcribing: 'Antwort wird transkribiert …', sending: 'Antwort wird sicher gespeichert …', speaking: 'Die Frage wird gesprochen …', uploading: 'Video wird hochgeladen …', ready: 'bereit', device: 'Gerät', voice: 'Stimme', recording: 'Aufnahme', upload: 'Upload' }, en: { title: 'Structured Mix Interview', subtitle: 'Seven video questions followed by three chat questions, each with an opportunity to add to the answer.', badge: 'Secure video + chat workflow', intro: 'Use a quiet room and preferably headphones. After every main question, you can add to your answer or explicitly continue.', progress: n => `${n} of 10 main questions answered`, main: i => `Main question ${i} of 10`, supplement: i => `Supplement round for main question ${i}`, finalOpen: 'Final addition', follow: (i, j) => `Follow-up ${i}.${j}`, mic: 'Camera and microphone', micText: 'Checked before credit consumption.', speech: 'Live transcript', wait: 'The Interview waits for your start.', startTitle: 'Ready to prepare', startText: 'The Interview starts only after microphone and secure voice transport are ready and you start below.', start: 'Start Mix Interview', checkMic: 'Check camera and microphone', prepareVoice: 'Prepare voice connection again', reconnectVoice: 'Reconnect voice', reconnecting: 'Reconnecting voice transport …', checkingMic: 'Checking camera and microphone …', micPermission: 'Camera and microphone permission required', backend: 'Backend', repeat: 'Repeat question', rephrase: 'Rephrase more clearly', continue: 'Continue to next question', endInterview: 'End Interview', welcomeVisible: 'Welcome. The Interview introduction is being prepared.', processingTitle: 'Securing your Mix Interview', processingText: 'Your answers are complete. The recording is being secured and the Workspace result prepared.', processingRetryText: 'Your answers are complete. The recording is secured in this browser. The technical processing can be retried.', retryProcessing: 'Retry processing', completedTitle: 'Interview completed', completedText: 'Thank you. The customer will receive the structured result and report in CLARITY Workspace.', errorTitle: 'Mix Interview interrupted', retry: 'Try again', listening: 'Please answer now.', transcribing: 'Transcribing your answer …', sending: 'Saving your answer securely …', speaking: 'The question is being spoken …', uploading: 'Uploading video …', ready: 'ready', device: 'Device', voice: 'Voice', recording: 'Recording', upload: 'Upload' } };
+const STR = { de: { title: 'Strukturiertes Mix-Interview', subtitle: 'Sieben Video-Fragen und drei Chat-Fragen mit Gelegenheit für Ergänzungen.', badge: 'Sicherer Video- und Chat-Ablauf', intro: 'Nutzen Sie einen ruhigen Raum und möglichst Kopfhörer. Nach jeder Hauptfrage können Sie Ihre Antwort ergänzen oder ausdrücklich fortfahren.', progress: n => `${n} von 10 Hauptfragen beantwortet`, main: i => `Hauptfrage ${i} von 10`, supplement: i => `Ergänzungsrunde zu Hauptfrage ${i}`, finalOpen: 'Abschließende Ergänzung', follow: (i, j) => `Nachfrage ${i}.${j}`, mic: 'Kamera und Mikrofon', micText: 'Werden vor dem Creditverbrauch geprüft.', speech: 'Live-Transkript', wait: 'Das Interview wartet auf Ihren Start.', startTitle: 'Bereit zur Vorbereitung', startText: 'Das Interview beginnt erst, wenn Mikrofon und sichere Sprachverbindung bereit sind und Sie unten starten.', start: 'Mix-Interview starten', checkMic: 'Kamera und Mikrofon prüfen', prepareVoice: 'Sprachverbindung erneut vorbereiten', reconnectVoice: 'Sprachverbindung wiederherstellen', reconnecting: 'Sprachverbindung wird wiederhergestellt …', checkingMic: 'Kamera und Mikrofon werden geprüft …', micPermission: 'Kamera- und Mikrofonfreigabe erforderlich', backend: 'Backend', repeat: 'Frage wiederholen', rephrase: 'Verständlicher formulieren', continue: 'Weiter zur nächsten Frage', endInterview: 'Interview beenden', welcomeVisible: 'Willkommen. Der Intervieweinstieg wird vorbereitet.', processingTitle: 'Mix-Interview wird gesichert', processingText: 'Ihre Antworten sind vollständig. Die Aufnahme wird gesichert und das Workspace-Ergebnis vorbereitet.', processingRetryText: 'Ihre Antworten sind vollständig. Die Aufnahme ist im Browser gesichert. Die technische Verarbeitung kann erneut gestartet werden.', retryProcessing: 'Verarbeitung erneut versuchen', completedTitle: 'Interview abgeschlossen', completedText: 'Vielen Dank. Der Kunde erhält das strukturierte Ergebnis und den Bericht im CLARITY Workspace.', errorTitle: 'Mix-Interview unterbrochen', retry: 'Erneut versuchen', listening: 'Bitte antworten Sie jetzt.', transcribing: 'Antwort wird transkribiert …', sending: 'Antwort wird sicher gespeichert …', speaking: 'Die Frage wird gesprochen …', uploading: 'Video wird hochgeladen …', ready: 'bereit', device: 'Gerät', voice: 'Stimme', recording: 'Aufnahme', upload: 'Upload' }, en: { title: 'Structured Mix Interview', subtitle: 'Seven video questions followed by three chat questions, each with an opportunity to add to the answer.', badge: 'Secure video + chat workflow', intro: 'Use a quiet room and preferably headphones. After every main question, you can add to your answer or explicitly continue.', progress: n => `${n} of 10 main questions answered`, main: i => `Main question ${i} of 10`, supplement: i => `Supplement round for main question ${i}`, finalOpen: 'Final addition', follow: (i, j) => `Follow-up ${i}.${j}`, mic: 'Camera and microphone', micText: 'Checked before credit consumption.', speech: 'Live transcript', wait: 'The Interview waits for your start.', startTitle: 'Ready to prepare', startText: 'The Interview starts only after microphone and secure voice transport are ready and you start below.', start: 'Start Mix Interview', checkMic: 'Check camera and microphone', prepareVoice: 'Prepare voice connection again', reconnectVoice: 'Reconnect voice', reconnecting: 'Reconnecting voice transport …', checkingMic: 'Checking camera and microphone …', micPermission: 'Camera and microphone permission required', backend: 'Backend', repeat: 'Repeat question', rephrase: 'Rephrase more clearly', continue: 'Continue to next question', endInterview: 'End Interview', welcomeVisible: 'Welcome. The Interview introduction is being prepared.', processingTitle: 'Securing your Mix Interview', processingText: 'Your answers are complete. The recording is being secured and the Workspace result prepared.', processingRetryText: 'Your answers are complete. The recording is secured in this browser. The technical processing can be retried.', retryProcessing: 'Retry processing', completedTitle: 'Interview completed', completedText: 'Thank you. The customer will receive the structured result and report in CLARITY Workspace.', errorTitle: 'Mix Interview interrupted', retry: 'Try again', listening: 'Please answer now.', transcribing: 'Transcribing your answer …', sending: 'Saving your answer securely …', speaking: 'The question is being spoken …', uploading: 'Uploading video …', ready: 'ready', device: 'Device', voice: 'Voice', recording: 'Recording', upload: 'Upload' } };
 function L() { return STR[String(context?.locale || 'en').toLowerCase().startsWith('de') ? 'de' : 'en']; }
 function send(type, payload = {}) { parent.postMessage({ channel: CHANNEL, type, payload }, location.origin); }
 function height() { send('HEIGHT', { height: Math.max(760, document.documentElement.scrollHeight + 24) }); }
@@ -174,10 +177,10 @@ function spokenInterviewBrand() {
 function welcomeSpeechText() {
     const name = spokenInterviewBrand(), isClarity = name.toUpperCase() === 'CLARITY', de = String(context?.locale || 'en').toLowerCase().startsWith('de');
     if (de)
-        return `${isClarity ? 'Willkommen zu Ihrem CLARITY Video-Interview.' : `Willkommen zu Ihrem Video-Interview im Auftrag von ${name}.`} Ihnen werden zehn Hauptfragen gestellt. Nach jeder Antwort erhalten Sie die Möglichkeit, noch etwas zu ergänzen. Wenn Ihre Antwort vollständig ist, können Sie in der Ergänzungsrunde einfach sagen: Weiter zur nächsten Frage. Sie können außerdem jederzeit um eine Wiederholung oder eine verständlichere Formulierung bitten. Wir beginnen gleich mit der ersten Frage.`;
+        return `${isClarity ? 'Willkommen zu Ihrem CLARITY Mix-Interview.' : `Willkommen zu Ihrem Mix-Interview im Auftrag von ${name}.`} Ihnen werden zehn Hauptfragen gestellt. Nach jeder Antwort erhalten Sie die Möglichkeit, noch etwas zu ergänzen. Wenn Ihre Antwort vollständig ist, können Sie in der Ergänzungsrunde einfach sagen: Weiter zur nächsten Frage. Sie können außerdem jederzeit um eine Wiederholung oder eine verständlichere Formulierung bitten. Wir beginnen gleich mit der ersten Frage.`;
     return `${isClarity ? 'Welcome to your CLARITY Mix Interview.' : `Welcome to your Mix Interview on behalf of ${name}.`} You will be asked ten main questions. After each answer, you will have an opportunity to add anything else. During the supplement round, you can simply say: Continue to the next question. You can also ask at any time for the question to be repeated or phrased more clearly. We will begin with the first question in a moment.`;
 }
-function welcomeVisibleText() { const name = spokenInterviewBrand(), de = String(context?.locale || 'en').toLowerCase().startsWith('de'); return de ? `Willkommen zum Video-Interview${name.toUpperCase() === 'CLARITY' ? '' : ` für ${name}`}.` : `Welcome to the Mix Interview${name.toUpperCase() === 'CLARITY' ? '' : ` for ${name}`}.`; }
+function welcomeVisibleText() { const name = spokenInterviewBrand(), de = String(context?.locale || 'en').toLowerCase().startsWith('de'); return de ? `Willkommen zum Mix-Interview${name.toUpperCase() === 'CLARITY' ? '' : ` für ${name}`}.` : `Welcome to the Mix Interview${name.toUpperCase() === 'CLARITY' ? '' : ` for ${name}`}.`; }
 function currentTurnType() { return String(lastQuestion?.turnType || current?.currentQuestion?.turnType || 'main_question').toLowerCase(); }
 function isSupplementTurn() { return ['supplement_prompt', 'final_open_prompt'].includes(currentTurnType()); }
 const MIX_MEDIA_LAST_MAIN = 7;
@@ -330,34 +333,65 @@ function resetAnswerCapture(options = {}) {
         setCandidateInputEnabled(false);
     updateTurnActions();
 }
-function beginCandidateAnswer() {
+async function waitForCandidateInputReady(timeoutMs = ANSWER_INPUT_READY_TIMEOUT_MS) {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+        const localReady = micTrack?.readyState === 'live';
+        const realtimeReady = realtimeHealthy();
+        const recordingReady = !manualStart || (mediaRecorder?.state === 'recording' && recordingMicTrack?.readyState === 'live');
+        if (localReady && realtimeReady && recordingReady) { await sleep(ANSWER_INPUT_WARMUP_MS); return true; }
+        if (manualStart && !realtimeReady && !voicePreparing) scheduleVoiceRecovery('answer_gate_preopen_readiness', 0);
+        await sleep(120);
+    }
+    return false;
+}
+async function beginCandidateAnswer() {
+    if (answerInputOpening || completionStarted) return;
+    answerInputOpening = true;
     resetAnswerCapture();
-    awaitingCandidateAnswer = true;
+    awaitingCandidateAnswer = false;
     answerTurnId += 1;
+    const pendingTurnId = answerTurnId;
+    setCandidateInputEnabled(false);
+    $('transcriptText').textContent = String(context?.locale || 'en').startsWith('de') ? 'Mikrofon wird für Ihre Antwort vorbereitet …' : 'Preparing the microphone for your answer…';
+    setPill('realtimePill', `${L().voice}: preparing`, 'warn');
+    if (!mediaRecorder || mediaRecorder.state !== 'recording') { try { await startRecorder(); } catch (error) { answerInputOpening=false; fail(error); return; } }
+    const ready = await waitForCandidateInputReady();
+    if (pendingTurnId !== answerTurnId || completionStarted) { answerInputOpening=false; return; }
+    if (!ready) {
+        answerInputOpening=false;
+        awaitingCandidateAnswer=false;
+        setCandidateInputEnabled(false);
+        setReconnectAction(true);
+        setPill('realtimePill', `${L().voice}: retry`, 'err');
+        $('transcriptText').textContent = String(context?.locale || 'en').startsWith('de') ? 'Die Sprachverbindung war noch nicht bereit. Bitte verbinden Sie sie erneut; Ihre Antwort wurde noch nicht gestartet.' : 'The voice connection was not ready. Reconnect it; your answer has not started yet.';
+        console.warn('[CLARITY INTERVIEW MIX TURN] answer gate withheld because input was not ready', { sessionId: current?.sessionId || '', answerTurnId, clientVersion: CLIENT_VERSION });
+        return;
+    }
+    awaitingCandidateAnswer = true;
     answerGateOpenedAt = Date.now();
     lastRealtimeInputAt = Date.now();
     localSignalStartedAt = 0;
     voiceRecoveryTurnId = -1;
-    if (isChatPhaseQuestion()) {
-        setCandidateInputEnabled(false);
-        $('chatComposer').classList.add('active');
-        $('chatAnswer').value = '';
-        $('chatAnswer').focus();
-        $('transcriptText').textContent = String(context?.locale || 'en').startsWith('de') ? 'Bitte geben Sie Ihre Antwort schriftlich ein.' : 'Please type your answer.';
-        updateTurnActions();
-        return;
-    }
+    clearRealtimeInputBuffer();
+    await sleep(160);
     setCandidateInputEnabled(true);
     scheduleAnswerIdlePolicy();
-    if (!mediaRecorder || mediaRecorder.state !== 'recording')
-        void startRecorder().catch(error => fail(error));
-    if (!realtimeHealthy())
-        scheduleVoiceRecovery('answer_gate_transport_unhealthy', 0);
     $('transcriptText').textContent = L().listening;
     setPill('realtimePill', `${L().voice}: listening`, 'ok');
     updateTurnActions();
-    console.info('[CLARITY INTERVIEW MIX TURN] answer gate opened', { sessionId: current?.sessionId || '', mainQuestionIndex: String(lastQuestion?.mainQuestionIndex || ''), followUpIndex: String(lastQuestion?.followUpIndex || ''), answerTurnId, settleMs: ANSWER_SETTLE_MS, optionalIdleMs: OPTIONAL_TURN_IDLE_ADVANCE_MS, mainIdleNoticeMs: MAIN_TURN_IDLE_NOTICE_MS, clientVersion: CLIENT_VERSION });
-    debug({ questionPlaybackDrained: true, recordingStarted: mediaRecorder?.state === 'recording', awaitingCandidateAnswer, answerTurnId });
+    answerInputOpening=false;
+    console.info('[CLARITY INTERVIEW MIX TURN] answer gate opened after verified input readiness', { sessionId: current?.sessionId || '', mainQuestionIndex: String(lastQuestion?.mainQuestionIndex || ''), followUpIndex: String(lastQuestion?.followUpIndex || ''), answerTurnId, warmupMs: ANSWER_INPUT_WARMUP_MS, settleMs: ANSWER_SETTLE_MS, clientVersion: CLIENT_VERSION });
+    debug({ questionPlaybackDrained: true, inputReady: true, recordingStarted: mediaRecorder?.state === 'recording', awaitingCandidateAnswer, answerTurnId });
+}
+function transcriptWords(value){return String(value||'').trim().split(/\s+/).filter(Boolean)}
+function normalizedTranscriptWord(value){return String(value||'').normalize('NFKD').toLowerCase().replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9äöüß]+/gi,'')}
+function stripPreviousAnswerTail(value){
+    const previous=transcriptWords(lastCommittedTranscript),current=transcriptWords(value);if(!previous.length||!current.length)return String(value||'').trim();
+    const max=Math.min(16,previous.length,current.length);let remove=0;
+    for(let size=max;size>=2;size-=1){const left=previous.slice(-size).map(normalizedTranscriptWord).join(' ');const right=current.slice(0,size).map(normalizedTranscriptWord).join(' ');if(left&&left===right){remove=size;break}}
+    if(remove)console.info('[CLARITY INTERVIEW TRANSCRIPT] removed previous-answer tail from new turn',{removedWords:remove,clientVersion:CLIENT_VERSION});
+    return current.slice(remove).join(' ').trim();
 }
 function appendAnswerSegment(text) { const value = String(text || '').trim(); if (!value || !hasSemanticWords(value))
     return; const previous = answerSegments[answerSegments.length - 1] || ''; if (previous !== value)
@@ -414,8 +448,10 @@ function scheduleAnswerCommit(source = 'transcription_completed') {
             clearAnswerTranscriptionTimer();
             clearAnswerIdleTimer();
             setCandidateInputEnabled(false);
-            console.info('[CLARITY INTERVIEW MIX TURN] answer committed after transcript-aware stable silence', { sessionId: current?.sessionId || '', answerTurnId: turn, source, segments: answerSegments.length, characters: finalTranscript.length, settleMs: ANSWER_SETTLE_MS, finalGuardMs: ANSWER_FINAL_GUARD_MS, clientVersion: CLIENT_VERSION });
-            void submitTranscript(quality.transcript, { answerTurnId: turn, segmentCount: answerSegments.length, settleMs: ANSWER_SETTLE_MS, finalGuardMs: ANSWER_FINAL_GUARD_MS, commitSource: source, turnGate: 'transcript_aware_quality_gate_v2' });
+            const committedTranscript = stripPreviousAnswerTail(quality.transcript);
+            lastCommittedTranscript = committedTranscript;
+            console.info('[CLARITY INTERVIEW MIX TURN] answer committed after transcript-aware stable silence', { sessionId: current?.sessionId || '', answerTurnId: turn, source, segments: answerSegments.length, characters: committedTranscript.length, settleMs: ANSWER_SETTLE_MS, finalGuardMs: ANSWER_FINAL_GUARD_MS, clientVersion: CLIENT_VERSION });
+            void submitTranscript(committedTranscript, { answerTurnId: turn, segmentCount: answerSegments.length, settleMs: ANSWER_SETTLE_MS, finalGuardMs: ANSWER_FINAL_GUARD_MS, commitSource: source, turnGate: 'transcript_aware_quality_gate_v2', previousTailCleanup: committedTranscript !== quality.transcript });
         }, ANSWER_FINAL_GUARD_MS);
     };
     const stableSince = Math.max(lastSemanticActivityAt || 0, lastSpeechStoppedAt || 0, answerGateOpenedAt || 0);
@@ -816,11 +852,16 @@ async function recoverVoiceTransport(reason = 'unknown') {
                 await speakQuestion(question);
             }
             else if (resumeAnswer && !busy && !completionStarted && mixPhase === 'video') {
+                const ready = await waitForCandidateInputReady();
+                if (!ready) throw makeStageError('INTERVIEW_MIX_INPUT_RECOVERY_NOT_READY', 'The microphone input path did not become ready after reconnecting.');
+                clearRealtimeInputBuffer();
+                await sleep(160);
                 awaitingCandidateAnswer = true;
                 answerGateOpenedAt = Date.now();
                 lastRealtimeInputAt = Date.now();
                 setCandidateInputEnabled(true);
-                renderLiveAnswer(L().listening);
+                const retained = combinedAnswerTranscript();
+                renderLiveAnswer(retained || (String(context?.locale || 'en').startsWith('de') ? 'Die Verbindung ist wieder bereit. Bitte setzen Sie Ihre Antwort fort; bereits Gesprochenes bleibt in der Aufnahme.' : 'The connection is ready again. Continue your answer; everything already spoken remains in the recording.'));
                 setPill('realtimePill', `${L().voice}: listening`, 'ok');
                 updateTurnActions();
             }
@@ -875,19 +916,18 @@ function startVoiceHealthWatchdog() {
         }
     }, VOICE_HEALTH_INTERVAL_MS);
 }
+function clearRealtimeInputBuffer() { try { if (dc?.readyState === 'open') dc.send(JSON.stringify({ type: 'input_audio_buffer.clear' })); } catch (_) { } }
 function setCandidateInputEnabled(enabled) {
-    const value = Boolean(enabled);
-    // Keep the physical browser microphone track continuously enabled. Repeatedly
-    // disabling the source track can destabilize Chromium audio capture and device
-    // drivers. Only the dedicated Realtime and recording clones are gated.
-    if (micTrack?.readyState === 'live' && !micTrack.enabled)
-        micTrack.enabled = true;
-    if (realtimeMicTrack?.readyState === 'live')
-        realtimeMicTrack.enabled = value;
-    if (recordingMicTrack?.readyState === 'live')
-        recordingMicTrack.enabled = value;
-    if (value && manualStart && realtimeMicTrack?.readyState !== 'live')
+    // Keep the physical microphone, the Realtime clone and the recording clone
+    // continuously live. Repeated MediaStreamTrack.enabled transitions caused the
+    // mid-answer input stalls seen in the latest controlled Video test. Logical turn
+    // gating is enforced by awaitingCandidateAnswer/speakingQuestion.
+    if (micTrack?.readyState === 'live') micTrack.enabled = true;
+    if (realtimeMicTrack?.readyState === 'live') realtimeMicTrack.enabled = true;
+    if (recordingMicTrack?.readyState === 'live' && mediaRecorder?.state === 'recording') recordingMicTrack.enabled = true;
+    if (Boolean(enabled) && manualStart && mixPhase === 'video' && realtimeMicTrack?.readyState !== 'live')
         scheduleVoiceRecovery('candidate_input_track_missing', 0);
+    debug({ candidateInputLogicalEnabled: Boolean(enabled), continuousMicTrack: true });
 }
 async function connectRealtime(token) {
     closeRealtimeTransport();
@@ -916,7 +956,7 @@ async function connectRealtime(token) {
         debug({ realtimeConnectionState: state });
     };
     realtimeMicTrack = micTrack.clone();
-    realtimeMicTrack.enabled = false;
+    realtimeMicTrack.enabled = true;
     realtimeMicTrack.onended = () => { if (connectionId === realtimeConnectionId && manualStart && mixPhase === 'video')
         scheduleVoiceRecovery('realtime_input_track_ended', 0); };
     realtimeMicTrack.onmute = () => { if (connectionId === realtimeConnectionId && manualStart && mixPhase === 'video')
@@ -1041,7 +1081,7 @@ async function speakQuestion(question) {
         $('questionCard').classList.remove('hidden');
         $('questionText').textContent = question.text;
         renderState(current, question);
-        beginCandidateAnswer();
+        void beginCandidateAnswer();
         return;
     }
     clearSpeechTimers();
@@ -1080,7 +1120,7 @@ function finishQuestionPlayback() {
         void finalizeCompletionAfterClosing();
         return;
     }
-    beginCandidateAnswer();
+    void beginCandidateAnswer();
 }
 function onRealtimeEvent(event) {
     lastRealtimeEventAt = Date.now();
@@ -1214,7 +1254,7 @@ async function startRecorder() {
     try { recordingMicTrack?.stop(); } catch (_) { }
     try { recordingVideoTrack?.stop(); } catch (_) { }
     recordingMicTrack = micTrack.clone();
-    recordingMicTrack.enabled = Boolean(awaitingCandidateAnswer);
+    recordingMicTrack.enabled = true;
     await ensureRecordingAudioGraph();
     recordingVideoTrack = cameraTrack.clone();
     recordingVideoTrack.enabled = true;
@@ -1307,7 +1347,7 @@ async function submitTranscript(transcript, audioMeta = {}, turnIntent = '') {
     }
     if (['continue', 'end_interview'].includes(normalizedIntent) && !isSupplementTurn()) {
         $('transcriptText').textContent = String(context?.locale || 'en').startsWith('de') ? 'Bitte beantworten Sie zuerst die Hauptfrage.' : 'Please answer the main question first.';
-        beginCandidateAnswer();
+        void beginCandidateAnswer();
         return;
     }
     busy = true;
@@ -1783,7 +1823,7 @@ window.addEventListener('online', () => { if (manualStart && mixPhase === 'video
     scheduleVoiceRecovery('network_online', 250); });
 window.addEventListener('beforeunload', () => cleanup(true));
 renderMixPhase();
-send('READY', { version: CLIENT_VERSION });
+send('READY', { version: CLIENT_VERSION, recordingContract: 'full_interview_mixed_ai_candidate_v1', inputReadinessContract: 'verified_before_answer_gate_v1' });
 setTimeout(height, 80);
 
 </script></body></html>
