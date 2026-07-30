@@ -2,8 +2,8 @@
 // CLARITY Universal App — Interview module I4.2.0 final E2E stability
 // Lost-response recovery for committed starts and idempotent chat messages.
 
-const MODULE_VERSION='1.7.4-i4-2-3-turn-uplink-stability';
-const EXPECTED_RECORDER_VERSION='1.2.2-i4-2-3-turn-uplink-stability';
+const MODULE_VERSION='1.8.0-i4-3-0-explicit-completion-handshake';
+const EXPECTED_RECORDER_VERSION='1.3.0-i4-3-0-explicit-completion-handshake';
 const ACTION_TIMEOUT_MS=Object.freeze({preflight:14000,status:25000,audioToken:20000,start:70000,message:65000,finish:90000,retry:90000,audioChunk:90000,audioFinalize:140000,audioUploadStatus:30000,videoChunk:90000,videoFinalize:180000,videoUploadStatus:30000});
 const FRAME_BY_MODE=Object.freeze({
   chat:`./modules/interview-chat.html?v=${MODULE_VERSION}`,
