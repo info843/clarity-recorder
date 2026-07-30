@@ -1,17 +1,17 @@
 // modules/interview-module.js
-// CLARITY Universal App — Interview module I4.2.0 final E2E stability
+// CLARITY Universal App — Interview module I4.3.1 release-pinned recorder deployment
 // Lost-response recovery for committed starts and idempotent chat messages.
 
-const MODULE_VERSION='1.8.0-i4-3-0-explicit-completion-handshake';
-const EXPECTED_RECORDER_VERSION='1.3.0-i4-3-0-explicit-completion-handshake';
+const MODULE_VERSION='1.8.1-i4-3-1-release-pinned-recorders';
+const EXPECTED_RECORDER_VERSION='1.3.1-i4-3-1-release-pinned-recorders';
 const ACTION_TIMEOUT_MS=Object.freeze({preflight:14000,status:25000,audioToken:20000,start:70000,message:65000,finish:90000,retry:90000,audioChunk:90000,audioFinalize:140000,audioUploadStatus:30000,videoChunk:90000,videoFinalize:180000,videoUploadStatus:30000});
 const FRAME_BY_MODE=Object.freeze({
   chat:`./modules/interview-chat.html?v=${MODULE_VERSION}`,
-  audio:`./modules/interview-audio-recorder.html?v=${MODULE_VERSION}`,
-  video:`./modules/interview-video-recorder.html?v=${MODULE_VERSION}`,
-  audio_chat:`./modules/interview-mix-recorder.html?v=${MODULE_VERSION}&capture=video`,
-  video_chat:`./modules/interview-mix-recorder.html?v=${MODULE_VERSION}&capture=video`,
-  mix:`./modules/interview-mix-recorder.html?v=${MODULE_VERSION}&capture=video`
+  audio:`/modules/interview-audio-recorder.i4-3-1.html?build=${MODULE_VERSION}`,
+  video:`/modules/interview-video-recorder.i4-3-1.html?build=${MODULE_VERSION}`,
+  audio_chat:`/modules/interview-mix-recorder.i4-3-1.html?build=${MODULE_VERSION}&capture=video`,
+  video_chat:`/modules/interview-mix-recorder.i4-3-1.html?build=${MODULE_VERSION}&capture=video`,
+  mix:`/modules/interview-mix-recorder.i4-3-1.html?build=${MODULE_VERSION}&capture=video`
 });
 
 function normalizeMode(value){const mode=String(value||'chat').toLowerCase().replace(/[+\s-]+/g,'_');if(['text','written','structured_chat'].includes(mode))return'chat';if(['audio_only','voice'].includes(mode))return'audio';if(['video_only'].includes(mode))return'video';if(['chat_audio','audiochat','audio_chat'].includes(mode))return'mix';if(['chat_video','videochat','video_chat','hybrid','mix','mixed','mixed_mode'].includes(mode))return'mix';return mode}
