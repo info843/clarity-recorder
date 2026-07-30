@@ -1,666 +1,1542 @@
-<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CLARITY Interview Audio Q10 · I2.1.2</title>
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width,initial-scale=1" name="viewport"/><title>CLARITY Interview Audio Q10 · I4.3.1</title>
 <style>
 :root{font-family:Inter,system-ui,-apple-system,Segoe UI,Arial,sans-serif;color:#f4f8ff;background:#061326;--accent:#22d3ee;--secondary:#7c6cff;--muted:#9fb2c9;--surface:rgba(13,34,58,.84);--background:#061326;--text:#f4f8ff;--border:rgba(119,164,211,.22);--ok:#5ee7a7;--warn:#ffd166;--err:#ff9aa4}*{box-sizing:border-box}body{margin:0;min-height:100vh;color:var(--text);background:radial-gradient(circle at 8% 0%,color-mix(in srgb,var(--accent) 14%,transparent),transparent 32%),radial-gradient(circle at 92% 12%,color-mix(in srgb,var(--secondary) 13%,transparent),transparent 28%),var(--background)}.app{max-width:980px;margin:auto;padding:28px}.head{display:flex;justify-content:space-between;gap:18px;align-items:center;margin-bottom:18px}.brand-line{display:flex;gap:14px;align-items:center}.brand-logo{display:none;max-width:112px;max-height:54px;object-fit:contain;border-radius:10px;background:rgba(255,255,255,.94);padding:6px}.eyebrow{font-size:12px;letter-spacing:.13em;text-transform:uppercase;color:var(--accent);font-weight:800}.head h1{font-size:clamp(25px,4vw,42px);margin:6px 0 2px}.badge{padding:8px 12px;border-radius:999px;background:color-mix(in srgb,var(--accent) 10%,transparent);border:1px solid color-mix(in srgb,var(--accent) 28%,transparent);color:color-mix(in srgb,var(--accent) 65%,white);font-size:12px;font-weight:800}.card{background:var(--surface);border:1px solid var(--border);border-radius:22px;padding:22px;box-shadow:0 24px 70px rgba(0,0,0,.24);backdrop-filter:blur(16px)}.notice{display:flex;gap:12px;padding:14px;border-radius:15px;background:color-mix(in srgb,var(--secondary) 11%,transparent);border:1px solid color-mix(in srgb,var(--secondary) 24%,transparent);color:color-mix(in srgb,var(--text) 90%,var(--secondary));font-size:14px;line-height:1.55}.progress{display:flex;align-items:center;gap:14px;margin:20px 0}.bar{height:8px;flex:1;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden}.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--secondary));transition:.3s}.meta{font-size:13px;color:var(--muted);white-space:nowrap}.question{margin:18px 0;padding:20px;border-radius:18px;background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 8%,transparent),color-mix(in srgb,var(--secondary) 8%,transparent));border:1px solid color-mix(in srgb,var(--accent) 20%,transparent)}.question small{display:block;color:var(--accent);font-weight:800;margin-bottom:8px}.question strong{font-size:19px;line-height:1.5}.audio-panel{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}.panel{padding:16px;border-radius:17px;background:rgba(2,14,28,.55);border:1px solid var(--border)}.panel strong{display:block;margin-bottom:6px}.level{height:10px;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden;margin-top:10px}.level i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--ok));transition:width .08s}.transcript{min-height:92px;padding:14px;border-radius:15px;background:rgba(255,255,255,.045);border:1px solid var(--border);color:var(--text);line-height:1.55;white-space:pre-wrap}.status-line{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:14px 0}.pill{padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid var(--border);color:var(--muted);font-size:12px;font-weight:750}.pill.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 35%,transparent)}.pill.warn{color:var(--warn)}.pill.err{color:var(--err)}.actions{display:flex;justify-content:flex-end;gap:10px;margin-top:14px}.btn{border:0;border-radius:13px;padding:12px 17px;font-weight:800;cursor:pointer}.btn.primary{color:#03131f;background:linear-gradient(90deg,var(--accent),var(--secondary))}.btn.secondary{color:var(--text);background:rgba(255,255,255,.08);border:1px solid var(--border)}.btn.final{color:#fff;background:linear-gradient(90deg,#7c3aed,#db2777);border:1px solid rgba(244,114,182,.45);box-shadow:0 10px 28px rgba(219,39,119,.22)}.preflight-actions{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:14px}.btn:disabled{opacity:.5;cursor:not-allowed}.hidden{display:none!important}.state{text-align:center;padding:45px 20px}.state h2{font-size:27px;margin:8px}.state p{color:var(--muted);line-height:1.6;max-width:680px;margin:10px auto}.spinner{width:42px;height:42px;border-radius:50%;border:4px solid rgba(255,255,255,.12);border-top-color:var(--accent);animation:spin 1s linear infinite;margin:auto}@keyframes spin{to{transform:rotate(360deg)}}.debug{margin-top:14px;padding:12px;border-radius:12px;background:#020b16;border:1px solid rgba(34,211,238,.22);color:#a9dff0;font:11px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;word-break:break-word;text-align:left}.fine{font-size:12px;color:var(--muted);margin-top:10px}.error{color:var(--err)}@media(max-width:680px){.app{padding:16px}.head{align-items:flex-start;flex-direction:column}.card{padding:17px}.audio-panel{grid-template-columns:1fr}.actions{flex-direction:column}.btn{width:100%}}
-</style></head><body><main class="app"><header class="head"><div class="brand-line"><img class="brand-logo" id="brandLogo" alt=""><div><div class="eyebrow" id="eyebrow">CLARITY Interview · Audio Q10</div><h1 id="title">Structured Audio Interview</h1><div id="subtitle" style="color:var(--muted)">Ten main questions with an opportunity to add to each answer.</div></div></div><span class="badge" id="badge">Secure audio workflow</span></header>
-<section class="card" id="readyView"><div class="notice"><span>i</span><span id="intro">Use a quiet room and preferably headphones. After each main question, you can add to your answer or explicitly continue.</span></div><div class="progress"><div class="bar"><i id="progressBar"></i></div><span class="meta" id="progressText">0 of 10 main questions answered</span></div><div class="question hidden" id="questionCard"><small id="questionLabel">Main question 1 of 10</small><strong id="questionText"></strong></div><div class="audio-panel"><div class="panel"><strong id="microphoneTitle">Microphone</strong><span class="fine" id="microphoneText">Checked before credit consumption.</span><div class="level"><i id="micLevel"></i></div></div><div class="panel"><strong id="speechTitle">Live transcript</strong><div class="transcript" id="transcriptText">Waiting for the Interview to start.</div></div></div><div class="status-line"><span class="pill" id="backendPill">Backend: waiting</span><span class="pill" id="devicePill">Device: waiting</span><span class="pill" id="realtimePill">Voice: waiting</span><span class="pill" id="recordingPill">Recording: waiting</span><span class="pill" id="uploadPill">Upload: waiting</span></div><div class="state" id="startState"><h2 id="startTitle">Ready to prepare</h2><p id="startText">The Interview starts only after microphone and secure voice transport are ready and you click the button below.</p><div class="preflight-actions"><button class="btn secondary" id="checkMicBtn">Check microphone</button><button class="btn secondary hidden" id="prepareVoiceBtn">Prepare voice connection again</button><button class="btn primary" id="startBtn" disabled>Start Audio Interview</button></div></div><div class="actions hidden" id="activeActions"><button class="btn secondary" id="repeatBtn">Repeat question</button><button class="btn secondary" id="rephraseBtn">Rephrase question</button><button class="btn primary hidden" id="continueBtn">Continue</button></div><pre class="debug hidden" id="debugPanel"></pre></section>
+</style></head><body><main class="app"><header class="head"><div class="brand-line"><img alt="" class="brand-logo" id="brandLogo"/><div><div class="eyebrow" id="eyebrow">CLARITY Interview · Audio Q10</div><h1 id="title">Structured Audio Interview</h1><div id="subtitle" style="color:var(--muted)">Ten main questions with an opportunity to add to each answer.</div></div></div><span class="badge" id="badge">Secure audio workflow</span></header>
+<section class="card" id="readyView"><div class="notice"><span>i</span><span id="intro">Speak for as long as you need. The Interview never advances because of a pause. Say “Continue” or use “Finish answer” only when your answer is complete.</span></div><div class="progress"><div class="bar"><i id="progressBar"></i></div><span class="meta" id="progressText">0 of 10 main questions answered</span></div><div class="question hidden" id="questionCard"><small id="questionLabel">Main question 1 of 10</small><strong id="questionText"></strong></div><div class="audio-panel"><div class="panel"><strong id="microphoneTitle">Microphone</strong><span class="fine" id="microphoneText">Checked before credit consumption.</span><div class="level"><i id="micLevel"></i></div></div><div class="panel"><strong id="speechTitle">Live transcript</strong><div class="transcript" id="transcriptText">Waiting for the Interview to start.</div></div></div><div class="status-line"><span class="pill" id="backendPill">Backend: waiting</span><span class="pill" id="devicePill">Device: waiting</span><span class="pill" id="realtimePill">Voice: waiting</span><span class="pill" id="recordingPill">Recording: waiting</span><span class="pill" id="uploadPill">Upload: waiting</span></div><div class="state" id="startState"><h2 id="startTitle">Ready to prepare</h2><p id="startText">The Interview starts only after microphone and secure voice transport are ready and you click the button below.</p><div class="preflight-actions"><button class="btn secondary" id="checkMicBtn">Check microphone</button><button class="btn secondary hidden" id="prepareVoiceBtn">Prepare voice connection again</button><button class="btn primary" disabled="" id="startBtn">Start Audio Interview</button></div></div><div class="actions hidden" id="activeActions"><button class="btn secondary" id="repeatBtn">Repeat question</button><button class="btn secondary" id="rephraseBtn">Rephrase question</button><button class="btn primary hidden" id="continueBtn">Continue</button></div><pre class="debug hidden" id="debugPanel"></pre></section>
 <section class="card hidden state" id="processingView"><div class="spinner"></div><h2 id="processingTitle">Securing your Audio Interview</h2><p id="processingText">Your answers are complete. CLARITY is securing the candidate recording and preparing the Workspace result.</p><div class="status-line" style="justify-content:center"><span class="pill" id="processingUploadPill">Audio upload pending</span></div><div class="preflight-actions"><button class="btn secondary hidden" id="retryUploadBtn">Retry processing</button></div></section>
 <section class="card hidden state" id="completedView"><div style="font-size:42px;color:var(--ok)">✓</div><h2 id="completedTitle">Interview completed</h2><p id="completedText">Thank you. The customer will receive the structured result and report in CLARITY Workspace.</p></section>
-<section class="card hidden state" id="errorView"><div class="error" style="font-size:40px">!</div><h2 id="errorTitle">Audio Interview interrupted</h2><p id="errorText"></p><button class="btn secondary" id="retryBtn">Try again</button></section></main><audio id="remoteAudio" autoplay></audio>
+<section class="card hidden state" id="errorView"><div class="error" style="font-size:40px">!</div><h2 id="errorTitle">Audio Interview interrupted</h2><p id="errorText"></p><button class="btn secondary" id="retryBtn">Try again</button></section></main><audio autoplay="" id="remoteAudio"></audio>
 <script>
-const CHANNEL='CLARITY_INTERVIEW_V2';const CLIENT_VERSION='1.2.1-i2-branding-parity-final';const API_BASE=location.origin.replace(/\/+$/,'');const MUX_UPLOAD_URL=`${API_BASE}/api/mux-upload`;const MUX_ASSET_URL=`${API_BASE}/api/mux-asset`;const INTRO_PAUSE_MS=900;const NEXT_QUESTION_PAUSE_MS=750;const ANSWER_SETTLE_MS=3200;const TRANSCRIPTION_COMPLETION_TIMEOUT_MS=12000;const QUESTION_DRAIN_FALLBACK_MS=18000;const QUESTION_SPEECH_START_TIMEOUT_MS=12000;const RECORDING_FLUSH_WAIT_MS=240;const MIN_RECORDING_BYTES=1024;const UPLOAD_CHUNK_BYTES=240*1024;const ACTION_TIMEOUT_MS=Object.freeze({preflight:18000,status:25000,audioToken:24000,start:45000,message:65000,finish:90000,retry:90000,audioChunk:90000,audioFinalize:140000,audioUploadStatus:30000});const pending=new Map();let seq=0;let context=null;let current=null;let busy=false;let backendReady=false;let deviceReady=false;let devicePermissionState='unknown';let preflightPromise=null;let backendStatusPromise=null;let backendDegraded=false;let backendPreflightAttemptedAt=0;let manualStart=false;let voiceReady=false;let voicePreparing=false;let voicePreparePromise=null;let voiceLastError=null;let voiceTokenInfo=null;let pc=null,dc=null,micStream=null,micTrack=null,realtimeMicTrack=null,realtimeMicStream=null,recordingMicTrack=null,recordingMicStream=null,remoteAudio=null,mediaRecorder=null,recordChunks=[],recordedBlob=null,recordingStartedAt=0,recordingStopPromise=null,audioContext=null,analyser=null,meterFrame=null,lastQuestion=null,lastTranscript='',processedItems=new Set(),speakingQuestion=false,activeSpeechPurpose='idle',introPendingQuestion=null,completionStarted=false,completionFinalizing=false,completionFinalized=false,uploadId='',uploadResult=null,pollTimer=null,speechDrainTimer=null,speechStartTimer=null,activeSpeechRequestId='',activeSpeechInstructions='',speechAudioStarted=false,speechRetryCount=0,awaitingCandidateAnswer=false,answerSpeechActive=false,answerSegments=[],answerPartial='',answerCommitTimer=null,answerTranscriptionTimer=null,answerTurnId=0;
-const $=id=>document.getElementById(id);const sleep=ms=>new Promise(r=>setTimeout(r,ms));const first=(...v)=>v.find(x=>x!==undefined&&x!==null&&String(x).trim()!=='')||'';const mode=()=>String(context?.runtime?.mode||current?.mode||'audio').toLowerCase();
-const STR={de:{title:'Strukturiertes Audio-Interview',subtitle:'Zehn Hauptfragen mit Gelegenheit für Ergänzungen.',badge:'Sicherer Audio-Ablauf',intro:'Nutzen Sie einen ruhigen Raum und möglichst Kopfhörer. Nach jeder Hauptfrage können Sie Ihre Antwort ergänzen oder ausdrücklich fortfahren.',progress:n=>`${n} von 10 Hauptfragen beantwortet`,main:i=>`Hauptfrage ${i} von 10`,supplement:i=>`Ergänzungsrunde zu Hauptfrage ${i}`,finalOpen:'Abschließende Ergänzung',follow:(i,j)=>`Nachfrage ${i}.${j}`,mic:'Mikrofon',micText:'Wird vor dem Creditverbrauch geprüft.',speech:'Live-Transkript',wait:'Das Interview wartet auf Ihren Start.',startTitle:'Bereit zur Vorbereitung',startText:'Das Interview beginnt erst, wenn Mikrofon und sichere Sprachverbindung bereit sind und Sie unten starten.',start:'Audio-Interview starten',checkMic:'Mikrofon prüfen',prepareVoice:'Sprachverbindung erneut vorbereiten',checkingMic:'Mikrofon wird geprüft …',micPermission:'Mikrofonfreigabe erforderlich',backend:'Backend',repeat:'Frage wiederholen',rephrase:'Verständlicher formulieren',continue:'Weiter zur nächsten Frage',endInterview:'Interview beenden',welcomeVisible:'Willkommen. Der Intervieweinstieg wird vorbereitet.',processingTitle:'Audio-Interview wird gesichert',processingText:'Ihre Antworten sind vollständig. Die Aufnahme wird gesichert und das Workspace-Ergebnis vorbereitet.',processingRetryText:'Ihre Antworten sind vollständig. Die Aufnahme ist im Browser gesichert. Die technische Verarbeitung kann erneut gestartet werden.',retryProcessing:'Verarbeitung erneut versuchen',completedTitle:'Interview abgeschlossen',completedText:'Vielen Dank. Der Kunde erhält das strukturierte Ergebnis und den Bericht im CLARITY Workspace.',errorTitle:'Audio-Interview unterbrochen',retry:'Erneut versuchen',listening:'Bitte antworten Sie jetzt.',transcribing:'Antwort wird transkribiert …',sending:'Antwort wird sicher gespeichert …',speaking:'Die Frage wird gesprochen …',uploading:'Audio wird hochgeladen …',ready:'bereit',device:'Gerät',voice:'Stimme',recording:'Aufnahme',upload:'Upload'},en:{title:'Structured Audio Interview',subtitle:'Ten main questions with an opportunity to add to each answer.',badge:'Secure audio workflow',intro:'Use a quiet room and preferably headphones. After every main question, you can add to your answer or explicitly continue.',progress:n=>`${n} of 10 main questions answered`,main:i=>`Main question ${i} of 10`,supplement:i=>`Supplement round for main question ${i}`,finalOpen:'Final addition',follow:(i,j)=>`Follow-up ${i}.${j}`,mic:'Microphone',micText:'Checked before credit consumption.',speech:'Live transcript',wait:'The Interview waits for your start.',startTitle:'Ready to prepare',startText:'The Interview starts only after microphone and secure voice transport are ready and you start below.',start:'Start Audio Interview',checkMic:'Check microphone',prepareVoice:'Prepare voice connection again',checkingMic:'Checking microphone …',micPermission:'Microphone permission required',backend:'Backend',repeat:'Repeat question',rephrase:'Rephrase more clearly',continue:'Continue to next question',endInterview:'End Interview',welcomeVisible:'Welcome. The Interview introduction is being prepared.',processingTitle:'Securing your Audio Interview',processingText:'Your answers are complete. The recording is being secured and the Workspace result prepared.',processingRetryText:'Your answers are complete. The recording is secured in this browser. The technical processing can be retried.',retryProcessing:'Retry processing',completedTitle:'Interview completed',completedText:'Thank you. The customer will receive the structured result and report in CLARITY Workspace.',errorTitle:'Audio Interview interrupted',retry:'Try again',listening:'Please answer now.',transcribing:'Transcribing your answer …',sending:'Saving your answer securely …',speaking:'The question is being spoken …',uploading:'Uploading audio …',ready:'ready',device:'Device',voice:'Voice',recording:'Recording',upload:'Upload'}};function L(){return STR[String(context?.locale||'en').toLowerCase().startsWith('de')?'de':'en']}
-function send(type,payload={}){parent.postMessage({channel:CHANNEL,type,payload},location.origin)}function height(){send('HEIGHT',{height:Math.max(760,document.documentElement.scrollHeight+24)})}function show(id){['readyView','processingView','completedView','errorView'].forEach(x=>$(x).classList.toggle('hidden',x!==id));height()}function setPill(id,label,state=''){const el=$(id);el.textContent=label;el.className=`pill ${state}`.trim()}function debug(extra={}){if(context?.debug!==true)return;const data={clientVersion:CLIENT_VERSION,uid:context?.uid,sessionId:current?.sessionId,phase:current?.phase,answeredCount:current?.answeredCount,followUpCount:current?.followUpCount,mode:current?.mode,backendReady,deviceReady,devicePermissionState,voiceReady,voicePreparing,voiceError:voiceLastError?{code:voiceLastError.code,message:voiceLastError.message}:null,realtimeState:pc?.connectionState,dataChannel:dc?.readyState,recordingState:mediaRecorder?.state,uploadId,...extra};$('debugPanel').textContent=JSON.stringify(data,null,2);$('debugPanel').classList.remove('hidden');height()}
-function branding(){return context?.branding||context?.runtime?.brandingSnapshot||current?.branding||{}}
-function normalizedBrandingMode(){const b=branding(),raw=String(first(b.brandingMode,b.requestedBrandingMode,b.mode,'clarity')).toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');if(['co_branding','cobranding','co_branded','cobranded','customer','recruitment'].includes(raw))return'cobranded';if(['white_label','whitelabel','white_branded'].includes(raw))return'whitelabel';return'clarity'}
-function spokenInterviewBrand(){
-  const b=branding(),bm=normalizedBrandingMode(),customerMode=bm==='whitelabel'||bm==='cobranded'||b.whiteLabelEnabled===true||b.coBrandingEnabled===true;
-  if(!customerMode)return'CLARITY';
-  return String(first(b.companyName,b.clientName,b.brandName,b.reportBrandName,b.legalCompanyName,context?.runtime?.companyName,context?.runtime?.customerCompanyName,'')).trim().slice(0,120)||'CLARITY'
+const CHANNEL = 'CLARITY_INTERVIEW_V2';
+const CLIENT_VERSION = '1.3.1-i4-3-1-release-pinned-recorders';
+const API_BASE = location.origin.replace(/\/+$/, '');
+const MUX_UPLOAD_URL = `${API_BASE}/api/mux-upload`;
+const MUX_ASSET_URL = `${API_BASE}/api/mux-asset`;
+const INTRO_PAUSE_MS = 900;
+const NEXT_QUESTION_PAUSE_MS = 750;
+const ANSWER_SETTLE_MS = 4000;
+const ANSWER_FINAL_GUARD_MS = 700;
+const ANSWER_INPUT_WARMUP_MS = 500;
+const ANSWER_INPUT_READY_TIMEOUT_MS = 6500;
+const REALTIME_UPLINK_WARMUP_MS = 320;
+const TRANSCRIPTION_COMPLETION_TIMEOUT_MS = 12000;
+const QUESTION_DRAIN_FALLBACK_MS = 18000;
+const QUESTION_SPEECH_START_TIMEOUT_MS = 12000;
+const RECORDING_FLUSH_WAIT_MS = 240;
+const MIN_RECORDING_BYTES = 1024;
+const UPLOAD_CHUNK_BYTES = 240 * 1024;
+const ACTION_TIMEOUT_MS = Object.freeze({ preflight: 18000, status: 25000, audioToken: 24000, start: 45000, message: 65000, finish: 90000, retry: 90000, audioChunk: 90000, audioFinalize: 140000, audioUploadStatus: 30000 });
+const pending = new Map();
+let seq = 0;
+let context = null;
+let current = null;
+let busy = false;
+let backendReady = false;
+let deviceReady = false;
+let devicePermissionState = 'unknown';
+let preflightPromise = null;
+let backendStatusPromise = null;
+let backendDegraded = false;
+let backendPreflightAttemptedAt = 0;
+let manualStart = false;
+let voiceReady = false;
+let voicePreparing = false;
+let voicePreparePromise = null;
+let voiceLastError = null;
+let voiceTokenInfo = null;
+let pc = null, dc = null, micStream = null, micTrack = null, realtimeMicTrack = null, realtimeMicStream = null, recordingMicTrack = null, recordingVideoTrack = null, recordingMicStream = null, remoteAudio = null, mediaRecorder = null, recordChunks = [], recordedBlob = null, recordingStartedAt = 0, recordingStopPromise = null, audioContext = null, recordingAudioContext = null, recordingMixDestination = null, recordingMicSourceNode = null, recordingRemoteSourceNode = null, recordingRemoteStream = null, recordingMixedAudioTrack = null, analyser = null, meterFrame = null, lastQuestion = null, lastTranscript = '', lastCommittedTranscript = '', processedItems = new Set(), speakingQuestion = false, activeSpeechPurpose = 'idle', introPendingQuestion = null, completionStarted = false, completionFinalizing = false, completionFinalized = false, uploadId = '', uploadResult = null, pollTimer = null, speechDrainTimer = null, speechStartTimer = null, activeSpeechRequestId = '', activeSpeechInstructions = '', speechAudioStarted = false, speechRetryCount = 0, awaitingCandidateAnswer = false, answerSpeechActive = false, answerSegments = [], answerPartial = '', answerCommitTimer = null, answerFinalGuardTimer = null, answerTranscriptionTimer = null, answerTurnId = 0, answerGateOpenedAt = 0, answerInputOpening = false, lastSpeechStartedAt = 0, lastSpeechStoppedAt = 0, lastSemanticActivityAt = 0, answerTranscriptRevision = 0, answerCompletionReady = false, lastRealtimeInputAt = 0, localSignalStartedAt = 0, voiceRecoveryTurnId = -1, voiceRecoveryPromise = null, lastVoiceRecoveryAt = 0;
+let realtimeAudioSender = null;
+let realtimeUplinkEnabled = false;
+let realtimeUplinkPromise = Promise.resolve(false);
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const first = (...v) => v.find(x => x !== undefined && x !== null && String(x).trim() !== '') || '';
+const mode = () => String(context?.runtime?.mode || current?.mode || 'audio').toLowerCase();
+
+function stripTranscriptPromptLeakage(value = '') {
+    return String(value || '')
+        .replace(/professional\s+structured\s+job\s+interview[.,;:]?\s*preserve\s+names[,]?\s*role\s+terminology[,]?\s*metrics[,]?\s*(?:and|&)\s*percentages[.!]?/giu, ' ')
+        .replace(/preserve\s+names[,]?\s*role\s+terminology[,]?\s*metrics[,]?\s*(?:and|&)\s*percentages[.!]?/giu, ' ')
+        .replace(/professionelles?\s+strukturiertes?\s+(?:bewerbungs|job)[-\s]?interview[.,;:]?\s*(?:bewahre|erhalte)\s+namen[,]?\s*rollen(?:bezeichnungen|terminologie)?[,]?\s*kennzahlen[,]?\s*(?:und|&)\s*prozents[aä]tze[.!]?/giu, ' ')
+        .replace(/\s+/g, ' ')
+        .replace(/\s+([,.;!?])/g, '$1')
+        .trim();
 }
-function welcomeSpeechText(){
-  const name=spokenInterviewBrand(),isClarity=name.toUpperCase()==='CLARITY',de=String(context?.locale||'en').toLowerCase().startsWith('de');
-  if(de)return`${isClarity?'Willkommen zu Ihrem CLARITY Audio-Interview.':`Willkommen zu Ihrem Audio-Interview im Auftrag von ${name}.`} Ihnen werden zehn Hauptfragen gestellt. Nach jeder Antwort erhalten Sie die Möglichkeit, noch etwas zu ergänzen. Wenn Ihre Antwort vollständig ist, können Sie in der Ergänzungsrunde einfach sagen: Weiter zur nächsten Frage. Sie können außerdem jederzeit um eine Wiederholung oder eine verständlichere Formulierung bitten. Wir beginnen gleich mit der ersten Frage.`;
-  return`${isClarity?'Welcome to your CLARITY Audio Interview.':`Welcome to your Audio Interview on behalf of ${name}.`} You will be asked ten main questions. After each answer, you will have an opportunity to add anything else. During the supplement round, you can simply say: Continue to the next question. You can also ask at any time for the question to be repeated or phrased more clearly. We will begin with the first question in a moment.`;
+function transcriptWordCount(value = '') {
+    return (stripTranscriptPromptLeakage(value).match(/[\p{L}\p{N}][\p{L}\p{N}'’\-]*/gu) || []).length;
 }
-function welcomeVisibleText(){const name=spokenInterviewBrand(),de=String(context?.locale||'en').toLowerCase().startsWith('de');return de?`Willkommen zum Audio-Interview${name.toUpperCase()==='CLARITY'?'':` für ${name}`}.`:`Welcome to the Audio Interview${name.toUpperCase()==='CLARITY'?'':` for ${name}`}.`}
-function currentTurnType(){return String(lastQuestion?.turnType||current?.currentQuestion?.turnType||'main_question').toLowerCase()}
-function isSupplementTurn(){return['supplement_prompt','final_open_prompt'].includes(currentTurnType())}
-function normalizeVoiceCommand(value=''){
-  const source=String(value||'').toLowerCase().replace(/[.!?,;:]+/g,' ').replace(/\s+/g,' ').trim();if(!source)return'';
-  const de=String(context?.locale||'en').toLowerCase().startsWith('de');
-  const repeat=de?[/^(bitte )?(wiederholen|frage wiederholen|noch einmal|nochmal)$/i,/\b(können sie die frage wiederholen|bitte wiederholen)\b/i]:[/^(please )?(repeat|repeat question|again)$/i,/\b(could you repeat the question|please repeat)\b/i];
-  const rephrase=de?[/^(anders formulieren|verständlicher formulieren|einfacher formulieren)$/i,/\b(ich habe die frage nicht verstanden|bitte anders formulieren)\b/i]:[/^(rephrase|simplify|phrase it differently)$/i,/\b(i did not understand the question|please rephrase)\b/i];
-  const cont=de?[/^(weiter|weiter bitte|nächste frage|zur nächsten frage|ich bin fertig|keine ergänzung|nichts mehr)$/i,/\b(weiter zur nächsten frage|wir können fortfahren|keine weitere ergänzung)\b/i]:[/^(continue|next|next question|move on|i am finished|nothing else|no addition)$/i,/\b(continue with the next question|we can continue|no further addition)\b/i];
-  if(repeat.some(pattern=>pattern.test(source)))return'repeat';if(rephrase.some(pattern=>pattern.test(source)))return'rephrase';if(cont.some(pattern=>pattern.test(source)))return'continue';return'';
+function candidateTranscriptQuality(value = '') {
+    const transcript = stripTranscriptPromptLeakage(value);
+    const wordCount = transcriptWordCount(transcript);
+    const optional = isSupplementTurn();
+    const command = normalizeVoiceCommand(transcript);
+    const ok = Boolean(transcript) && (optional ? Boolean(command) || wordCount >= 1 : wordCount >= 3);
+    return { ok, transcript, wordCount, optional, command };
+}
+function showIncompleteCaptureNotice() {
+    const de = String(context?.locale || 'en').toLowerCase().startsWith('de');
+    $('transcriptText').textContent = de
+        ? 'Ihre Antwort wurde akustisch nicht vollständig erfasst. Bitte wiederholen Sie die Antwort vollständig.'
+        : 'Your answer was not captured completely. Please repeat the full answer.';
+    setPill('realtimePill', `${L().voice}: listening`, 'warn');
+}
+function resetIncompleteCaptureForRetry() {
+    answerSegments = [];
+    answerPartial = '';
+    processedItems.clear();
+    lastTranscript = '';
+    lastCommittedTranscript = '';
+    answerTranscriptRevision = Number(answerTranscriptRevision || 0) + 1;
+    lastSemanticActivityAt = Date.now();
+    awaitingCandidateAnswer = true;
+    setCandidateInputEnabled(true);
+    showIncompleteCaptureNotice();
+    updateTurnActions();
+}
+async function waitForRemoteRecordingStream(timeoutMs = 6000) {
+    const started = Date.now();
+    while ((!recordingRemoteStream || !recordingRemoteStream.getAudioTracks().some(track => track.readyState === 'live')) && Date.now() - started < timeoutMs)
+        await sleep(80);
+    if (!recordingRemoteStream || !recordingRemoteStream.getAudioTracks().some(track => track.readyState === 'live'))
+        throw makeStageError('INTERVIEW_MIXED_RECORDING_AI_TRACK_MISSING', 'The AI interviewer audio track was not available for the full Interview recording.');
+    return recordingRemoteStream;
+}
+async function ensureRecordingAudioGraph() {
+    if (!recordingMicTrack || recordingMicTrack.readyState !== 'live')
+        throw makeStageError('INTERVIEW_MIXED_RECORDING_MIC_TRACK_MISSING', 'The participant microphone track is not available for the full Interview recording.');
+    await waitForRemoteRecordingStream();
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextCtor)
+        throw makeStageError('INTERVIEW_MIXED_RECORDING_AUDIO_CONTEXT_UNSUPPORTED', 'This browser cannot create the full Interview audio mix.');
+    if (!recordingAudioContext || recordingAudioContext.state === 'closed')
+        recordingAudioContext = new AudioContextCtor();
+    if (recordingAudioContext.state === 'suspended')
+        await recordingAudioContext.resume();
+    if (!recordingMixDestination)
+        recordingMixDestination = recordingAudioContext.createMediaStreamDestination();
+    try { recordingMicSourceNode?.disconnect(); } catch (_) { }
+    recordingMicSourceNode = recordingAudioContext.createMediaStreamSource(new MediaStream([recordingMicTrack]));
+    recordingMicSourceNode.connect(recordingMixDestination);
+    try { recordingRemoteSourceNode?.disconnect(); } catch (_) { }
+    recordingRemoteSourceNode = recordingAudioContext.createMediaStreamSource(recordingRemoteStream);
+    recordingRemoteSourceNode.connect(recordingMixDestination);
+    recordingMixedAudioTrack = recordingMixDestination.stream.getAudioTracks()[0] || null;
+    if (!recordingMixedAudioTrack)
+        throw makeStageError('INTERVIEW_MIXED_RECORDING_OUTPUT_TRACK_MISSING', 'The browser did not create the mixed Interview audio track.');
+    return recordingMixedAudioTrack;
+}
+function attachRemoteRecordingStream(stream) {
+    recordingRemoteStream = stream || null;
+    if (!recordingAudioContext || !recordingMixDestination || !recordingRemoteStream)
+        return;
+    try { recordingRemoteSourceNode?.disconnect(); } catch (_) { }
+    try {
+        recordingRemoteSourceNode = recordingAudioContext.createMediaStreamSource(recordingRemoteStream);
+        recordingRemoteSourceNode.connect(recordingMixDestination);
+    }
+    catch (error) {
+        console.error('[CLARITY INTERVIEW MIXED RECORDING] remote audio routing failed', { code: error?.code || '', message: error?.message || String(error), clientVersion: CLIENT_VERSION });
+    }
+}
+function closeRecordingAudioGraph() {
+    try { recordingMicSourceNode?.disconnect(); } catch (_) { }
+    try { recordingRemoteSourceNode?.disconnect(); } catch (_) { }
+    try { recordingMixedAudioTrack?.stop(); } catch (_) { }
+    try { if (recordingAudioContext && recordingAudioContext.state !== 'closed') recordingAudioContext.close(); } catch (_) { }
+    recordingAudioContext = null;
+    recordingMixDestination = null;
+    recordingMicSourceNode = null;
+    recordingRemoteSourceNode = null;
+    recordingRemoteStream = null;
+    recordingMixedAudioTrack = null;
+}
+
+const STR = { de: { title: 'Strukturiertes Audio-Interview', subtitle: 'Zehn Hauptfragen mit Gelegenheit für Ergänzungen.', badge: 'Sicherer Audio-Ablauf', intro: 'Sprechen Sie so lange wie nötig. Das Interview wechselt nicht allein wegen einer Pause. Wenn Ihre Antwort vollständig ist, sagen Sie „Weiter“ oder klicken Sie „Antwort abschließen“.', progress: n => `${n} von 10 Hauptfragen beantwortet`, main: i => `Hauptfrage ${i} von 10`, supplement: i => `Ergänzungsrunde zu Hauptfrage ${i}`, finalOpen: 'Abschließende Ergänzung', follow: (i, j) => `Nachfrage ${i}.${j}`, mic: 'Mikrofon', micText: 'Wird vor dem Creditverbrauch geprüft.', speech: 'Live-Transkript', wait: 'Das Interview wartet auf Ihren Start.', startTitle: 'Bereit zur Vorbereitung', startText: 'Das Interview beginnt erst, wenn Mikrofon und sichere Sprachverbindung bereit sind und Sie unten starten.', start: 'Audio-Interview starten', checkMic: 'Mikrofon prüfen', prepareVoice: 'Sprachverbindung erneut vorbereiten', checkingMic: 'Mikrofon wird geprüft …', micPermission: 'Mikrofonfreigabe erforderlich', backend: 'Backend', repeat: 'Frage wiederholen', rephrase: 'Verständlicher formulieren', finishAnswer: 'Antwort abschließen', completionReady: 'Antwort erfasst. Sie können weiter ergänzen oder „Weiter“ sagen beziehungsweise „Antwort abschließen“ klicken.', continue: 'Weiter zur nächsten Frage', endInterview: 'Interview beenden', welcomeVisible: 'Willkommen. Der Intervieweinstieg wird vorbereitet.', processingTitle: 'Audio-Interview wird gesichert', processingText: 'Ihre Antworten sind vollständig. Die Aufnahme wird gesichert und das Workspace-Ergebnis vorbereitet.', processingRetryText: 'Ihre Antworten sind vollständig. Die Aufnahme ist im Browser gesichert. Die technische Verarbeitung kann erneut gestartet werden.', retryProcessing: 'Verarbeitung erneut versuchen', completedTitle: 'Interview abgeschlossen', completedText: 'Vielen Dank. Der Kunde erhält das strukturierte Ergebnis und den Bericht im CLARITY Workspace.', errorTitle: 'Audio-Interview unterbrochen', retry: 'Erneut versuchen', listening: 'Bitte antworten Sie jetzt.', transcribing: 'Antwort wird transkribiert …', sending: 'Antwort wird sicher gespeichert …', speaking: 'Die Frage wird gesprochen …', uploading: 'Audio wird hochgeladen …', ready: 'bereit', device: 'Gerät', voice: 'Stimme', recording: 'Aufnahme', upload: 'Upload' }, en: { title: 'Structured Audio Interview', subtitle: 'Ten main questions with an opportunity to add to each answer.', badge: 'Secure audio workflow', intro: 'Speak for as long as you need. The Interview will not move on because of a pause. When your answer is complete, say “Continue” or click “Finish answer”.', progress: n => `${n} of 10 main questions answered`, main: i => `Main question ${i} of 10`, supplement: i => `Supplement round for main question ${i}`, finalOpen: 'Final addition', follow: (i, j) => `Follow-up ${i}.${j}`, mic: 'Microphone', micText: 'Checked before credit consumption.', speech: 'Live transcript', wait: 'The Interview waits for your start.', startTitle: 'Ready to prepare', startText: 'The Interview starts only after microphone and secure voice transport are ready and you start below.', start: 'Start Audio Interview', checkMic: 'Check microphone', prepareVoice: 'Prepare voice connection again', checkingMic: 'Checking microphone …', micPermission: 'Microphone permission required', backend: 'Backend', repeat: 'Repeat question', rephrase: 'Rephrase more clearly', finishAnswer: 'Finish answer', completionReady: 'Answer captured. Continue speaking to add more, or say “Continue” / click “Finish answer”.', continue: 'Continue to next question', endInterview: 'End Interview', welcomeVisible: 'Welcome. The Interview introduction is being prepared.', processingTitle: 'Securing your Audio Interview', processingText: 'Your answers are complete. The recording is being secured and the Workspace result prepared.', processingRetryText: 'Your answers are complete. The recording is secured in this browser. The technical processing can be retried.', retryProcessing: 'Retry processing', completedTitle: 'Interview completed', completedText: 'Thank you. The customer will receive the structured result and report in CLARITY Workspace.', errorTitle: 'Audio Interview interrupted', retry: 'Try again', listening: 'Please answer now.', transcribing: 'Transcribing your answer …', sending: 'Saving your answer securely …', speaking: 'The question is being spoken …', uploading: 'Uploading audio …', ready: 'ready', device: 'Device', voice: 'Voice', recording: 'Recording', upload: 'Upload' } };
+function L() { return STR[String(context?.locale || 'en').toLowerCase().startsWith('de') ? 'de' : 'en']; }
+function send(type, payload = {}) { parent.postMessage({ channel: CHANNEL, type, payload }, location.origin); }
+function height() { send('HEIGHT', { height: Math.max(760, document.documentElement.scrollHeight + 24) }); }
+function show(id) { ['readyView', 'processingView', 'completedView', 'errorView'].forEach(x => $(x).classList.toggle('hidden', x !== id)); height(); }
+function setPill(id, label, state = '') { const el = $(id); el.textContent = label; el.className = `pill ${state}`.trim(); }
+function debug(extra = {}) { if (context?.debug !== true)
+    return; const data = { clientVersion: CLIENT_VERSION, uid: context?.uid, sessionId: current?.sessionId, phase: current?.phase, answeredCount: current?.answeredCount, followUpCount: current?.followUpCount, mode: current?.mode, backendReady, deviceReady, devicePermissionState, voiceReady, voicePreparing, voiceError: voiceLastError ? { code: voiceLastError.code, message: voiceLastError.message } : null, realtimeState: pc?.connectionState, dataChannel: dc?.readyState, recordingState: mediaRecorder?.state, uploadId, ...extra }; $('debugPanel').textContent = JSON.stringify(data, null, 2); $('debugPanel').classList.remove('hidden'); height(); }
+function branding() { return context?.branding || context?.runtime?.brandingSnapshot || current?.branding || {}; }
+function normalizedBrandingMode() { const b = branding(), raw = String(first(b.brandingMode, b.requestedBrandingMode, b.mode, 'clarity')).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''); if (['co_branding', 'cobranding', 'co_branded', 'cobranded', 'customer', 'recruitment'].includes(raw))
+    return 'cobranded'; if (['white_label', 'whitelabel', 'white_branded'].includes(raw))
+    return 'whitelabel'; return 'clarity'; }
+function spokenInterviewBrand() {
+    const b = branding(), bm = normalizedBrandingMode(), customerMode = bm === 'whitelabel' || bm === 'cobranded' || b.whiteLabelEnabled === true || b.coBrandingEnabled === true;
+    if (!customerMode)
+        return 'CLARITY';
+    return String(first(b.companyName, b.clientName, b.brandName, b.reportBrandName, b.legalCompanyName, context?.runtime?.companyName, context?.runtime?.customerCompanyName, '')).trim().slice(0, 120) || 'CLARITY';
+}
+function welcomeSpeechText() {
+    const name = spokenInterviewBrand(), isClarity = name.toUpperCase() === 'CLARITY', de = String(context?.locale || 'en').toLowerCase().startsWith('de');
+    if (de)
+        return `${isClarity ? 'Willkommen zu Ihrem CLARITY Audio-Interview.' : `Willkommen zu Ihrem Audio-Interview im Auftrag von ${name}.`} Ihnen werden zehn Hauptfragen gestellt. Sie können jede Antwort ohne Zeitdruck und mit Denkpausen geben. Das Interview wechselt erst weiter, wenn Sie ausdrücklich „Weiter“ sagen oder „Antwort abschließen“ klicken. Sie können außerdem jederzeit um eine Wiederholung oder eine verständlichere Formulierung bitten. Wir beginnen gleich mit der ersten Frage.`;
+    return `${isClarity ? 'Welcome to your CLARITY Audio Interview.' : `Welcome to your Audio Interview on behalf of ${name}.`} You will be asked ten main questions. You can answer without time pressure and take thinking pauses. The Interview moves on only after you explicitly say “Continue” or click “Finish answer”. You can also ask at any time for the question to be repeated or phrased more clearly. We will begin with the first question in a moment.`;
+}
+function welcomeVisibleText() { const name = spokenInterviewBrand(), de = String(context?.locale || 'en').toLowerCase().startsWith('de'); return de ? `Willkommen zum Audio-Interview${name.toUpperCase() === 'CLARITY' ? '' : ` für ${name}`}.` : `Welcome to the Audio Interview${name.toUpperCase() === 'CLARITY' ? '' : ` for ${name}`}.`; }
+function currentTurnType() { return String(lastQuestion?.turnType || current?.currentQuestion?.turnType || 'main_question').toLowerCase(); }
+function isSupplementTurn() { return ['supplement_prompt', 'final_open_prompt'].includes(currentTurnType()); }
+const FLOW_COMMANDS = Object.freeze({
+ en:{continue:['continue','next question','move on','answer complete','i am finished','that is all','nothing else'],repeat:['repeat','repeat question','please repeat'],rephrase:['rephrase','simplify','phrase it differently']},
+ de:{continue:['weiter','nächste frage','zur nächsten frage','antwort abschließen','ich bin fertig','das war alles','nichts mehr'],repeat:['wiederholen','frage wiederholen','noch einmal','nochmal'],rephrase:['anders formulieren','verständlicher formulieren','einfacher formulieren']},
+ es:{continue:['continuar','siguiente pregunta','pasar a la siguiente pregunta','respuesta terminada','he terminado','eso es todo','nada más'],repeat:['repetir','repita la pregunta','otra vez'],rephrase:['reformular','formular de otra manera','más sencillo']},
+ fr:{continue:['continuer','question suivante','passer à la question suivante','réponse terminée','j ai terminé','c est tout','rien à ajouter'],repeat:['répéter','répétez la question','encore une fois'],rephrase:['reformuler','formuler autrement','plus simplement']},
+ it:{continue:['continua','domanda successiva','passa alla domanda successiva','risposta completata','ho finito','è tutto','nient altro'],repeat:['ripeti','ripeti la domanda','di nuovo'],rephrase:['riformula','formula diversamente','più semplice']},
+ pt:{continue:['continuar','próxima pergunta','passar para a próxima pergunta','resposta concluída','terminei','é tudo','nada mais'],repeat:['repetir','repita a pergunta','novamente'],rephrase:['reformular','formular de outra forma','mais simples']},
+ nl:{continue:['doorgaan','volgende vraag','ga naar de volgende vraag','antwoord klaar','ik ben klaar','dat was alles','niets meer'],repeat:['herhalen','herhaal de vraag','nog een keer'],rephrase:['anders formuleren','eenvoudiger formuleren','verduidelijken']},
+ pl:{continue:['dalej','następne pytanie','przejdź do następnego pytania','odpowiedź zakończona','skończyłem','skończyłam','to wszystko','nic więcej'],repeat:['powtórz','powtórz pytanie','jeszcze raz'],rephrase:['przeformułuj','powiedz prościej','sformułuj inaczej']},
+ tr:{continue:['devam','sonraki soru','sonraki soruya geç','cevabım tamam','bitirdim','hepsi bu','başka bir şey yok'],repeat:['tekrar et','soruyu tekrar et','bir daha'],rephrase:['yeniden ifade et','daha basit sor','farklı ifade et']},
+ ar:{continue:['تابع','السؤال التالي','انتقل إلى السؤال التالي','اكتملت الإجابة','انتهيت','هذا كل شيء','لا شيء آخر'],repeat:['أعد','أعد السؤال','كرر السؤال'],rephrase:['أعد الصياغة','صغ السؤال بطريقة أبسط','بعبارة أخرى']}
+});
+const FLOW_COPY=Object.freeze({
+ en:{finish:'Finish answer',ready:'Answer captured. Continue speaking to add more, or say “Continue” / click “Finish answer”.',command:'Continue'},
+ de:{finish:'Antwort abschließen',ready:'Antwort erfasst. Sie können weiter ergänzen oder „Weiter“ sagen beziehungsweise „Antwort abschließen“ klicken.',command:'Weiter'},
+ es:{finish:'Finalizar respuesta',ready:'Respuesta capturada. Puede seguir hablando o decir «Continuar» / pulsar «Finalizar respuesta».',command:'Continuar'},
+ fr:{finish:'Terminer la réponse',ready:'Réponse capturée. Vous pouvez continuer ou dire «Continuer» / cliquer sur «Terminer la réponse».',command:'Continuer'},
+ it:{finish:'Concludi risposta',ready:'Risposta acquisita. Può continuare oppure dire «Continua» / fare clic su «Concludi risposta».',command:'Continua'},
+ pt:{finish:'Concluir resposta',ready:'Resposta capturada. Pode continuar ou dizer «Continuar» / clicar em «Concluir resposta».',command:'Continuar'},
+ nl:{finish:'Antwoord afronden',ready:'Antwoord vastgelegd. U kunt verder spreken of “Doorgaan” zeggen / op “Antwoord afronden” klikken.',command:'Doorgaan'},
+ pl:{finish:'Zakończ odpowiedź',ready:'Odpowiedź została zarejestrowana. Możesz mówić dalej albo powiedzieć „Dalej” / kliknąć „Zakończ odpowiedź”.',command:'Dalej'},
+ tr:{finish:'Cevabı tamamla',ready:'Yanıt kaydedildi. Devam edebilir veya “Devam” diyebilir / “Cevabı tamamla” düğmesine tıklayabilirsiniz.',command:'Devam'},
+ ar:{finish:'إنهاء الإجابة',ready:'تم التقاط الإجابة. يمكنك متابعة الحديث أو قول «تابع» / الضغط على «إنهاء الإجابة».',command:'تابع'}
+});
+function flowLanguage(){const raw=String(context?.locale||context?.runtime?.participantLang||context?.runtime?.userCommLang||'en').toLowerCase().split(/[-_]/)[0];return FLOW_COMMANDS[raw]?raw:'en'}
+function flowCopy(){return FLOW_COPY[flowLanguage()]||FLOW_COPY.en}
+function normalizeCommandText(value=''){return String(value||'').normalize('NFKD').toLowerCase().replace(/[\u0300-\u036f]/g,'').replace(/[.!?,;:،؛]+/g,' ').replace(/\s+/g,' ').trim()}
+function commandPhrases(intent){const lang=flowLanguage();return[...new Set([...(FLOW_COMMANDS[lang]?.[intent]||[]),...(lang==='en'?[]:(FLOW_COMMANDS.en[intent]||[]))])]}
+function normalizeVoiceCommand(value=''){const source=normalizeCommandText(value);if(!source)return'';for(const intent of['repeat','rephrase','continue'])if(commandPhrases(intent).some(phrase=>normalizeCommandText(phrase)===source))return intent;return''}
+function escapeRegExp(value=''){return String(value).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}
+function extractTrailingVoiceCommand(value=''){const original=String(value||'').trim();if(!original)return{intent:'',text:original};for(const intent of['repeat','rephrase','continue'])for(const phrase of commandPhrases(intent).sort((a,b)=>b.length-a.length)){const pattern=new RegExp(`(?:^|[.!?;:,،؛]\\s*)${escapeRegExp(phrase)}[.!?;:,،؛\\s]*$`,'iu');if(pattern.test(original))return{intent,text:original.replace(pattern,' ').replace(/\s+/g,' ').trim()}}return{intent:'',text:original}}
+function voiceCommandIntentForCurrentTurn(value=''){const command=['repeat','rephrase','continue'].includes(value)?value:normalizeVoiceCommand(value);if(command==='repeat'||command==='rephrase')return command;if(command==='continue'){if(currentTurnType()==='main_question')return'answer_complete';if(currentTurnType()==='final_open_prompt')return'end_interview';if(currentTurnType()==='supplement_prompt')return'continue'}return''}
+function commitRecognizedVoiceCommand(source='transcription_completed'){
+ if(!awaitingCandidateAnswer||busy||speakingQuestion||completionStarted)return false;
+ const lastIndex=answerSegments.length-1;const latest=String(answerPartial||(lastIndex>=0?answerSegments[lastIndex]:'')||'').trim();const extracted=extractTrailingVoiceCommand(latest);const intent=voiceCommandIntentForCurrentTurn(extracted.intent||latest);if(!intent)return false;
+ if(answerPartial)answerPartial=extracted.text;else if(lastIndex>=0){if(extracted.text)answerSegments[lastIndex]=extracted.text;else answerSegments.splice(lastIndex,1)}
+ const transcript=combinedAnswerTranscript();
+ if(intent==='answer_complete'){
+  const quality=candidateTranscriptQuality(transcript);if(!quality.ok){showIncompleteCaptureNotice();updateTurnActions();return true}
+  awaitingCandidateAnswer=false;answerSpeechActive=false;answerCompletionReady=false;clearAnswerCommitTimer();clearAnswerFinalGuardTimer();clearAnswerTranscriptionTimer();if(typeof clearAnswerIdleTimer==='function')clearAnswerIdleTimer();setCandidateInputEnabled(false);
+  const committedTranscript=stripPreviousAnswerTail(quality.transcript);lastCommittedTranscript=committedTranscript;
+  console.info('[CLARITY INTERVIEW EXPLICIT COMPLETION] voice command confirmed answer',{sessionId:current?.sessionId||'',answerTurnId,source,wordCount:quality.wordCount,clientVersion:CLIENT_VERSION});
+  void submitTranscript(committedTranscript,{answerTurnId,segmentCount:answerSegments.length,commitSource:source,explicitCompletion:true,completionMethod:'voice_command',turnGate:'explicit_candidate_confirmation_v1'},'answer_complete');return true
+ }
+ if(intent==='end_interview'){
+  awaitingCandidateAnswer=false;answerSpeechActive=false;answerCompletionReady=false;clearAnswerCommitTimer();clearAnswerFinalGuardTimer();clearAnswerTranscriptionTimer();if(typeof clearAnswerIdleTimer==='function')clearAnswerIdleTimer();setCandidateInputEnabled(false);
+  void submitTranscript(transcript,{answerTurnId,segmentCount:answerSegments.length,commitSource:source,explicitCompletion:true,completionMethod:'voice_command'},transcript?'':'end_interview');return true
+ }
+ resetAnswerCapture({disableInput:true});void submitTranscript('',{commitSource:source},intent);return true
 }
 function updateTurnActions(){
-  const supplement=isSupplementTurn(),finalTurn=currentTurnType()==='final_open_prompt';
-  $('continueBtn').classList.toggle('hidden',!supplement||speakingQuestion||busy||!awaitingCandidateAnswer);
-  $('continueBtn').textContent=finalTurn?L().endInterview:L().continue;
-  $('continueBtn').classList.toggle('final',finalTurn);
-  $('repeatBtn').classList.toggle('hidden',speakingQuestion||busy);
-  $('rephraseBtn').classList.toggle('hidden',speakingQuestion||busy||finalTurn);
+ const turnType=currentTurnType(),mainTurn=turnType==='main_question',finalTurn=turnType==='final_open_prompt',legacySupplement=turnType==='supplement_prompt';const quality=candidateTranscriptQuality(combinedAnswerTranscript());const visible=awaitingCandidateAnswer&&!speakingQuestion&&!busy&&(mainTurn||finalTurn||legacySupplement);
+ $('continueBtn').classList.toggle('hidden',!visible);$('continueBtn').disabled=mainTurn&&!quality.ok;$('continueBtn').textContent=finalTurn?L().endInterview:mainTurn?(L().finishAnswer||flowCopy().finish):L().continue;$('continueBtn').classList.toggle('final',finalTurn);$('repeatBtn').classList.toggle('hidden',speakingQuestion||busy);$('rephraseBtn').classList.toggle('hidden',speakingQuestion||busy||finalTurn)
 }
-function clearAnswerCommitTimer(){if(answerCommitTimer){clearTimeout(answerCommitTimer);answerCommitTimer=null}}
-function clearAnswerTranscriptionTimer(){if(answerTranscriptionTimer){clearTimeout(answerTranscriptionTimer);answerTranscriptionTimer=null}}
-function combinedAnswerTranscript(){return[...answerSegments,answerPartial].map(value=>String(value||'').trim()).filter(Boolean).join(' ').replace(/\s+/g,' ').trim()}
-function renderLiveAnswer(fallback=''){const text=combinedAnswerTranscript();$('transcriptText').textContent=text||fallback||L().listening}
-function resetAnswerCapture(options={}){
-  clearAnswerCommitTimer();clearAnswerTranscriptionTimer();awaitingCandidateAnswer=false;answerSpeechActive=false;answerSegments=[];answerPartial='';answerTurnId+=1;
-  if(options.disableInput===true)setCandidateInputEnabled(false);updateTurnActions()
+function clearAnswerCommitTimer() { if (answerCommitTimer) {
+    clearTimeout(answerCommitTimer);
+    answerCommitTimer = null;
+} }
+function clearAnswerFinalGuardTimer() { if (answerFinalGuardTimer) { clearTimeout(answerFinalGuardTimer); answerFinalGuardTimer = null; } }
+function clearAnswerTranscriptionTimer() { if (answerTranscriptionTimer) {
+    clearTimeout(answerTranscriptionTimer);
+    answerTranscriptionTimer = null;
+} }
+function hasSemanticWords(value=''){return /[\p{L}\p{N}]/u.test(String(value||''))}
+function combinedAnswerTranscript() { return stripTranscriptPromptLeakage([...answerSegments, answerPartial].map(value => String(value || '').trim()).filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()); }
+function renderLiveAnswer(fallback = '') { const text = combinedAnswerTranscript(); $('transcriptText').textContent = text || fallback || L().listening; }
+function resetAnswerCapture(options = {}) {
+    clearAnswerCommitTimer();
+    clearAnswerFinalGuardTimer();
+    clearAnswerTranscriptionTimer();
+    awaitingCandidateAnswer = false;
+    answerSpeechActive = false;
+    answerSegments = [];
+    answerPartial = '';
+    answerTurnId += 1;
+    answerGateOpenedAt = 0;
+    localSignalStartedAt = 0;
+    voiceRecoveryTurnId = -1;
+    lastSpeechStartedAt = 0;
+    lastSpeechStoppedAt = 0;
+    lastSemanticActivityAt = 0;
+    answerTranscriptRevision = 0;
+    answerCompletionReady = false;
+    if (options.disableInput === true)
+        setCandidateInputEnabled(false);
+    updateTurnActions();
 }
-function beginCandidateAnswer(){
-  resetAnswerCapture();awaitingCandidateAnswer=true;answerTurnId+=1;setCandidateInputEnabled(true);
-  try{startRecorder()}catch(error){fail(error);return}
-  $('transcriptText').textContent=L().listening;setPill('realtimePill',`${L().voice}: listening`,'ok');
-  updateTurnActions();console.info('[CLARITY INTERVIEW AUDIO TURN] answer gate opened',{sessionId:current?.sessionId||'',mainQuestionIndex:String(lastQuestion?.mainQuestionIndex||''),followUpIndex:String(lastQuestion?.followUpIndex||''),answerTurnId,settleMs:ANSWER_SETTLE_MS,clientVersion:CLIENT_VERSION});
-  debug({questionPlaybackDrained:true,recordingStarted:mediaRecorder?.state==='recording',awaitingCandidateAnswer,answerTurnId})
+async function waitForCandidateInputReady(timeoutMs = ANSWER_INPUT_READY_TIMEOUT_MS) {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+        const localReady = micTrack?.readyState === 'live';
+        const realtimeReady = realtimeHealthy();
+        const recordingReady = !manualStart || (mediaRecorder?.state === 'recording' && recordingMicTrack?.readyState === 'live');
+        if (localReady && realtimeReady && recordingReady) { await sleep(ANSWER_INPUT_WARMUP_MS); return true; }
+        if (manualStart && !realtimeReady && !voicePreparing) scheduleVoiceRecovery('answer_gate_preopen_readiness', 0);
+        await sleep(120);
+    }
+    return false;
 }
-function appendAnswerSegment(text){const value=String(text||'').trim();if(!value)return;const previous=answerSegments[answerSegments.length-1]||'';if(previous!==value)answerSegments.push(value)}
+async function beginCandidateAnswer() {
+    if (answerInputOpening || completionStarted) return;
+    answerInputOpening = true;
+    resetAnswerCapture();
+    awaitingCandidateAnswer = false;
+    answerTurnId += 1;
+    const pendingTurnId = answerTurnId;
+    await setCandidateInputEnabled(false, 'answer_gate_prepare');
+    $('transcriptText').textContent = String(context?.locale || 'en').startsWith('de') ? 'Mikrofon wird für Ihre Antwort vorbereitet …' : 'Preparing the microphone for your answer…';
+    setPill('realtimePill', `${L().voice}: preparing`, 'warn');
+    if (!mediaRecorder || mediaRecorder.state !== 'recording') { try { await startRecorder(); } catch (error) { answerInputOpening=false; fail(error); return; } }
+    const ready = await waitForCandidateInputReady();
+    if (pendingTurnId !== answerTurnId || completionStarted) { answerInputOpening=false; return; }
+    if (!ready) {
+        answerInputOpening=false;
+        awaitingCandidateAnswer=false;
+        await setCandidateInputEnabled(false, 'answer_gate_not_ready');
+        setReconnectAction(true);
+        setPill('realtimePill', `${L().voice}: retry`, 'err');
+        $('transcriptText').textContent = String(context?.locale || 'en').startsWith('de') ? 'Die Sprachverbindung war noch nicht bereit. Bitte verbinden Sie sie erneut; Ihre Antwort wurde noch nicht gestartet.' : 'The voice connection was not ready. Reconnect it; your answer has not started yet.';
+        console.warn('[CLARITY INTERVIEW AUDIO TURN] answer gate withheld because input was not ready', { sessionId: current?.sessionId || '', answerTurnId, clientVersion: CLIENT_VERSION });
+        return;
+    }
+    // The physical microphone and the recording track stay live for the complete asset.
+    // Only the WebRTC sender is gated. This restores the proven V1 behaviour without
+    // reintroducing Chromium MediaStreamTrack.enabled transition stalls.
+    clearRealtimeInputBuffer();
+    await sleep(120);
+    awaitingCandidateAnswer = true;
+    answerCompletionReady = false;
+    lastRealtimeInputAt = Date.now();
+    localSignalStartedAt = 0;
+    voiceRecoveryTurnId = -1;
+    const uplinkReady = await setCandidateInputEnabled(true, 'answer_gate_open');
+    if (!uplinkReady) {
+        awaitingCandidateAnswer = false;
+        answerInputOpening = false;
+        setPill('realtimePill', `${L().voice}: retry`, 'err');
+        $('transcriptText').textContent = String(context?.locale || 'en').startsWith('de') ? 'Der Mikrofon-Uplink war noch nicht bereit. Bitte verbinden Sie die Sprachverbindung erneut; Ihre Antwort wurde noch nicht gestartet.' : 'The microphone uplink was not ready. Reconnect voice; your answer has not started yet.';
+        return;
+    }
+    await sleep(REALTIME_UPLINK_WARMUP_MS);
+    answerGateOpenedAt = Date.now();
+    $('transcriptText').textContent = L().listening;
+    setPill('realtimePill', `${L().voice}: listening`, 'ok');
+    updateTurnActions();
+    answerInputOpening=false;
+    console.info('[CLARITY INTERVIEW AUDIO TURN] answer gate opened after verified sender uplink readiness', { sessionId: current?.sessionId || '', mainQuestionIndex: String(lastQuestion?.mainQuestionIndex || ''), followUpIndex: String(lastQuestion?.followUpIndex || ''), answerTurnId, warmupMs: REALTIME_UPLINK_WARMUP_MS, settleMs: ANSWER_SETTLE_MS, clientVersion: CLIENT_VERSION });
+    debug({ questionPlaybackDrained: true, inputReady: true, realtimeUplinkEnabled, recordingStarted: mediaRecorder?.state === 'recording', awaitingCandidateAnswer, answerTurnId });
+}
+function transcriptWords(value){return String(value||'').trim().split(/\s+/).filter(Boolean)}
+function normalizedTranscriptWord(value){return String(value||'').normalize('NFKD').toLowerCase().replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9äöüß]+/gi,'')}
+function stripPreviousAnswerTail(value){
+    const previous=transcriptWords(lastCommittedTranscript),current=transcriptWords(value);if(!previous.length||!current.length)return String(value||'').trim();
+    const max=Math.min(16,previous.length,current.length);let remove=0;
+    for(let size=max;size>=2;size-=1){const left=previous.slice(-size).map(normalizedTranscriptWord).join(' ');const right=current.slice(0,size).map(normalizedTranscriptWord).join(' ');if(left&&left===right){remove=size;break}}
+    if(remove)console.info('[CLARITY INTERVIEW TRANSCRIPT] removed previous-answer tail from new turn',{removedWords:remove,clientVersion:CLIENT_VERSION});
+    return current.slice(remove).join(' ').trim();
+}
+function appendAnswerSegment(text) { const value = String(text || '').trim(); if (!value)
+    return; const previous = answerSegments[answerSegments.length - 1] || ''; if (previous !== value)
+    answerSegments.push(value); }
 function scheduleAnswerCommit(source='transcription_completed'){
-  clearAnswerCommitTimer();if(!awaitingCandidateAnswer||answerSpeechActive||busy||speakingQuestion||completionStarted)return;
-  const turn=answerTurnId;
-  answerCommitTimer=setTimeout(()=>{
-    answerCommitTimer=null;
-    if(turn!==answerTurnId||!awaitingCandidateAnswer||answerSpeechActive||busy||speakingQuestion||completionStarted)return;
-    const transcript=combinedAnswerTranscript();if(!transcript)return;
-    awaitingCandidateAnswer=false;clearAnswerTranscriptionTimer();setCandidateInputEnabled(false);
-    console.info('[CLARITY INTERVIEW AUDIO TURN] answer committed after stable silence',{sessionId:current?.sessionId||'',answerTurnId:turn,source,segments:answerSegments.length,characters:transcript.length,settleMs:ANSWER_SETTLE_MS,clientVersion:CLIENT_VERSION});
-    void submitTranscript(transcript,{answerTurnId:turn,segmentCount:answerSegments.length,settleMs:ANSWER_SETTLE_MS,commitSource:source})
-  },ANSWER_SETTLE_MS)
+ clearAnswerCommitTimer();clearAnswerFinalGuardTimer();if(!awaitingCandidateAnswer||answerSpeechActive||busy||speakingQuestion||completionStarted)return;const turn=answerTurnId,revision=answerTranscriptRevision;
+ const evaluate=()=>{answerCommitTimer=null;if(turn!==answerTurnId||!awaitingCandidateAnswer||answerSpeechActive||busy||speakingQuestion||completionStarted)return;if(revision!==answerTranscriptRevision)return scheduleAnswerCommit('semantic_activity_changed');const transcript=combinedAnswerTranscript();if(!hasSemanticWords(transcript)||lastSpeechStartedAt>lastSpeechStoppedAt)return;const stableSince=Math.max(lastSemanticActivityAt||0,lastSpeechStoppedAt||0,answerGateOpenedAt||0),stableMs=Date.now()-stableSince;if(stableMs<ANSWER_SETTLE_MS){answerCommitTimer=setTimeout(evaluate,Math.max(120,ANSWER_SETTLE_MS-stableMs+40));return}answerFinalGuardTimer=setTimeout(()=>{answerFinalGuardTimer=null;if(turn!==answerTurnId||!awaitingCandidateAnswer||answerSpeechActive||busy||speakingQuestion||completionStarted||revision!==answerTranscriptRevision)return;const quality=candidateTranscriptQuality(combinedAnswerTranscript());if(!quality.ok){renderLiveAnswer(L().listening);updateTurnActions();return}answerCompletionReady=true;$('transcriptText').textContent=L().completionReady||flowCopy().ready;setPill('realtimePill',`${L().voice}: ready`,'ok');updateTurnActions();console.info('[CLARITY INTERVIEW EXPLICIT COMPLETION] answer ready; waiting for candidate confirmation',{sessionId:current?.sessionId||'',answerTurnId:turn,source,wordCount:quality.wordCount,automaticAdvance:false,clientVersion:CLIENT_VERSION})},ANSWER_FINAL_GUARD_MS)};
+ answerCommitTimer=setTimeout(evaluate,Math.max(120,ANSWER_SETTLE_MS))
 }
-function brandLogoValue(b={}){const values=[b.logoUrl,b.logoPublicUrl,b.customerLogoUrl,b.companyLogoUrl,b.logo,b.customerLogo,b.companyLogo,b.primaryLogo,b.logoAsset];for(const value of values){if(typeof value==='string'&&value.trim())return value;if(value&&typeof value==='object'){const candidate=first(value.publicUrl,value.logoPublicUrl,value.previewUrl,value.fileUrl,value.downloadUrl,value.src,value.url);if(candidate)return candidate}}return''}
-function applyBranding(){const b=branding();const bm=normalizedBrandingMode();const white=bm==='whitelabel'||b.whiteLabelEnabled===true;const co=bm==='cobranded'||b.coBrandingEnabled===true;const root=document.documentElement.style;['--accent','--secondary','--background','--surface','--text'].forEach(k=>root.removeProperty(k));const c=b.colors||{};if(white||co){[['--accent',first(c.accent,b.accentColor)],['--secondary',first(c.secondary,b.secondaryColor)],['--background',white?first(c.background,b.backgroundColor):''],['--surface',white?first(c.surface,b.surfaceColor,c.primary):''],['--text',white?first(c.text,c.textInverse):'']].forEach(([k,v])=>v&&root.setProperty(k,v))}const name=white||co?first(b.reportBrandName,b.brandName,b.companyName,'Company'):'CLARITY';const logo=(b.customerLogoVisible===false&&white)?'':brandLogoValue(b);$('eyebrow').textContent=co?`${name} · Audio Q10 · Powered by CLARITY`:`${name} Interview · Audio Q10`;if(logo){$('brandLogo').src=logo;$('brandLogo').alt=`${name} logo`;$('brandLogo').style.display='block'}else{$('brandLogo').removeAttribute('src');$('brandLogo').style.display='none'}}
-function locale(){const l=L();document.documentElement.lang=context?.locale||'en';$('title').textContent=l.title;$('subtitle').textContent=l.subtitle;$('badge').textContent=l.badge;$('intro').textContent=l.intro;$('microphoneTitle').textContent=l.mic;$('microphoneText').textContent=l.micText;$('speechTitle').textContent=l.speech;$('transcriptText').textContent=l.wait;$('progressText').textContent=l.progress(Number(current?.answeredCount||0));$('startTitle').textContent=l.startTitle;$('startText').textContent=l.startText;$('startBtn').textContent=l.start;$('checkMicBtn').textContent=l.checkMic;$('prepareVoiceBtn').textContent=l.prepareVoice;$('repeatBtn').textContent=l.repeat;$('rephraseBtn').textContent=l.rephrase;$('continueBtn').textContent=l.continue;$('retryUploadBtn').textContent=l.retryProcessing;setPill('backendPill',`${l.backend}: ${backendReady?l.ready:'waiting'}`,backendReady?'ok':'');$('processingTitle').textContent=l.processingTitle;$('processingText').textContent=l.processingText;$('completedTitle').textContent=l.completedTitle;$('completedText').textContent=l.completedText;$('errorTitle').textContent=l.errorTitle;$('retryBtn').textContent=l.retry;applyBranding()}
-function request(action,payload={}){
-  return new Promise((resolve,reject)=>{
-    const requestId=`IVAUD-${Date.now()}-${++seq}`;
-    const timeoutMs=ACTION_TIMEOUT_MS[action]||90000;
-    const startedAt=Date.now();
-    const timer=setTimeout(()=>{
-      const p=pending.get(requestId);
-      if(!p)return;
-      pending.delete(requestId);
-      const error=Object.assign(new Error(`${action} request timed out after ${timeoutMs} ms.`),{code:'INTERVIEW_AUDIO_REQUEST_TIMEOUT',transport:true,requestId,action,timeoutMs,durationMs:Date.now()-startedAt});
-      console.error(`[CLARITY INTERVIEW AUDIO ACTION] timeout ${JSON.stringify({action,requestId,timeoutMs,clientVersion:CLIENT_VERSION})}`);
-      reject(error)
-    },timeoutMs);
-    pending.set(requestId,{resolve:value=>{clearTimeout(timer);resolve(value)},reject:error=>{clearTimeout(timer);reject(error)},action,startedAt});
-    console.info(`[CLARITY INTERVIEW AUDIO ACTION] request ${JSON.stringify({action,requestId,timeoutMs,uid:context?.uid||'',sessionId:payload?.sessionId||current?.sessionId||'',clientVersion:CLIENT_VERSION})}`);
-    parent.postMessage({channel:CHANNEL,type:'ACTION',requestId,action,payload:{...payload,clientVersion:CLIENT_VERSION,clientTraceId:requestId}},location.origin)
-  })
+function brandLogoValue(b = {}) { const values = [b.logoUrl, b.logoPublicUrl, b.customerLogoUrl, b.companyLogoUrl, b.logo, b.customerLogo, b.companyLogo, b.primaryLogo, b.logoAsset]; for (const value of values) {
+    if (typeof value === 'string' && value.trim())
+        return value;
+    if (value && typeof value === 'object') {
+        const candidate = first(value.publicUrl, value.logoPublicUrl, value.previewUrl, value.fileUrl, value.downloadUrl, value.src, value.url);
+        if (candidate)
+            return candidate;
+    }
+} return ''; }
+function applyBranding() { const b = branding(); const bm = normalizedBrandingMode(); const white = bm === 'whitelabel' || b.whiteLabelEnabled === true; const co = bm === 'cobranded' || b.coBrandingEnabled === true; const root = document.documentElement.style; ['--accent', '--secondary', '--background', '--surface', '--text'].forEach(k => root.removeProperty(k)); const c = b.colors || {}; if (white || co) {
+    [['--accent', first(c.accent, b.accentColor)], ['--secondary', first(c.secondary, b.secondaryColor)], ['--background', white ? first(c.background, b.backgroundColor) : ''], ['--surface', white ? first(c.surface, b.surfaceColor, c.primary) : ''], ['--text', white ? first(c.text, c.textInverse) : '']].forEach(([k, v]) => v && root.setProperty(k, v));
+} const name = white || co ? first(b.reportBrandName, b.brandName, b.companyName, 'Company') : 'CLARITY'; const logo = (b.customerLogoVisible === false && white) ? '' : brandLogoValue(b); $('eyebrow').textContent = co ? `${name} · Audio Q10 · Powered by CLARITY` : `${name} Interview · Audio Q10`; if (logo) {
+    $('brandLogo').src = logo;
+    $('brandLogo').alt = `${name} logo`;
+    $('brandLogo').style.display = 'block';
 }
-function isTransport(e){return e?.transport===true||/network|failed to fetch|timed out|load failed/i.test(`${e?.code||''} ${e?.message||e||''}`)}function fail(e){$('errorText').textContent=e?.message||String(e||'Unknown error');show('errorView');debug({error:{code:e?.code,message:e?.message}})}function showProcessingRetry(e){const l=L();show('processingView');$('processingText').textContent=l.processingRetryText;$('retryUploadBtn').classList.remove('hidden');setPill('processingUploadPill',`${l.upload}: retry required`,'err');debug({processingRetry:{code:e?.code||'',message:e?.message||String(e||'')}})}
-function renderState(state,question=null){current=state||current||{};uploadId=uploadId||String(current?.audio?.uploadId||current?.audioUploadId||'');applyBranding();const n=Number(current.answeredCount||0);$('progressText').textContent=L().progress(n);$('progressBar').style.width=`${Math.min(100,n*10)}%`;const q=manualStart?(question||current.currentQuestion):null;if(q?.text){lastQuestion=q;$('questionCard').classList.remove('hidden');const turn=String(q.turnType||'main_question');$('questionLabel').textContent=turn==='supplement_prompt'?L().supplement(Number(q.mainQuestionIndex||1)):turn==='final_open_prompt'?L().finalOpen:turn==='follow_up_question'?L().follow(Number(q.mainQuestionIndex||1),Math.max(1,Number(q.followUpIndex||1))):L().main(Number(q.mainQuestionIndex||1));$('questionText').textContent=q.text}else $('questionCard').classList.add('hidden');updateTurnActions();debug()}
-function localRuntimeReady(){
-  const runtime=context?.runtime||{};
-  const runtimeMode=String(runtime.mode||runtime.workflowSnapshot?.mode||'').toLowerCase().replace(/[+\s-]+/g,'_');
-  const questionCount=Number(runtime.questionCount||runtime.workflowSnapshot?.questionCount||runtime.questionSnapshot?.questionCount||10);
-  const status=String(runtime.status||'').toLowerCase();
-  const profile=runtime.candidateProfile||{};
-  const consent=runtime.consentSnapshot||{};
-  const profileReady=Boolean(profile.firstName&&profile.lastName&&profile.email)||['profile_saved','consent_saved','started','processing','completed'].includes(status);
-  const consentReady=Boolean(consent.accepted&&consent.privacyAccepted&&consent.aiInteractionAccepted)||['consent_saved','started','processing','completed'].includes(status);
-  return context?.release?.audio===true&&runtimeMode==='audio'&&questionCount===10&&profileReady&&consentReady
+else {
+    $('brandLogo').removeAttribute('src');
+    $('brandLogo').style.display = 'none';
+} }
+function locale() { const l = L(); document.documentElement.lang = context?.locale || 'en'; $('title').textContent = l.title; $('subtitle').textContent = l.subtitle; $('badge').textContent = l.badge; $('intro').textContent = l.intro; $('microphoneTitle').textContent = l.mic; $('microphoneText').textContent = l.micText; $('speechTitle').textContent = l.speech; $('transcriptText').textContent = l.wait; $('progressText').textContent = l.progress(Number(current?.answeredCount || 0)); $('startTitle').textContent = l.startTitle; $('startText').textContent = l.startText; $('startBtn').textContent = l.start; $('checkMicBtn').textContent = l.checkMic; $('prepareVoiceBtn').textContent = l.prepareVoice; $('repeatBtn').textContent = l.repeat; $('rephraseBtn').textContent = l.rephrase; $('continueBtn').textContent = l.finishAnswer || flowCopy().finish; $('retryUploadBtn').textContent = l.retryProcessing; setPill('backendPill', `${l.backend}: ${backendReady ? l.ready : 'waiting'}`, backendReady ? 'ok' : ''); $('processingTitle').textContent = l.processingTitle; $('processingText').textContent = l.processingText; $('completedTitle').textContent = l.completedTitle; $('completedText').textContent = l.completedText; $('errorTitle').textContent = l.errorTitle; $('retryBtn').textContent = l.retry; applyBranding(); }
+function request(action, payload = {}) {
+    return new Promise((resolve, reject) => {
+        const requestId = `IVAUD-${Date.now()}-${++seq}`;
+        const timeoutMs = ACTION_TIMEOUT_MS[action] || 90000;
+        const startedAt = Date.now();
+        const timer = setTimeout(() => {
+            const p = pending.get(requestId);
+            if (!p)
+                return;
+            pending.delete(requestId);
+            const error = Object.assign(new Error(`${action} request timed out after ${timeoutMs} ms.`), { code: 'INTERVIEW_AUDIO_REQUEST_TIMEOUT', transport: true, requestId, action, timeoutMs, durationMs: Date.now() - startedAt });
+            console.error(`[CLARITY INTERVIEW AUDIO ACTION] timeout ${JSON.stringify({ action, requestId, timeoutMs, clientVersion: CLIENT_VERSION })}`);
+            reject(error);
+        }, timeoutMs);
+        pending.set(requestId, { resolve: value => { clearTimeout(timer); resolve(value); }, reject: error => { clearTimeout(timer); reject(error); }, action, startedAt });
+        console.info(`[CLARITY INTERVIEW AUDIO ACTION] request ${JSON.stringify({ action, requestId, timeoutMs, uid: context?.uid || '', sessionId: payload?.sessionId || current?.sessionId || '', clientVersion: CLIENT_VERSION })}`);
+        parent.postMessage({ channel: CHANNEL, type: 'ACTION', requestId, action, payload: { ...payload, clientVersion: CLIENT_VERSION, clientTraceId: requestId } }, location.origin);
+    });
 }
-function updateStartReadiness(){
-  const l=L();
-  const runtimeReady=localRuntimeReady();
-  const readyForStart=deviceReady&&voiceReady&&runtimeReady&&!busy&&!voicePreparing;
-  $('startBtn').disabled=!readyForStart;
-  $('checkMicBtn').classList.toggle('hidden',deviceReady);
-  $('prepareVoiceBtn').classList.toggle('hidden',voiceReady||voicePreparing||!deviceReady);
-  if(backendDegraded&&!backendReady)setPill('backendPill',`${l.backend}: verify on start`,'warn');
-  else setPill('backendPill',`${l.backend}: ${backendReady?l.ready:'waiting'}`,backendReady?'ok':'');
-  if(!deviceReady&&devicePermissionState==='denied')setPill('devicePill',`${l.device}: blocked`,'err');
-  if(voicePreparing)setPill('realtimePill',`${l.voice}: preparing`,'warn');
-  else if(voiceReady)setPill('realtimePill',`${l.voice}: ${l.ready}`,'ok');
-  else if(voiceLastError)setPill('realtimePill',`${l.voice}: retry`,'err');
-  debug({readinessUpdated:true,localRuntimeReady:runtimeReady,backendDegraded,readyForStart})
+function isTransport(e) { return e?.transport === true || /network|failed to fetch|timed out|load failed/i.test(`${e?.code || ''} ${e?.message || e || ''}`); }
+function fail(e) { $('errorText').textContent = e?.message || String(e || 'Unknown error'); show('errorView'); debug({ error: { code: e?.code, message: e?.message } }); }
+function showProcessingRetry(e) { const l = L(); show('processingView'); $('processingText').textContent = l.processingRetryText; $('retryUploadBtn').classList.remove('hidden'); setPill('processingUploadPill', `${l.upload}: retry required`, 'err'); debug({ processingRetry: { code: e?.code || '', message: e?.message || String(e || '') } }); }
+function renderState(state, question = null) { current = state || current || {}; uploadId = uploadId || String(current?.audio?.uploadId || current?.audioUploadId || ''); applyBranding(); const n = Number(current.answeredCount || 0); $('progressText').textContent = L().progress(n); $('progressBar').style.width = `${Math.min(100, n * 10)}%`; const q = manualStart ? (question || current.currentQuestion) : null; if (q?.text) {
+    lastQuestion = q;
+    $('questionCard').classList.remove('hidden');
+    const turn = String(q.turnType || 'main_question');
+    $('questionLabel').textContent = turn === 'supplement_prompt' ? L().supplement(Number(q.mainQuestionIndex || 1)) : turn === 'final_open_prompt' ? L().finalOpen : turn === 'follow_up_question' ? L().follow(Number(q.mainQuestionIndex || 1), Math.max(1, Number(q.followUpIndex || 1))) : L().main(Number(q.mainQuestionIndex || 1));
+    $('questionText').textContent = q.text;
 }
-async function readMicrophonePermission(){
-  try{
-    if(!navigator.permissions?.query)return'unknown';
-    const result=await navigator.permissions.query({name:'microphone'});
-    devicePermissionState=String(result?.state||'unknown');
-    result.onchange=()=>{
-      devicePermissionState=String(result.state||'unknown');
-      updateStartReadiness()
+else
+    $('questionCard').classList.add('hidden'); updateTurnActions(); debug(); }
+function localRuntimeReady() {
+    const runtime = context?.runtime || {};
+    const runtimeMode = String(runtime.mode || runtime.workflowSnapshot?.mode || '').toLowerCase().replace(/[+\s-]+/g, '_');
+    const questionCount = Number(runtime.questionCount || runtime.workflowSnapshot?.questionCount || runtime.questionSnapshot?.questionCount || 10);
+    const status = String(runtime.status || '').toLowerCase();
+    const profile = runtime.candidateProfile || {};
+    const consent = runtime.consentSnapshot || {};
+    const profileReady = Boolean(profile.firstName && profile.lastName && profile.email) || ['profile_saved', 'consent_saved', 'started', 'processing', 'completed'].includes(status);
+    const consentReady = Boolean(consent.accepted && consent.privacyAccepted && consent.aiInteractionAccepted) || ['consent_saved', 'started', 'processing', 'completed'].includes(status);
+    return context?.release?.audio === true && runtimeMode === 'audio' && questionCount === 10 && profileReady && consentReady;
+}
+function updateStartReadiness() {
+    const l = L();
+    const runtimeReady = localRuntimeReady();
+    const readyForStart = deviceReady && voiceReady && runtimeReady && !busy && !voicePreparing;
+    $('startBtn').disabled = !readyForStart;
+    $('checkMicBtn').classList.toggle('hidden', deviceReady);
+    $('prepareVoiceBtn').classList.toggle('hidden', voiceReady || voicePreparing || !deviceReady);
+    if (backendDegraded && !backendReady)
+        setPill('backendPill', `${l.backend}: verify on start`, 'warn');
+    else
+        setPill('backendPill', `${l.backend}: ${backendReady ? l.ready : 'waiting'}`, backendReady ? 'ok' : '');
+    if (!deviceReady && devicePermissionState === 'denied')
+        setPill('devicePill', `${l.device}: blocked`, 'err');
+    if (voicePreparing)
+        setPill('realtimePill', `${l.voice}: preparing`, 'warn');
+    else if (voiceReady)
+        setPill('realtimePill', `${l.voice}: ${l.ready}`, 'ok');
+    else if (voiceLastError)
+        setPill('realtimePill', `${l.voice}: retry`, 'err');
+    debug({ readinessUpdated: true, localRuntimeReady: runtimeReady, backendDegraded, readyForStart });
+}
+async function readMicrophonePermission() {
+    try {
+        if (!navigator.permissions?.query)
+            return 'unknown';
+        const result = await navigator.permissions.query({ name: 'microphone' });
+        devicePermissionState = String(result?.state || 'unknown');
+        result.onchange = () => {
+            devicePermissionState = String(result.state || 'unknown');
+            updateStartReadiness();
+        };
+        return devicePermissionState;
+    }
+    catch (_) {
+        devicePermissionState = 'unknown';
+        return devicePermissionState;
+    }
+}
+async function preflight(options = {}) {
+    if (deviceReady && micTrack?.readyState === 'live' && micStream)
+        return { ok: true, reused: true };
+    if (preflightPromise)
+        return preflightPromise;
+    const source = String(options.source || 'unknown');
+    preflightPromise = (async () => {
+        const l = L();
+        console.info('[CLARITY INTERVIEW AUDIO PREFLIGHT] started', { source, clientVersion: CLIENT_VERSION });
+        $('checkMicBtn').disabled = true;
+        $('checkMicBtn').textContent = l.checkingMic;
+        setPill('devicePill', `${l.device}: checking`, 'warn');
+        try {
+            if (!window.isSecureContext)
+                throw Object.assign(new Error('Microphone access requires a secure HTTPS context.'), { code: 'INTERVIEW_AUDIO_INSECURE_CONTEXT' });
+            if (!navigator.mediaDevices?.getUserMedia)
+                throw Object.assign(new Error('This browser does not support microphone capture.'), { code: 'INTERVIEW_AUDIO_GET_USER_MEDIA_UNAVAILABLE' });
+            if (typeof MediaRecorder === 'undefined')
+                throw Object.assign(new Error('This browser does not support secure audio recording.'), { code: 'INTERVIEW_AUDIO_MEDIA_RECORDER_UNAVAILABLE' });
+            await readMicrophonePermission();
+            micStream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true,
+                    channelCount: 1
+                },
+                video: false
+            });
+            micTrack = micStream.getAudioTracks()[0];
+            if (!micTrack)
+                throw Object.assign(new Error('No usable microphone track was returned.'), { code: 'INTERVIEW_AUDIO_MICROPHONE_TRACK_MISSING' });
+            // Keep the microphone track enabled during local preflight so the level
+            // meter can display a real signal. No Realtime transport or recording is
+            // active before the explicit start click, so no audio leaves the browser.
+            micTrack.enabled = true;
+            micTrack.onended = () => {
+                deviceReady = false;
+                devicePermissionState = 'unknown';
+                setPill('devicePill', `${L().device}: disconnected`, 'err');
+                updateStartReadiness();
+            };
+            deviceReady = true;
+            devicePermissionState = 'granted';
+            setupMeter();
+            setPill('devicePill', `${l.device}: ${l.ready}`, 'ok');
+            console.info('[CLARITY INTERVIEW AUDIO PREFLIGHT] ready', {
+                source,
+                label: micTrack.label || 'microphone',
+                readyState: micTrack.readyState,
+                clientVersion: CLIENT_VERSION
+            });
+            return { ok: true };
+        }
+        catch (error) {
+            deviceReady = false;
+            const name = String(error?.name || '');
+            if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+                devicePermissionState = 'denied';
+                setPill('devicePill', `${l.device}: ${l.micPermission}`, 'warn');
+                console.warn('[CLARITY INTERVIEW AUDIO PREFLIGHT] permission required', {
+                    source,
+                    name,
+                    message: error?.message,
+                    clientVersion: CLIENT_VERSION
+                });
+                return { ok: false, permissionRequired: true, error };
+            }
+            setPill('devicePill', `${l.device}: error`, 'err');
+            console.error('[CLARITY INTERVIEW AUDIO PREFLIGHT] failed', {
+                source,
+                name,
+                code: error?.code,
+                message: error?.message,
+                clientVersion: CLIENT_VERSION
+            });
+            return { ok: false, error };
+        }
+        finally {
+            preflightPromise = null;
+            $('checkMicBtn').disabled = false;
+            $('checkMicBtn').textContent = l.checkMic;
+            updateStartReadiness();
+        }
+    })();
+    return preflightPromise;
+}
+async function initializeAudioReadiness() {
+    setPill('backendPill', `${L().backend}: waiting`, 'warn');
+    setPill('realtimePill', `${L().voice}: waiting`, 'warn');
+    const deviceResult = await preflight({ source: 'module_init' }).catch(error => ({ ok: false, error }));
+    let voiceResult = { status: 'skipped' };
+    if (deviceResult?.ok && deviceReady) {
+        voiceResult = await prepareVoiceTransport({ source: 'module_init' }).then(value => ({ status: 'fulfilled', value }), reason => ({ status: 'rejected', reason }));
+    }
+    debug({ initializationComplete: true, deviceInitialization: deviceResult?.ok ? 'fulfilled' : 'rejected', voiceInitialization: voiceResult.status, voiceError: voiceResult.status === 'rejected' ? { code: voiceResult.reason?.code, message: voiceResult.reason?.message } : null });
+    updateStartReadiness();
+}
+async function resumeMeterContext() { try {
+    if (audioContext?.state === 'suspended')
+        await audioContext.resume();
+}
+catch (_) { } }
+function setupMeter() {
+    try {
+        if (meterFrame)
+            cancelAnimationFrame(meterFrame);
+        if (audioContext)
+            try {
+                audioContext.close();
+            }
+            catch (_) { }
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioContext.createMediaStreamSource(micStream);
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 512;
+        analyser.smoothingTimeConstant = .72;
+        source.connect(analyser);
+        const data = new Uint8Array(analyser.fftSize);
+        const tick = () => {
+            if (!analyser)
+                return;
+            analyser.getByteTimeDomainData(data);
+            let sum = 0, peak = 0;
+            for (let i = 0; i < data.length; i += 1) {
+                const sample = (data[i] - 128) / 128;
+                sum += sample * sample;
+                peak = Math.max(peak, Math.abs(sample));
+            }
+            const rms = Math.sqrt(sum / data.length);
+            const width = Math.min(100, Math.max(0, (rms * 240) + (peak * 55)));
+            $('micLevel').style.width = `${width.toFixed(1)}%`;
+            meterFrame = requestAnimationFrame(tick);
+        };
+        void resumeMeterContext();
+        tick();
+    }
+    catch (error) {
+        console.warn('[CLARITY INTERVIEW AUDIO PREFLIGHT] meter unavailable', { message: error?.message });
+    }
+}
+function makeStageError(code, message, details = {}) { return Object.assign(new Error(message), { code, details }); }
+async function withBrowserTimeout(promise, timeoutMs, code, message) { let timer; try {
+    return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(makeStageError(code, message, { timeoutMs })), timeoutMs); })]);
+}
+finally {
+    clearTimeout(timer);
+} }
+function stringMetadata(values = {}) { const out = {}; for (const [key, value] of Object.entries(values)) {
+    if (value === undefined || value === null)
+        continue;
+    out[key] = String(value).slice(0, 512);
+} return out; }
+async function ensureRemoteAudioPlayback(source = 'unknown') {
+    remoteAudio = remoteAudio || $('remoteAudio');
+    if (!remoteAudio)
+        return false;
+    remoteAudio.autoplay = true;
+    remoteAudio.playsInline = true;
+    remoteAudio.muted = false;
+    remoteAudio.volume = 1;
+    try {
+        await remoteAudio.play();
+        console.info(`[CLARITY INTERVIEW AUDIO PLAYBACK] ready ${JSON.stringify({ source, clientVersion: CLIENT_VERSION })}`);
+        return true;
+    }
+    catch (error) {
+        console.warn(`[CLARITY INTERVIEW AUDIO PLAYBACK] waiting ${JSON.stringify({ source, message: error?.message || String(error), clientVersion: CLIENT_VERSION })}`);
+        return false;
+    }
+}
+function clearSpeechTimers() { clearTimeout(speechDrainTimer); clearTimeout(speechStartTimer); speechDrainTimer = null; speechStartTimer = null; }
+function buildSpeechEvent(instructions, metadata = {}, withMetadata = true) {
+    const response = { conversation: 'none', output_modalities: ['audio'], input: [], instructions };
+    if (withMetadata)
+        response.metadata = stringMetadata(metadata);
+    return { type: 'response.create', response };
+}
+function sendSpeechResponse(instructions, metadata = {}, options = {}) {
+    activeSpeechInstructions = instructions;
+    activeSpeechRequestId = String(metadata.speechRequestId || `IVSPEECH-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    speechAudioStarted = false;
+    const effectiveMetadata = { ...metadata, speechRequestId: activeSpeechRequestId, sessionId: String(current?.sessionId || '') };
+    sendRealtime(buildSpeechEvent(instructions, effectiveMetadata, options.withMetadata !== false));
+    clearTimeout(speechStartTimer);
+    speechStartTimer = setTimeout(() => {
+        if (!speakingQuestion || speechAudioStarted)
+            return;
+        if (speechRetryCount < 1) {
+            speechRetryCount += 1;
+            console.warn(`[CLARITY INTERVIEW AUDIO VOICE] no audio started; retrying without metadata ${JSON.stringify({ speechRequestId: activeSpeechRequestId, clientVersion: CLIENT_VERSION })}`);
+            sendRealtime(buildSpeechEvent(activeSpeechInstructions, {}, false));
+            return;
+        }
+        fail(makeStageError('INTERVIEW_AUDIO_QUESTION_AUDIO_NOT_STARTED', 'The spoken question did not start. Please reconnect the voice connection and continue.', { speechRequestId: activeSpeechRequestId }));
+    }, QUESTION_SPEECH_START_TIMEOUT_MS);
+}
+function closeRealtimeTransport() {
+    try {
+        dc?.close();
+    }
+    catch (_) { }
+    ;
+    try {
+        pc?.close();
+    }
+    catch (_) { }
+    ;
+    try {
+        realtimeMicTrack?.stop();
+    }
+    catch (_) { }
+    ;
+    dc = null;
+    pc = null;
+    realtimeMicTrack = null;
+    realtimeMicStream = null;
+    realtimeAudioSender = null;
+    realtimeUplinkEnabled = false;
+    realtimeUplinkPromise = Promise.resolve(false);
+    voiceReady = false;
+    voicePreparing = false;
+}
+function realtimeHealthy() { return voiceReady === true && dc?.readyState === 'open' && pc?.connectionState === 'connected' && realtimeMicTrack?.readyState === 'live'; }
+function clearRealtimeInputBuffer() { try { if (dc?.readyState === 'open') dc.send(JSON.stringify({ type: 'input_audio_buffer.clear' })); } catch (_) { } }
+function setReconnectAction(visible) { $('prepareVoiceBtn')?.classList.toggle('hidden', !visible); }
+function setCandidateInputEnabled(enabled, source = 'logical_turn_gate') {
+    // Keep the source microphone and the recording clone continuously live so the
+    // mixed customer asset never loses audio. Gate only the WebRTC sender.
+    if (micTrack?.readyState === 'live') micTrack.enabled = true;
+    if (recordingMicTrack?.readyState === 'live' && mediaRecorder?.state === 'recording') recordingMicTrack.enabled = true;
+    const target = Boolean(enabled);
+    realtimeUplinkPromise = Promise.resolve(realtimeUplinkPromise).catch(() => false).then(async () => {
+        if (!realtimeAudioSender || !realtimeMicTrack || realtimeMicTrack.readyState !== 'live') {
+            realtimeUplinkEnabled = false;
+            if (target && manualStart) scheduleVoiceRecovery('realtime_uplink_sender_missing', 0);
+            return false;
+        }
+        const desiredTrack = target ? realtimeMicTrack : null;
+        if (realtimeAudioSender.track !== desiredTrack) await realtimeAudioSender.replaceTrack(desiredTrack);
+        realtimeUplinkEnabled = target;
+        console.info('[CLARITY INTERVIEW AUDIO UPLINK] ' + (target ? 'enabled' : 'disabled'), { source, answerTurnId, speakingQuestion, awaitingCandidateAnswer, clientVersion: CLIENT_VERSION });
+        debug({ candidateInputLogicalEnabled: target, realtimeUplinkEnabled, uplinkGateSource: source, sourceMicContinuous: true, recordingMicContinuous: true });
+        return true;
+    }).catch(error => {
+        realtimeUplinkEnabled = false;
+        console.error('[CLARITY INTERVIEW AUDIO UPLINK] replaceTrack failed', { source, target, code: error?.code || '', message: error?.message || String(error), clientVersion: CLIENT_VERSION });
+        if (target && manualStart) scheduleVoiceRecovery('realtime_uplink_replace_failed', 0);
+        return false;
+    });
+    return realtimeUplinkPromise;
+}
+function scheduleVoiceRecovery(reason, delayMs = 250) {
+    if (!manualStart || completionStarted || completionFinalized || voiceRecoveryPromise) return;
+    setTimeout(() => { if (manualStart && !completionStarted && !voiceRecoveryPromise) void recoverVoiceTransport(reason); }, Math.max(0, delayMs));
+}
+async function recoverVoiceTransport(reason = 'unknown') {
+    if (voiceRecoveryPromise) return voiceRecoveryPromise;
+    if (!manualStart || completionStarted || completionFinalized) return null;
+    const resumeAnswer = awaitingCandidateAnswer;
+    const question = lastQuestion;
+    lastVoiceRecoveryAt = Date.now();
+    voiceReady = false;
+    voiceLastError = null;
+    clearAnswerCommitTimer();
+    clearAnswerTranscriptionTimer();
+    setPill('realtimePill', `${L().voice}: preparing`, 'warn');
+    voiceRecoveryPromise = (async () => {
+        try {
+            closeRealtimeTransport();
+            await prepareVoiceTransport({ source: `active_recovery:${reason}`, force: true, sessionId: current?.sessionId || '' });
+            if (resumeAnswer && !busy && !completionStarted) {
+                const ready = await waitForCandidateInputReady();
+                if (!ready) throw makeStageError('INTERVIEW_AUDIO_INPUT_RECOVERY_NOT_READY', 'The microphone input path did not become ready after reconnecting.');
+                clearRealtimeInputBuffer();
+                await sleep(160);
+                awaitingCandidateAnswer = true;
+                answerGateOpenedAt = Date.now();
+                lastRealtimeInputAt = Date.now();
+                const recoveredUplink = await setCandidateInputEnabled(true, 'answer_recovery_resume');
+                if (!recoveredUplink) throw makeStageError('INTERVIEW_INPUT_RECOVERY_UPLINK_NOT_READY', 'The microphone uplink did not become ready after reconnecting.');
+                await sleep(REALTIME_UPLINK_WARMUP_MS);
+                $('transcriptText').textContent = combinedAnswerTranscript() || (String(context?.locale || 'en').startsWith('de') ? 'Die Verbindung ist wieder bereit. Bitte wiederholen Sie nur den noch nicht im Live-Transkript sichtbaren Teil Ihrer Antwort.' : 'The connection is ready again. Repeat only the part that is not visible in the live transcript.');
+                setPill('realtimePill', `${L().voice}: listening`, 'ok');
+                updateTurnActions();
+            } else if (question && !completionStarted) {
+                await speakQuestion(question);
+            }
+            console.info('[CLARITY INTERVIEW AUDIO VOICE] active recovery completed', { reason, sessionId: current?.sessionId || '', clientVersion: CLIENT_VERSION });
+            return { ok: true, recovered: true, reason };
+        } catch (error) {
+            voiceLastError = error;
+            voiceReady = false;
+            setReconnectAction(true);
+            setPill('realtimePill', `${L().voice}: retry`, 'err');
+            console.error('[CLARITY INTERVIEW AUDIO VOICE] active recovery failed', { reason, code: error?.code || '', message: error?.message || String(error), clientVersion: CLIENT_VERSION });
+            return { ok: false, error };
+        } finally { voiceRecoveryPromise = null; updateStartReadiness(); }
+    })();
+    return voiceRecoveryPromise;
+}
+async function connectRealtime(token) {
+    closeRealtimeTransport();
+    pc = new RTCPeerConnection();
+    remoteAudio = $('remoteAudio');
+    pc.ontrack = event => { const stream = event.streams?.[0] || new MediaStream([event.track]); remoteAudio.srcObject = stream; attachRemoteRecordingStream(stream); void ensureRemoteAudioPlayback('remote_track'); };
+    pc.onconnectionstatechange = () => {
+        const state = String(pc?.connectionState || 'unknown');
+        if (['failed', 'closed', 'disconnected'].includes(state) && !manualStart) {
+            voiceReady = false;
+            voiceLastError = makeStageError('INTERVIEW_AUDIO_WEBRTC_CONNECTION_LOST', `Realtime connection ${state}.`, { state });
+            updateStartReadiness();
+        }
+        debug({ realtimeConnectionState: state });
     };
-    return devicePermissionState
-  }catch(_){
-    devicePermissionState='unknown';
-    return devicePermissionState
-  }
-}
-async function preflight(options={}){
-  if(deviceReady&&micTrack?.readyState==='live'&&micStream)return{ok:true,reused:true};
-  if(preflightPromise)return preflightPromise;
-
-  const source=String(options.source||'unknown');
-  preflightPromise=(async()=>{
-    const l=L();
-    console.info('[CLARITY INTERVIEW AUDIO PREFLIGHT] started',{source,clientVersion:CLIENT_VERSION});
-    $('checkMicBtn').disabled=true;
-    $('checkMicBtn').textContent=l.checkingMic;
-    setPill('devicePill',`${l.device}: checking`,'warn');
-
-    try{
-      if(!window.isSecureContext)throw Object.assign(new Error('Microphone access requires a secure HTTPS context.'),{code:'INTERVIEW_AUDIO_INSECURE_CONTEXT'});
-      if(!navigator.mediaDevices?.getUserMedia)throw Object.assign(new Error('This browser does not support microphone capture.'),{code:'INTERVIEW_AUDIO_GET_USER_MEDIA_UNAVAILABLE'});
-      if(typeof MediaRecorder==='undefined')throw Object.assign(new Error('This browser does not support secure audio recording.'),{code:'INTERVIEW_AUDIO_MEDIA_RECORDER_UNAVAILABLE'});
-
-      await readMicrophonePermission();
-      micStream=await navigator.mediaDevices.getUserMedia({
-        audio:{
-          echoCancellation:true,
-          noiseSuppression:true,
-          autoGainControl:true,
-          channelCount:1
-        },
-        video:false
-      });
-
-      micTrack=micStream.getAudioTracks()[0];
-      if(!micTrack)throw Object.assign(new Error('No usable microphone track was returned.'),{code:'INTERVIEW_AUDIO_MICROPHONE_TRACK_MISSING'});
-
-      // Keep the microphone track enabled during local preflight so the level
-      // meter can display a real signal. No Realtime transport or recording is
-      // active before the explicit start click, so no audio leaves the browser.
-      micTrack.enabled=true;
-      micTrack.onended=()=>{
-        deviceReady=false;
-        devicePermissionState='unknown';
-        setPill('devicePill',`${L().device}: disconnected`,'err');
-        updateStartReadiness()
-      };
-      deviceReady=true;
-      devicePermissionState='granted';
-      setupMeter();
-      setPill('devicePill',`${l.device}: ${l.ready}`,'ok');
-      console.info('[CLARITY INTERVIEW AUDIO PREFLIGHT] ready',{
-        source,
-        label:micTrack.label||'microphone',
-        readyState:micTrack.readyState,
-        clientVersion:CLIENT_VERSION
-      });
-      return{ok:true}
-    }catch(error){
-      deviceReady=false;
-      const name=String(error?.name||'');
-      if(name==='NotAllowedError'||name==='PermissionDeniedError'){
-        devicePermissionState='denied';
-        setPill('devicePill',`${l.device}: ${l.micPermission}`,'warn');
-        console.warn('[CLARITY INTERVIEW AUDIO PREFLIGHT] permission required',{
-          source,
-          name,
-          message:error?.message,
-          clientVersion:CLIENT_VERSION
-        });
-        return{ok:false,permissionRequired:true,error}
-      }
-
-      setPill('devicePill',`${l.device}: error`,'err');
-      console.error('[CLARITY INTERVIEW AUDIO PREFLIGHT] failed',{
-        source,
-        name,
-        code:error?.code,
-        message:error?.message,
-        clientVersion:CLIENT_VERSION
-      });
-      return{ok:false,error}
-    }finally{
-      preflightPromise=null;
-      $('checkMicBtn').disabled=false;
-      $('checkMicBtn').textContent=l.checkMic;
-      updateStartReadiness()
+    realtimeMicTrack = micTrack.clone();
+    realtimeMicTrack.enabled = true;
+    realtimeMicStream = new MediaStream([realtimeMicTrack]);
+    realtimeAudioSender = pc.addTrack(realtimeMicTrack, realtimeMicStream);
+    dc = pc.createDataChannel('oai-events');
+    dc.addEventListener('message', onRealtimeEvent);
+    const openPromise = new Promise((resolve, reject) => {
+        dc.onopen = resolve;
+        dc.onerror = () => reject(makeStageError('INTERVIEW_AUDIO_DATA_CHANNEL_FAILED', 'Realtime data channel failed.'));
+    });
+    const offer = await withBrowserTimeout(pc.createOffer(), 8000, 'INTERVIEW_AUDIO_SDP_OFFER_TIMEOUT', 'Realtime SDP offer preparation timed out.');
+    await withBrowserTimeout(pc.setLocalDescription(offer), 8000, 'INTERVIEW_AUDIO_LOCAL_DESCRIPTION_TIMEOUT', 'Realtime local description timed out.');
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), 15000) : null;
+    let response;
+    try {
+        response = await fetch('https://api.openai.com/v1/realtime/calls', { method: 'POST', body: offer.sdp, headers: { Authorization: `Bearer ${token.clientSecret || token.value}`, 'Content-Type': 'application/sdp' }, signal: controller?.signal });
     }
-  })();
-
-  return preflightPromise
-}
-async function initializeAudioReadiness(){
-  setPill('backendPill',`${L().backend}: waiting`,'warn');
-  setPill('realtimePill',`${L().voice}: waiting`,'warn');
-  const deviceResult=await preflight({source:'module_init'}).catch(error=>({ok:false,error}));
-  let voiceResult={status:'skipped'};
-  if(deviceResult?.ok&&deviceReady){
-    voiceResult=await prepareVoiceTransport({source:'module_init'}).then(value=>({status:'fulfilled',value}),reason=>({status:'rejected',reason}));
-  }
-  debug({initializationComplete:true,deviceInitialization:deviceResult?.ok?'fulfilled':'rejected',voiceInitialization:voiceResult.status,voiceError:voiceResult.status==='rejected'?{code:voiceResult.reason?.code,message:voiceResult.reason?.message}:null});
-  updateStartReadiness()
-}
-
-async function resumeMeterContext(){try{if(audioContext?.state==='suspended')await audioContext.resume()}catch(_){} }
-function setupMeter(){
-  try{
-    if(meterFrame)cancelAnimationFrame(meterFrame);
-    if(audioContext)try{audioContext.close()}catch(_){}
-    audioContext=new(window.AudioContext||window.webkitAudioContext)();
-    const source=audioContext.createMediaStreamSource(micStream);
-    analyser=audioContext.createAnalyser();
-    analyser.fftSize=512;
-    analyser.smoothingTimeConstant=.72;
-    source.connect(analyser);
-    const data=new Uint8Array(analyser.fftSize);
-    const tick=()=>{
-      if(!analyser)return;
-      analyser.getByteTimeDomainData(data);
-      let sum=0,peak=0;
-      for(let i=0;i<data.length;i+=1){const sample=(data[i]-128)/128;sum+=sample*sample;peak=Math.max(peak,Math.abs(sample))}
-      const rms=Math.sqrt(sum/data.length);
-      const width=Math.min(100,Math.max(0,(rms*240)+(peak*55)));
-      $('micLevel').style.width=`${width.toFixed(1)}%`;
-      meterFrame=requestAnimationFrame(tick)
-    };
-    void resumeMeterContext();
-    tick()
-  }catch(error){console.warn('[CLARITY INTERVIEW AUDIO PREFLIGHT] meter unavailable',{message:error?.message})}
-}
-function makeStageError(code,message,details={}){return Object.assign(new Error(message),{code,details})}
-async function withBrowserTimeout(promise,timeoutMs,code,message){let timer;try{return await Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(makeStageError(code,message,{timeoutMs})),timeoutMs)})])}finally{clearTimeout(timer)}}
-function stringMetadata(values={}){const out={};for(const[key,value]of Object.entries(values)){if(value===undefined||value===null)continue;out[key]=String(value).slice(0,512)}return out}
-async function ensureRemoteAudioPlayback(source='unknown'){
-  remoteAudio=remoteAudio||$('remoteAudio');
-  if(!remoteAudio)return false;
-  remoteAudio.autoplay=true;remoteAudio.playsInline=true;remoteAudio.muted=false;remoteAudio.volume=1;
-  try{await remoteAudio.play();console.info(`[CLARITY INTERVIEW AUDIO PLAYBACK] ready ${JSON.stringify({source,clientVersion:CLIENT_VERSION})}`);return true}catch(error){console.warn(`[CLARITY INTERVIEW AUDIO PLAYBACK] waiting ${JSON.stringify({source,message:error?.message||String(error),clientVersion:CLIENT_VERSION})}`);return false}
-}
-function clearSpeechTimers(){clearTimeout(speechDrainTimer);clearTimeout(speechStartTimer);speechDrainTimer=null;speechStartTimer=null}
-function buildSpeechEvent(instructions,metadata={},withMetadata=true){
-  const response={conversation:'none',output_modalities:['audio'],input:[],instructions};
-  if(withMetadata)response.metadata=stringMetadata(metadata);
-  return{type:'response.create',response}
-}
-function sendSpeechResponse(instructions,metadata={},options={}){
-  activeSpeechInstructions=instructions;activeSpeechRequestId=String(metadata.speechRequestId||`IVSPEECH-${Date.now()}-${Math.random().toString(36).slice(2,8)}`);speechAudioStarted=false;
-  const effectiveMetadata={...metadata,speechRequestId:activeSpeechRequestId,sessionId:String(current?.sessionId||'')};
-  sendRealtime(buildSpeechEvent(instructions,effectiveMetadata,options.withMetadata!==false));
-  clearTimeout(speechStartTimer);
-  speechStartTimer=setTimeout(()=>{
-    if(!speakingQuestion||speechAudioStarted)return;
-    if(speechRetryCount<1){speechRetryCount+=1;console.warn(`[CLARITY INTERVIEW AUDIO VOICE] no audio started; retrying without metadata ${JSON.stringify({speechRequestId:activeSpeechRequestId,clientVersion:CLIENT_VERSION})}`);sendRealtime(buildSpeechEvent(activeSpeechInstructions,{},false));return}
-    fail(makeStageError('INTERVIEW_AUDIO_QUESTION_AUDIO_NOT_STARTED','The spoken question did not start. Please reconnect the voice connection and continue.',{speechRequestId:activeSpeechRequestId}))
-  },QUESTION_SPEECH_START_TIMEOUT_MS)
-}
-function closeRealtimeTransport(){
-  try{dc?.close()}catch(_){};try{pc?.close()}catch(_){};try{realtimeMicTrack?.stop()}catch(_){};
-  dc=null;pc=null;realtimeMicTrack=null;realtimeMicStream=null;voiceReady=false;voicePreparing=false
-}
-function setCandidateInputEnabled(enabled){
-  const value=Boolean(enabled);
-  if(micTrack?.readyState==='live')micTrack.enabled=value;
-  if(realtimeMicTrack?.readyState==='live')realtimeMicTrack.enabled=value;
-  if(recordingMicTrack?.readyState==='live')recordingMicTrack.enabled=value
-}
-async function connectRealtime(token){
-  closeRealtimeTransport();
-  pc=new RTCPeerConnection();
-  remoteAudio=$('remoteAudio');
-  pc.ontrack=event=>{const stream=event.streams?.[0]||new MediaStream([event.track]);remoteAudio.srcObject=stream;void ensureRemoteAudioPlayback('remote_track')};
-  pc.onconnectionstatechange=()=>{
-    const state=String(pc?.connectionState||'unknown');
-    if(['failed','closed','disconnected'].includes(state)&&!manualStart){voiceReady=false;voiceLastError=makeStageError('INTERVIEW_AUDIO_WEBRTC_CONNECTION_LOST',`Realtime connection ${state}.`,{state});updateStartReadiness()}
-    debug({realtimeConnectionState:state})
-  };
-  realtimeMicTrack=micTrack.clone();
-  realtimeMicTrack.enabled=false;
-  realtimeMicStream=new MediaStream([realtimeMicTrack]);
-  pc.addTrack(realtimeMicTrack,realtimeMicStream);
-  dc=pc.createDataChannel('oai-events');
-  dc.addEventListener('message',onRealtimeEvent);
-  const openPromise=new Promise((resolve,reject)=>{
-    dc.onopen=resolve;
-    dc.onerror=()=>reject(makeStageError('INTERVIEW_AUDIO_DATA_CHANNEL_FAILED','Realtime data channel failed.'))
-  });
-  const offer=await withBrowserTimeout(pc.createOffer(),8000,'INTERVIEW_AUDIO_SDP_OFFER_TIMEOUT','Realtime SDP offer preparation timed out.');
-  await withBrowserTimeout(pc.setLocalDescription(offer),8000,'INTERVIEW_AUDIO_LOCAL_DESCRIPTION_TIMEOUT','Realtime local description timed out.');
-  const controller=typeof AbortController!=='undefined'?new AbortController():null;
-  const timer=controller?setTimeout(()=>controller.abort(),15000):null;
-  let response;
-  try{
-    response=await fetch('https://api.openai.com/v1/realtime/calls',{method:'POST',body:offer.sdp,headers:{Authorization:`Bearer ${token.clientSecret||token.value}`,'Content-Type':'application/sdp'},signal:controller?.signal})
-  }catch(error){
-    if(error?.name==='AbortError')throw makeStageError('INTERVIEW_AUDIO_SDP_EXCHANGE_TIMEOUT','Realtime SDP exchange timed out.',{timeoutMs:15000});
-    throw makeStageError('INTERVIEW_AUDIO_SDP_EXCHANGE_FAILED',error?.message||'Realtime SDP exchange failed.')
-  }finally{if(timer)clearTimeout(timer)}
-  if(!response.ok){const body=await response.text().catch(()=>'');throw makeStageError('INTERVIEW_AUDIO_REALTIME_CONNECT_FAILED',`Realtime connection failed (${response.status}).`,{status:response.status,body:body.slice(0,500)})}
-  await withBrowserTimeout(pc.setRemoteDescription({type:'answer',sdp:await response.text()}),8000,'INTERVIEW_AUDIO_REMOTE_DESCRIPTION_TIMEOUT','Realtime remote description timed out.');
-  await withBrowserTimeout(openPromise,12000,'INTERVIEW_AUDIO_DATA_CHANNEL_TIMEOUT','Realtime data channel did not open.');
-  voiceReady=true;voicePreparing=false;voiceLastError=null;voiceTokenInfo=token;
-  setPill('realtimePill',`${L().voice}: ${L().ready}`,'ok');
-  console.info(`[CLARITY INTERVIEW AUDIO VOICE] ready ${JSON.stringify({uid:context?.uid||'',model:token.model,voice:token.voice,authLatencyMs:token?.diagnostics?.authLatencyMs||null,secretLatencyMs:token?.diagnostics?.secretLatencyMs||null,tokenLatencyMs:token?.diagnostics?.tokenLatencyMs||null,clientVersion:CLIENT_VERSION})}`);
-  updateStartReadiness();debug({realtimePrepared:true,realtimeModel:token.model,voice:token.voice,transcriptionModel:token.transcriptionModel})
-}
-async function prepareVoiceTransport(options={}){
-  if(voiceReady&&dc?.readyState==='open'&&pc?.connectionState==='connected')return{ok:true,reused:true};
-  if(voicePreparePromise)return voicePreparePromise;
-  if(!deviceReady||!micTrack||micTrack.readyState!=='live')throw makeStageError('INTERVIEW_AUDIO_MIC_NOT_READY','Microphone must be ready before voice preparation.');
-  const source=String(options.source||'unknown');
-  voicePreparing=true;voiceLastError=null;updateStartReadiness();
-  voicePreparePromise=(async()=>{
-    const startedAt=Date.now();
-    console.info(`[CLARITY INTERVIEW AUDIO VOICE] preparation started ${JSON.stringify({source,uid:context?.uid||'',clientVersion:CLIENT_VERSION})}`);
-    try{
-      setPill('backendPill',`${L().backend}: checking`,'warn');
-      const token=await request('audioToken',{sessionId:'',prepareOnly:true});
-      backendReady=token?.preconnectAuthorized===true||token?.ok===true;
-      backendDegraded=false;
-      setPill('backendPill',`${L().backend}: ${backendReady?L().ready:'not ready'}`,backendReady?'ok':'warn');
-      await connectRealtime(token);
-      return{ok:true,durationMs:Date.now()-startedAt,diagnostics:token?.diagnostics||null}
-    }catch(error){
-      closeRealtimeTransport();voiceLastError=error;voicePreparing=false;backendReady=false;backendDegraded=isTransport(error)&&localRuntimeReady();
-      setPill('backendPill',`${L().backend}: ${backendDegraded?'retry':'error'}`,backendDegraded?'warn':'err');
-      console.error(`[CLARITY INTERVIEW AUDIO VOICE] preparation failed ${JSON.stringify({source,code:error?.code||'',message:error?.message||'',details:error?.details||null,durationMs:Date.now()-startedAt,clientVersion:CLIENT_VERSION})}`);
-      updateStartReadiness();throw error
-    }finally{voicePreparePromise=null}
-  })();
-  return voicePreparePromise
-}
-function sendRealtime(event){if(dc?.readyState!=='open')throw new Error('Realtime data channel is not ready.');dc.send(JSON.stringify(event))}
-async function speakWelcome(question){
-  if(!question?.text||completionFinalized)return;
-  clearSpeechTimers();activeSpeechPurpose='intro';introPendingQuestion=question;speakingQuestion=true;speechRetryCount=0;speechAudioStarted=false;
-  setCandidateInputEnabled(false);$('repeatBtn').disabled=true;$('questionCard').classList.add('hidden');$('transcriptText').textContent=welcomeVisibleText();setPill('realtimePill',`${L().voice}: speaking`,'warn');
-  await ensureRemoteAudioPlayback('welcome_before_create');
-  sendSpeechResponse(`Speak exactly the following text and nothing else:\n\n${welcomeSpeechText()}`,{purpose:'clarity_interview_welcome',mainQuestionIndex:'0',followUpIndex:'0',turnType:'welcome'});
-  console.info('[CLARITY INTERVIEW AUDIO WELCOME] speech requested',{sessionId:current?.sessionId||'',speechRequestId:activeSpeechRequestId,clientVersion:CLIENT_VERSION})
-}
-async function speakQuestion(question){
-  if(!question?.text||completionFinalized)return;
-  clearSpeechTimers();resetAnswerCapture({disableInput:true});activeSpeechPurpose='question';speakingQuestion=true;speechRetryCount=0;speechAudioStarted=false;
-  setCandidateInputEnabled(false);$('repeatBtn').disabled=true;$('questionCard').classList.remove('hidden');$('transcriptText').textContent=L().speaking;setPill('realtimePill',`${L().voice}: speaking`,'warn');
-  await ensureRemoteAudioPlayback('question_before_create');
-  const instructions=`Speak exactly the following text in the same language. Do not add, remove, explain or answer anything:\n\n${question.text}`;
-  sendSpeechResponse(instructions,{purpose:'clarity_locked_interview_question',mainQuestionIndex:String(Number(question.mainQuestionIndex||0)),followUpIndex:String(Number(question.followUpIndex||0)),turnType:String(question.turnType||'main_question')});
-  console.info(`[CLARITY INTERVIEW AUDIO QUESTION] speech requested ${JSON.stringify({sessionId:current?.sessionId||'',mainQuestionIndex:String(Number(question.mainQuestionIndex||0)),followUpIndex:String(Number(question.followUpIndex||0)),speechRequestId:activeSpeechRequestId,clientVersion:CLIENT_VERSION})}`)
-}
-function finishQuestionPlayback(){
-  clearSpeechTimers();if(!speakingQuestion)return;
-  const purpose=activeSpeechPurpose;speakingQuestion=false;activeSpeechPurpose='idle';$('repeatBtn').disabled=false;
-  if(purpose==='intro'){
-    const question=introPendingQuestion;introPendingQuestion=null;setPill('realtimePill',`${L().voice}: ${L().ready}`,'ok');
-    setTimeout(()=>{if(question&&!completionStarted)void speakQuestion(question)},INTRO_PAUSE_MS);return
-  }
-  if(purpose==='closing'||completionStarted){void finalizeCompletionAfterClosing();return}
-  beginCandidateAnswer()
-}
-function onRealtimeEvent(event){
-  let data={};
-  try{data=JSON.parse(event.data)}catch(_){return}
-  debug({lastRealtimeEvent:data.type});
-
-  if(['response.output_audio.delta','response.audio.delta','output_audio_buffer.started'].includes(data.type)&&speakingQuestion){
-    speechAudioStarted=true;clearTimeout(speechStartTimer);speechStartTimer=null;void ensureRemoteAudioPlayback('realtime_audio_started');
-    console.info(`[CLARITY INTERVIEW AUDIO QUESTION] audio started ${JSON.stringify({eventType:data.type,responseId:data.response_id||data.response?.id||'',speechRequestId:activeSpeechRequestId,clientVersion:CLIENT_VERSION})}`)
-  }
-  if(data.type==='response.created'&&speakingQuestion){console.info(`[CLARITY INTERVIEW AUDIO QUESTION] response created ${JSON.stringify({responseId:data.response?.id||'',speechRequestId:activeSpeechRequestId,clientVersion:CLIENT_VERSION})}`)}
-
-  if(data.type==='input_audio_buffer.speech_started'&&!speakingQuestion&&awaitingCandidateAnswer&&!busy){
-    clearAnswerCommitTimer();clearAnswerTranscriptionTimer();answerSpeechActive=true;answerPartial='';
-    renderLiveAnswer(L().listening);setPill('realtimePill',`${L().voice}: listening`,'ok');
-    console.info('[CLARITY INTERVIEW AUDIO TURN] speech started',{sessionId:current?.sessionId||'',answerTurnId,clientVersion:CLIENT_VERSION})
-  }
-  if(data.type==='conversation.item.input_audio_transcription.delta'&&!speakingQuestion&&awaitingCandidateAnswer&&!busy){
-    const delta=String(data.delta||data.transcript_delta||'');if(delta){answerPartial+=delta;renderLiveAnswer(L().listening)}
-  }
-  if(data.type==='input_audio_buffer.speech_stopped'&&!speakingQuestion&&awaitingCandidateAnswer&&!busy){
-    answerSpeechActive=false;renderLiveAnswer(L().transcribing);setPill('realtimePill',`${L().voice}: transcribing`,'warn');
-    clearAnswerTranscriptionTimer();const turn=answerTurnId;answerTranscriptionTimer=setTimeout(()=>{if(turn!==answerTurnId||!awaitingCandidateAnswer||answerSpeechActive||busy)return;const partial=String(answerPartial||'').trim();if(partial)appendAnswerSegment(partial);answerPartial='';renderLiveAnswer(L().transcribing);if(combinedAnswerTranscript())scheduleAnswerCommit('transcription_timeout_fallback')},TRANSCRIPTION_COMPLETION_TIMEOUT_MS)
-  }
-  if(data.type==='conversation.item.input_audio_transcription.completed'){
-    const itemId=String(data.item_id||data.item?.id||'');
-    if(itemId&&processedItems.has(itemId))return;
-    if(itemId)processedItems.add(itemId);
-    if(!speakingQuestion&&awaitingCandidateAnswer&&!busy){
-      clearAnswerTranscriptionTimer();answerSpeechActive=false;const transcript=String(data.transcript||'').trim();if(transcript)appendAnswerSegment(transcript);answerPartial='';renderLiveAnswer(L().transcribing);
-      console.info('[CLARITY INTERVIEW AUDIO TURN] transcript segment completed',{sessionId:current?.sessionId||'',answerTurnId,itemId,segments:answerSegments.length,characters:combinedAnswerTranscript().length,clientVersion:CLIENT_VERSION});
-      scheduleAnswerCommit('transcription_completed')
+    catch (error) {
+        if (error?.name === 'AbortError')
+            throw makeStageError('INTERVIEW_AUDIO_SDP_EXCHANGE_TIMEOUT', 'Realtime SDP exchange timed out.', { timeoutMs: 15000 });
+        throw makeStageError('INTERVIEW_AUDIO_SDP_EXCHANGE_FAILED', error?.message || 'Realtime SDP exchange failed.');
     }
-  }
-  if(data.type==='conversation.item.input_audio_transcription.failed'&&!speakingQuestion&&awaitingCandidateAnswer){
-    clearAnswerTranscriptionTimer();fail(Object.assign(new Error('Speech transcription failed. Please retry the question.'),{code:'INTERVIEW_AUDIO_TRANSCRIPTION_FAILED'}))
-  }
-  if(data.type==='response.done'&&speakingQuestion){
-    const status=String(data.response?.status||'completed').toLowerCase();
-    if(['failed','cancelled','incomplete'].includes(status)){
-      return fail(Object.assign(new Error(data.response?.status_details?.error?.message||'Question speech generation failed.'),{code:'INTERVIEW_AUDIO_QUESTION_SPEECH_FAILED'}))
+    finally {
+        if (timer)
+            clearTimeout(timer);
     }
-    clearTimeout(speechDrainTimer);
-    speechDrainTimer=setTimeout(finishQuestionPlayback,QUESTION_DRAIN_FALLBACK_MS)
-  }
-  if(['output_audio_buffer.stopped','response.output_audio.done','response.audio.done'].includes(data.type)&&speakingQuestion){
-    finishQuestionPlayback()
-  }
-  if(data.type==='error'){
-    const message=String(data.error?.message||'Realtime voice error.');
-    const code=String(data.error?.code||'INTERVIEW_AUDIO_REALTIME_ERROR');
-    console.error(`[CLARITY INTERVIEW AUDIO REALTIME] error ${JSON.stringify({code,message,param:data.error?.param||'',speechRequestId:activeSpeechRequestId,clientVersion:CLIENT_VERSION})}`);
-    if(speakingQuestion&&!speechAudioStarted&&speechRetryCount<1&&activeSpeechInstructions){
-      speechRetryCount+=1;clearTimeout(speechStartTimer);console.warn(`[CLARITY INTERVIEW AUDIO QUESTION] retrying schema-safe response ${JSON.stringify({code,speechRequestId:activeSpeechRequestId,clientVersion:CLIENT_VERSION})}`);sendRealtime(buildSpeechEvent(activeSpeechInstructions,{},false));return
+    if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        throw makeStageError('INTERVIEW_AUDIO_REALTIME_CONNECT_FAILED', `Realtime connection failed (${response.status}).`, { status: response.status, body: body.slice(0, 500) });
     }
-    fail(Object.assign(new Error(message),{code,details:{param:data.error?.param||'',eventId:data.event_id||''}}))
-  }
+    await withBrowserTimeout(pc.setRemoteDescription({ type: 'answer', sdp: await response.text() }), 8000, 'INTERVIEW_AUDIO_REMOTE_DESCRIPTION_TIMEOUT', 'Realtime remote description timed out.');
+    await withBrowserTimeout(openPromise, 12000, 'INTERVIEW_AUDIO_DATA_CHANNEL_TIMEOUT', 'Realtime data channel did not open.');
+    await setCandidateInputEnabled(false, 'transport_connected_idle');
+    voiceReady = true;
+    voicePreparing = false;
+    voiceLastError = null;
+    voiceTokenInfo = token;
+    setPill('realtimePill', `${L().voice}: ${L().ready}`, 'ok');
+    console.info(`[CLARITY INTERVIEW AUDIO VOICE] ready ${JSON.stringify({ uid: context?.uid || '', model: token.model, voice: token.voice, authLatencyMs: token?.diagnostics?.authLatencyMs || null, secretLatencyMs: token?.diagnostics?.secretLatencyMs || null, tokenLatencyMs: token?.diagnostics?.tokenLatencyMs || null, clientVersion: CLIENT_VERSION })}`);
+    updateStartReadiness();
+    debug({ realtimePrepared: true, realtimeModel: token.model, voice: token.voice, transcriptionModel: token.transcriptionModel });
 }
-function startRecorder(){
-  if(mediaRecorder&&mediaRecorder.state==='recording')return mediaRecorder;
-  if(!micTrack||micTrack.readyState!=='live')throw makeStageError('INTERVIEW_AUDIO_RECORDING_TRACK_MISSING','The microphone recording track is not available.');
-  // Edge/Chromium can create an empty WebM when MediaRecorder is started while
-  // its source track is disabled. Start only after the first question has
-  // finished and the candidate input has been enabled.
-  micTrack.enabled=true;
-  try{recordingMicTrack?.stop()}catch(_){}
-  recordingMicTrack=micTrack.clone();recordingMicTrack.enabled=true;recordingMicStream=new MediaStream([recordingMicTrack]);
-  recordChunks=[];recordedBlob=null;recordingStopPromise=null;
-  const mime=MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus':'audio/webm';
-  mediaRecorder=new MediaRecorder(recordingMicStream,{mimeType:mime,audioBitsPerSecond:64000});
-  mediaRecorder.ondataavailable=event=>{if(event.data?.size){recordChunks.push(event.data);debug({recordingChunkCount:recordChunks.length,lastRecordingChunkBytes:event.data.size})}};
-  mediaRecorder.onerror=event=>{const error=event?.error||makeStageError('INTERVIEW_AUDIO_MEDIA_RECORDER_ERROR','The browser audio recorder reported an error.');console.error('[CLARITY INTERVIEW AUDIO RECORDING] error',{code:error?.code||'',message:error?.message||String(error),clientVersion:CLIENT_VERSION})};
-  mediaRecorder.start(1000);recordingStartedAt=Date.now();setPill('recordingPill',`${L().recording}: active`,'ok');
-  console.info('[CLARITY INTERVIEW AUDIO RECORDING] started',{mimeType:mime,trackEnabled:recordingMicTrack.enabled,clientVersion:CLIENT_VERSION});
-  return mediaRecorder
+async function prepareVoiceTransport(options = {}) {
+    if (voiceReady && dc?.readyState === 'open' && pc?.connectionState === 'connected')
+        return { ok: true, reused: true };
+    if (voicePreparePromise)
+        return voicePreparePromise;
+    if (!deviceReady || !micTrack || micTrack.readyState !== 'live')
+        throw makeStageError('INTERVIEW_AUDIO_MIC_NOT_READY', 'Microphone must be ready before voice preparation.');
+    const source = String(options.source || 'unknown');
+    voicePreparing = true;
+    voiceLastError = null;
+    updateStartReadiness();
+    voicePreparePromise = (async () => {
+        const startedAt = Date.now();
+        console.info(`[CLARITY INTERVIEW AUDIO VOICE] preparation started ${JSON.stringify({ source, uid: context?.uid || '', clientVersion: CLIENT_VERSION })}`);
+        try {
+            setPill('backendPill', `${L().backend}: checking`, 'warn');
+            const token = await request('audioToken', { sessionId: '', prepareOnly: true });
+            backendReady = token?.preconnectAuthorized === true || token?.ok === true;
+            backendDegraded = false;
+            setPill('backendPill', `${L().backend}: ${backendReady ? L().ready : 'not ready'}`, backendReady ? 'ok' : 'warn');
+            await connectRealtime(token);
+            return { ok: true, durationMs: Date.now() - startedAt, diagnostics: token?.diagnostics || null };
+        }
+        catch (error) {
+            closeRealtimeTransport();
+            voiceLastError = error;
+            voicePreparing = false;
+            backendReady = false;
+            backendDegraded = isTransport(error) && localRuntimeReady();
+            setPill('backendPill', `${L().backend}: ${backendDegraded ? 'retry' : 'error'}`, backendDegraded ? 'warn' : 'err');
+            console.error(`[CLARITY INTERVIEW AUDIO VOICE] preparation failed ${JSON.stringify({ source, code: error?.code || '', message: error?.message || '', details: error?.details || null, durationMs: Date.now() - startedAt, clientVersion: CLIENT_VERSION })}`);
+            updateStartReadiness();
+            throw error;
+        }
+        finally {
+            voicePreparePromise = null;
+        }
+    })();
+    return voicePreparePromise;
 }
-function buildRecordedBlob(){const chunks=recordChunks.filter(chunk=>chunk?.size>0);return new Blob(chunks,{type:mediaRecorder?.mimeType||chunks[0]?.type||'audio/webm'})}
-async function stopRecorder(){
-  if(recordedBlob?.size>=MIN_RECORDING_BYTES)return recordedBlob;
-  if(recordingStopPromise)return recordingStopPromise;
-  recordingStopPromise=(async()=>{
-    if(!mediaRecorder)throw makeStageError('INTERVIEW_AUDIO_RECORDER_NOT_STARTED','The candidate audio recorder was not started.');
-    if(mediaRecorder.state!=='inactive'){
-      if(mediaRecorder.state==='paused')try{mediaRecorder.resume()}catch(_){}
-      if(mediaRecorder.state==='recording')try{mediaRecorder.requestData()}catch(_){}
-      await sleep(RECORDING_FLUSH_WAIT_MS);
-      await new Promise((resolve,reject)=>{
-        const onStop=()=>resolve();const onError=event=>reject(event?.error||makeStageError('INTERVIEW_AUDIO_MEDIA_RECORDER_STOP_FAILED','The candidate audio recorder could not be stopped.'));
-        mediaRecorder.addEventListener('stop',onStop,{once:true});mediaRecorder.addEventListener('error',onError,{once:true});
-        try{mediaRecorder.stop()}catch(error){reject(error)}
-      })
+function sendRealtime(event) { if (dc?.readyState !== 'open')
+    throw new Error('Realtime data channel is not ready.'); dc.send(JSON.stringify(event)); }
+async function speakWelcome(question) {
+    if (!question?.text || completionFinalized)
+        return;
+    clearSpeechTimers();
+    activeSpeechPurpose = 'intro';
+    introPendingQuestion = question;
+    speakingQuestion = true;
+    speechRetryCount = 0;
+    speechAudioStarted = false;
+    await setCandidateInputEnabled(false, 'speakwelcome');
+    clearRealtimeInputBuffer();
+    $('repeatBtn').disabled = true;
+    $('questionCard').classList.add('hidden');
+    $('transcriptText').textContent = welcomeVisibleText();
+    setPill('realtimePill', `${L().voice}: speaking`, 'warn');
+    await ensureRemoteAudioPlayback('welcome_before_create');
+    sendSpeechResponse(`Speak exactly the following text and nothing else:\n\n${welcomeSpeechText()}`, { purpose: 'clarity_interview_welcome', mainQuestionIndex: '0', followUpIndex: '0', turnType: 'welcome' });
+    console.info('[CLARITY INTERVIEW AUDIO WELCOME] speech requested', { sessionId: current?.sessionId || '', speechRequestId: activeSpeechRequestId, clientVersion: CLIENT_VERSION });
+}
+async function speakQuestion(question) {
+    if (!question?.text || completionFinalized)
+        return;
+    clearSpeechTimers();
+    resetAnswerCapture({ disableInput: true });
+    activeSpeechPurpose = 'question';
+    speakingQuestion = true;
+    speechRetryCount = 0;
+    speechAudioStarted = false;
+    await setCandidateInputEnabled(false, 'speakquestion');
+    clearRealtimeInputBuffer();
+    $('repeatBtn').disabled = true;
+    $('questionCard').classList.remove('hidden');
+    $('transcriptText').textContent = L().speaking;
+    setPill('realtimePill', `${L().voice}: speaking`, 'warn');
+    await ensureRemoteAudioPlayback('question_before_create');
+    const instructions = `Speak exactly the following text in the same language. Do not add, remove, explain or answer anything:\n\n${question.text}`;
+    sendSpeechResponse(instructions, { purpose: 'clarity_locked_interview_question', mainQuestionIndex: String(Number(question.mainQuestionIndex || 0)), followUpIndex: String(Number(question.followUpIndex || 0)), turnType: String(question.turnType || 'main_question') });
+    console.info(`[CLARITY INTERVIEW AUDIO QUESTION] speech requested ${JSON.stringify({ sessionId: current?.sessionId || '', mainQuestionIndex: String(Number(question.mainQuestionIndex || 0)), followUpIndex: String(Number(question.followUpIndex || 0)), speechRequestId: activeSpeechRequestId, clientVersion: CLIENT_VERSION })}`);
+}
+function finishQuestionPlayback() {
+    clearSpeechTimers();
+    if (!speakingQuestion)
+        return;
+    const purpose = activeSpeechPurpose;
+    speakingQuestion = false;
+    activeSpeechPurpose = 'idle';
+    $('repeatBtn').disabled = false;
+    if (purpose === 'intro') {
+        const question = introPendingQuestion;
+        introPendingQuestion = null;
+        setPill('realtimePill', `${L().voice}: ${L().ready}`, 'ok');
+        setTimeout(() => { if (question && !completionStarted)
+            void speakQuestion(question); }, INTRO_PAUSE_MS);
+        return;
     }
-    await sleep(80);
-    const blob=buildRecordedBlob();
-    console.info('[CLARITY INTERVIEW AUDIO RECORDING] stopped',{chunkCount:recordChunks.length,sizeBytes:blob.size,durationSec:Math.max(0,Math.round((Date.now()-recordingStartedAt)/1000)),clientVersion:CLIENT_VERSION});
-    if(blob.size<MIN_RECORDING_BYTES)throw makeStageError('INTERVIEW_AUDIO_RECORDING_EMPTY','The browser did not produce a usable candidate audio recording. Please repeat the Audio Interview with the current version.',{chunkCount:recordChunks.length,sizeBytes:blob.size,minimumBytes:MIN_RECORDING_BYTES,recordingState:mediaRecorder?.state||''});
-    recordedBlob=blob;try{recordingMicTrack?.stop()}catch(_){};return blob
-  })();
-  try{return await recordingStopPromise}finally{recordingStopPromise=null}
+    if (purpose === 'closing' || completionStarted) {
+        void finalizeCompletionAfterClosing();
+        return;
+    }
+    void beginCandidateAnswer();
 }
-async function submitTranscript(transcript,audioMeta={},turnIntent=''){
-  if(busy||completionStarted)return;
-  const normalizedIntent=turnIntent||normalizeVoiceCommand(transcript);
-  if(normalizedIntent==='repeat'){resetAnswerCapture({disableInput:true});await speakQuestion(lastQuestion);return}
-  if(normalizedIntent==='rephrase'){resetAnswerCapture({disableInput:true});await speakRephrasedQuestion();return}
-  if(['continue','end_interview'].includes(normalizedIntent)&&!isSupplementTurn()){
-    $('transcriptText').textContent=String(context?.locale||'en').startsWith('de')?'Bitte beantworten Sie zuerst die Hauptfrage.':'Please answer the main question first.';
-    beginCandidateAnswer();return
-  }
-  busy=true;awaitingCandidateAnswer=false;answerSpeechActive=false;clearAnswerCommitTimer();clearAnswerTranscriptionTimer();setCandidateInputEnabled(false);updateTurnActions();lastTranscript=transcript;$('transcriptText').textContent=transcript||(['continue','end_interview'].includes(normalizedIntent)?(normalizedIntent==='end_interview'?L().endInterview:L().continue):'');setPill('realtimePill',`${L().voice}: ${L().sending}`,'warn');
-  try{
-    const data=await request('message',{sessionId:current?.sessionId,clientMessageId:`IVAUDMSG-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,message:['continue','end_interview'].includes(normalizedIntent)?'':transcript,turnIntent:normalizedIntent,answerSource:['continue','end_interview'].includes(normalizedIntent)?'audio_turn_control':'audio_realtime_transcript',audioMeta:{...audioMeta,realtimeClientVersion:CLIENT_VERSION,transcribedAt:new Date().toISOString(),turnType:currentTurnType()}});
-    renderState(data.state,data.nextQuestion);
-    if(data.done){completionStarted=true;if(micTrack)micTrack.enabled=false;show('processingView');await speakClosing()}else{await sleep(NEXT_QUESTION_PAUSE_MS);await speakQuestion(data.nextQuestion)}
-  }catch(e){
-    if(isTransport(e)){try{const state=await request('status',{sessionId:current?.sessionId,includeHistory:true});renderState(state,state.currentQuestion);if(state.lastProcessedClientMessageId){if(state.processing||state.completed){completionStarted=true;show('processingView');await speakClosing()}else{await sleep(NEXT_QUESTION_PAUSE_MS);await speakQuestion(state.currentQuestion)}}}catch(r){fail(r)}}else fail(e)
-  }finally{busy=false;updateTurnActions()}
+function onRealtimeEvent(event) {
+    let data = {};
+    try {
+        data = JSON.parse(event.data);
+    }
+    catch (_) {
+        return;
+    }
+    debug({ lastRealtimeEvent: data.type });
+    if (['response.output_audio.delta', 'response.audio.delta', 'output_audio_buffer.started'].includes(data.type) && speakingQuestion) {
+        speechAudioStarted = true;
+        clearTimeout(speechStartTimer);
+        speechStartTimer = null;
+        void ensureRemoteAudioPlayback('realtime_audio_started');
+        console.info(`[CLARITY INTERVIEW AUDIO QUESTION] audio started ${JSON.stringify({ eventType: data.type, responseId: data.response_id || data.response?.id || '', speechRequestId: activeSpeechRequestId, clientVersion: CLIENT_VERSION })}`);
+    }
+    if (data.type === 'response.created' && speakingQuestion) {
+        console.info(`[CLARITY INTERVIEW AUDIO QUESTION] response created ${JSON.stringify({ responseId: data.response?.id || '', speechRequestId: activeSpeechRequestId, clientVersion: CLIENT_VERSION })}`);
+    }
+    if (data.type === 'input_audio_buffer.speech_started' && !speakingQuestion && awaitingCandidateAnswer && !busy) {
+        clearAnswerCommitTimer();
+        clearAnswerTranscriptionTimer();
+        answerSpeechActive = true;
+        answerPartial = '';
+        renderLiveAnswer(L().listening);
+        setPill('realtimePill', `${L().voice}: listening`, 'ok');
+        console.info('[CLARITY INTERVIEW AUDIO TURN] speech started', { sessionId: current?.sessionId || '', answerTurnId, clientVersion: CLIENT_VERSION });
+    }
+    if (data.type === 'conversation.item.input_audio_transcription.delta' && !speakingQuestion && awaitingCandidateAnswer && !busy) {
+        const delta = String(data.delta || data.transcript_delta || '');
+        if (delta) {
+            answerPartial += delta;
+            answerCompletionReady = false;
+            renderLiveAnswer(L().listening);
+        }
+    }
+    if (data.type === 'input_audio_buffer.speech_stopped' && !speakingQuestion && awaitingCandidateAnswer && !busy) {
+        answerSpeechActive = false;
+        renderLiveAnswer(L().transcribing);
+        setPill('realtimePill', `${L().voice}: transcribing`, 'warn');
+        clearAnswerTranscriptionTimer();
+        const turn = answerTurnId;
+        answerTranscriptionTimer = setTimeout(() => { if (turn !== answerTurnId || !awaitingCandidateAnswer || answerSpeechActive || busy)
+            return; const partial = String(answerPartial || '').trim(); if (partial)
+            appendAnswerSegment(partial); answerPartial = ''; renderLiveAnswer(L().transcribing); if (combinedAnswerTranscript())
+            if (!commitRecognizedVoiceCommand('transcription_timeout_fallback')) scheduleAnswerCommit('transcription_timeout_fallback'); }, TRANSCRIPTION_COMPLETION_TIMEOUT_MS);
+    }
+    if (data.type === 'conversation.item.input_audio_transcription.completed') {
+        const itemId = String(data.item_id || data.item?.id || '');
+        if (itemId && processedItems.has(itemId))
+            return;
+        if (itemId)
+            processedItems.add(itemId);
+        if (!speakingQuestion && awaitingCandidateAnswer && !busy) {
+            clearAnswerTranscriptionTimer();
+            answerSpeechActive = false;
+            const transcript = String(data.transcript || '').trim();
+            if (transcript)
+                appendAnswerSegment(transcript);
+            answerPartial = '';
+            lastSemanticActivityAt = Date.now();
+            answerTranscriptRevision += 1;
+            renderLiveAnswer(L().transcribing);
+            console.info('[CLARITY INTERVIEW AUDIO TURN] transcript segment completed', { sessionId: current?.sessionId || '', answerTurnId, itemId, segments: answerSegments.length, characters: combinedAnswerTranscript().length, clientVersion: CLIENT_VERSION });
+            if (!commitRecognizedVoiceCommand('transcription_completed')) scheduleAnswerCommit('transcription_completed');
+        }
+    }
+    if (data.type === 'conversation.item.input_audio_transcription.failed' && !speakingQuestion && awaitingCandidateAnswer) {
+        clearAnswerTranscriptionTimer();
+        fail(Object.assign(new Error('Speech transcription failed. Please retry the question.'), { code: 'INTERVIEW_AUDIO_TRANSCRIPTION_FAILED' }));
+    }
+    if (data.type === 'response.done' && speakingQuestion) {
+        const status = String(data.response?.status || 'completed').toLowerCase();
+        if (['failed', 'cancelled', 'incomplete'].includes(status)) {
+            return fail(Object.assign(new Error(data.response?.status_details?.error?.message || 'Question speech generation failed.'), { code: 'INTERVIEW_AUDIO_QUESTION_SPEECH_FAILED' }));
+        }
+        clearTimeout(speechDrainTimer);
+        speechDrainTimer = setTimeout(finishQuestionPlayback, QUESTION_DRAIN_FALLBACK_MS);
+    }
+    if (['output_audio_buffer.stopped', 'response.output_audio.done', 'response.audio.done'].includes(data.type) && speakingQuestion) {
+        finishQuestionPlayback();
+    }
+    if (data.type === 'error') {
+        const message = String(data.error?.message || 'Realtime voice error.');
+        const code = String(data.error?.code || 'INTERVIEW_AUDIO_REALTIME_ERROR');
+        console.error(`[CLARITY INTERVIEW AUDIO REALTIME] error ${JSON.stringify({ code, message, param: data.error?.param || '', speechRequestId: activeSpeechRequestId, clientVersion: CLIENT_VERSION })}`);
+        if (speakingQuestion && !speechAudioStarted && speechRetryCount < 1 && activeSpeechInstructions) {
+            speechRetryCount += 1;
+            clearTimeout(speechStartTimer);
+            console.warn(`[CLARITY INTERVIEW AUDIO QUESTION] retrying schema-safe response ${JSON.stringify({ code, speechRequestId: activeSpeechRequestId, clientVersion: CLIENT_VERSION })}`);
+            sendRealtime(buildSpeechEvent(activeSpeechInstructions, {}, false));
+            return;
+        }
+        fail(Object.assign(new Error(message), { code, details: { param: data.error?.param || '', eventId: data.event_id || '' } }));
+    }
 }
-async function speakRephrasedQuestion(){
-  if(!lastQuestion?.text)return;
-  resetAnswerCapture({disableInput:true});activeSpeechPurpose='question';speakingQuestion=true;speechRetryCount=0;speechAudioStarted=false;await ensureRemoteAudioPlayback('rephrase_before_create');
-  const de=String(context?.locale||'en').toLowerCase().startsWith('de');
-  const instructions=de?`Formuliere die folgende Interviewfrage in einfachen, klaren Worten neu. Verändere nicht die fachliche Bedeutung und füge keine neue Frage hinzu. Sprich nur die neu formulierte Frage:\n\n${lastQuestion.text}`:`Rephrase the following Interview question in simple, clear words. Do not change its meaning and do not add a new question. Speak only the rephrased question:\n\n${lastQuestion.text}`;
-  sendSpeechResponse(instructions,{purpose:'clarity_locked_interview_question_rephrased',mainQuestionIndex:String(lastQuestion.mainQuestionIndex||''),followUpIndex:String(lastQuestion.followUpIndex||0),turnType:currentTurnType()})
+async function startRecorder() {
+    if (mediaRecorder && mediaRecorder.state === 'recording')
+        return mediaRecorder;
+    if (!micTrack || micTrack.readyState !== 'live')
+        throw makeStageError('INTERVIEW_AUDIO_RECORDING_TRACK_MISSING', 'The microphone recording track is not available.');
+    try { recordingMicTrack?.stop(); } catch (_) { }
+    try { recordingVideoTrack?.stop(); } catch (_) { }
+    recordingMicTrack = micTrack.clone();
+    recordingMicTrack.enabled = true;
+    await ensureRecordingAudioGraph();
+    recordingMicStream = new MediaStream([recordingMixedAudioTrack]);
+    recordChunks = [];
+    recordedBlob = null;
+    recordingStopPromise = null;
+    const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
+    mediaRecorder = new MediaRecorder(recordingMicStream, { mimeType: mime, audioBitsPerSecond: 64000 });
+    mediaRecorder.ondataavailable = event => { if (event.data?.size) { recordChunks.push(event.data); debug({ recordingChunkCount: recordChunks.length, lastRecordingChunkBytes: event.data.size }); } };
+    mediaRecorder.onerror = event => { const error = event?.error || makeStageError('INTERVIEW_AUDIO_MEDIA_RECORDER_ERROR', 'The browser recorder reported an error.'); console.error('[CLARITY INTERVIEW AUDIO RECORDING] error', { code: error?.code || '', message: error?.message || String(error), clientVersion: CLIENT_VERSION }); };
+    mediaRecorder.start(1000);
+    recordingStartedAt = Date.now();
+    setPill('recordingPill', `${L().recording}: active`, 'ok');
+    console.info('[CLARITY INTERVIEW AUDIO RECORDING] full mixed Interview recording started', { mimeType: mime, aiVoiceIncluded: true, participantVoiceIncluded: true, recordingContract: 'full_interview_mixed_ai_candidate_v1', clientVersion: CLIENT_VERSION });
+    return mediaRecorder;
 }
-async function speakClosing(){resetAnswerCapture({disableInput:true});activeSpeechPurpose='closing';speakingQuestion=true;speechRetryCount=0;speechAudioStarted=false;await ensureRemoteAudioPlayback('closing_before_create');const instructions=`Speak exactly the following text and nothing else:
-
-${String(context?.locale||'en').startsWith('de')?'Vielen Dank. Sie haben alle zehn Hauptfragen beantwortet. Ihre Aufnahme wird jetzt sicher gespeichert.':'Thank you. You have answered all ten main questions. Your recording is now being saved securely.'}`;sendSpeechResponse(instructions,{purpose:'clarity_interview_closing',mainQuestionIndex:'10',followUpIndex:'0',turnType:'closing'})}
-async function readJsonSafe(response){const contentType=response.headers.get('content-type')||'';if(contentType.includes('json'))return response.json();const raw=await response.text().catch(()=> '');throw makeStageError('INTERVIEW_AUDIO_MUX_NON_JSON',`Mux endpoint returned ${response.status}: ${raw.slice(0,300)}`,{status:response.status})}
-function runtimeCompanyId(){return String(context?.runtime?.companyId||context?.branding?.companyId||'').trim()}
-async function createMuxUpload(){const companyId=runtimeCompanyId();if(!companyId)throw makeStageError('INTERVIEW_AUDIO_COMPANY_CONTEXT_MISSING','Company context is required for the Mux upload.');const response=await fetch(MUX_UPLOAD_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uid:context?.uid||'',companyId,sessionId:current?.sessionId||'',mode:'audio'})});const data=await readJsonSafe(response);if(!response.ok||!data?.ok)throw makeStageError('INTERVIEW_AUDIO_MUX_CREATE_FAILED',data?.message||data?.error||`Mux upload creation failed (${response.status}).`,{response:data});if(!data.uploadId||!data.uploadUrl)throw makeStageError('INTERVIEW_AUDIO_MUX_CREATE_INVALID','Mux upload response is incomplete.',{response:data});return data}
-async function putBlobToMux(uploadUrl,blob){setPill('processingUploadPill',`${L().uploading} Mux`,'warn');const response=await fetch(uploadUrl,{method:'PUT',headers:{'Content-Type':blob.type||'audio/webm'},body:blob});if(!response.ok){const raw=await response.text().catch(()=> '');throw makeStageError('INTERVIEW_AUDIO_MUX_PUT_FAILED',`Mux upload failed (${response.status}).`,{status:response.status,response:raw.slice(0,500)})}return response.status}
-async function fetchMuxAsset(uploadId){const response=await fetch(`${MUX_ASSET_URL}?uploadId=${encodeURIComponent(uploadId)}`);const data=await readJsonSafe(response);if(!response.ok||!data?.ok)throw makeStageError('INTERVIEW_AUDIO_MUX_STATUS_FAILED',data?.message||data?.error||`Mux status failed (${response.status}).`,{response:data});return data}
-async function pollMuxAsset(uploadId,maxMs=140000){const started=Date.now();let last=null;while(Date.now()-started<maxMs){last=await fetchMuxAsset(uploadId);console.info('[CLARITY INTERVIEW AUDIO MUX] status',{uploadId,assetStatus:last?.assetStatus||'',assetId:last?.assetId||'',playbackId:last?.playbackId||'',clientVersion:CLIENT_VERSION});if(last?.assetStatus==='ready'&&last?.playbackId)return last;if(last?.assetStatus==='errored')throw makeStageError('INTERVIEW_AUDIO_MUX_PROCESSING_FAILED',last?.error||'Mux could not process the candidate audio.',{uploadId,last});await sleep(2500)}throw makeStageError('INTERVIEW_AUDIO_MUX_PROCESSING_TIMEOUT','Mux is still processing the candidate audio. Retry processing in a moment.',{uploadId,maxMs,last})}
-async function uploadRecordingDirectToMux(blob){const created=await createMuxUpload();const putStatus=await putBlobToMux(created.uploadUrl,blob);uploadId=String(created.uploadId||'');let mux=await fetchMuxAsset(uploadId);if(!(mux?.assetStatus==='ready'&&mux?.playbackId))mux=await pollMuxAsset(uploadId);const durationSec=Math.max(0,Math.round((Date.now()-recordingStartedAt)/1000));const result=await request('audioFinalize',{sessionId:current.sessionId,uploadId,mimeType:blob.type||'audio/webm',sizeBytes:blob.size,durationSec,fileName:`CLARITY_${current.sessionId}_candidate_audio.webm`,mux:{provider:'mux',uploadId,putStatus,assetStatus:mux?.assetStatus||'',assetId:mux?.assetId||'',playbackId:mux?.playbackId||'',playbackUrl:mux?.playbackUrl||'',downloadUrl:mux?.downloadUrl||'',audioOnlyUrl:mux?.audioOnlyUrl||'',staticRenditionsStatus:mux?.staticRenditionsStatus||'',error:mux?.error||''}});return result?.ready?result:waitForAudioReady(result)}
-async function blobSliceBase64(blob){const buffer=await blob.arrayBuffer();let binary='';const bytes=new Uint8Array(buffer);const step=0x8000;for(let i=0;i<bytes.length;i+=step)binary+=String.fromCharCode(...bytes.subarray(i,Math.min(bytes.length,i+step)));return btoa(binary)}
-function serverUploadId(){return String(uploadId||current?.audio?.uploadId||current?.audioUploadId||'').trim()}
-async function audioUploadStatus(){const id=serverUploadId();if(!id)return null;uploadId=id;return request('audioUploadStatus',{sessionId:current?.sessionId||'',uploadId:id})}
-async function waitForAudioReady(initial=null,timeoutMs=120000){
-  let status=initial;const started=Date.now();
-  while(Date.now()-started<timeoutMs){
-    if(status?.ready&&status?.asset?.assetId)return status;
-    if(String(status?.status||'').toLowerCase()==='failed')throw makeStageError('INTERVIEW_AUDIO_MEDIA_PROCESSING_FAILED','The candidate audio could not be processed by Mux.',{uploadId:serverUploadId(),status});
-    setPill('processingUploadPill',`${L().upload}: processing`,'warn');await sleep(1800);status=await audioUploadStatus()
-  }
-  throw makeStageError('INTERVIEW_AUDIO_MEDIA_PROCESSING_TIMEOUT','The candidate audio is still being processed. Please retry processing in a moment.',{uploadId:serverUploadId(),timeoutMs})
+function buildRecordedBlob() { const chunks = recordChunks.filter(chunk => chunk?.size > 0); return new Blob(chunks, { type: mediaRecorder?.mimeType || chunks[0]?.type || 'audio/webm' }); }
+async function stopRecorder() {
+    if (recordedBlob?.size >= MIN_RECORDING_BYTES)
+        return recordedBlob;
+    if (recordingStopPromise)
+        return recordingStopPromise;
+    recordingStopPromise = (async () => {
+        if (!mediaRecorder)
+            throw makeStageError('INTERVIEW_AUDIO_RECORDER_NOT_STARTED', 'The full Interview audio recorder was not started.');
+        if (mediaRecorder.state !== 'inactive') {
+            if (mediaRecorder.state === 'paused')
+                try {
+                    mediaRecorder.resume();
+                }
+                catch (_) { }
+            if (mediaRecorder.state === 'recording')
+                try {
+                    mediaRecorder.requestData();
+                }
+                catch (_) { }
+            await sleep(RECORDING_FLUSH_WAIT_MS);
+            await new Promise((resolve, reject) => {
+                const onStop = () => resolve();
+                const onError = event => reject(event?.error || makeStageError('INTERVIEW_AUDIO_MEDIA_RECORDER_STOP_FAILED', 'The full Interview audio recorder could not be stopped.'));
+                mediaRecorder.addEventListener('stop', onStop, { once: true });
+                mediaRecorder.addEventListener('error', onError, { once: true });
+                try {
+                    mediaRecorder.stop();
+                }
+                catch (error) {
+                    reject(error);
+                }
+            });
+        }
+        await sleep(80);
+        const blob = buildRecordedBlob();
+        console.info('[CLARITY INTERVIEW AUDIO RECORDING] stopped', { chunkCount: recordChunks.length, sizeBytes: blob.size, durationSec: Math.max(0, Math.round((Date.now() - recordingStartedAt) / 1000)), clientVersion: CLIENT_VERSION });
+        if (blob.size < MIN_RECORDING_BYTES)
+            throw makeStageError('INTERVIEW_AUDIO_RECORDING_EMPTY', 'The browser did not produce a usable full Interview audio recording. Please repeat the Audio Interview with the current version.', { chunkCount: recordChunks.length, sizeBytes: blob.size, minimumBytes: MIN_RECORDING_BYTES, recordingState: mediaRecorder?.state || '' });
+        recordedBlob = blob;
+        try {
+            recordingMicTrack?.stop();
+        }
+        catch (_) { }
+        ;
+        return blob;
+    })();
+    try {
+        return await recordingStopPromise;
+    }
+    finally {
+        recordingStopPromise = null;
+    }
 }
-async function finalizeServerUpload(options={}){
-  const id=serverUploadId();if(!id)throw makeStageError('INTERVIEW_AUDIO_UPLOAD_ID_REQUIRED','The audio upload identifier is missing.');
-  const result=await request('audioFinalize',{sessionId:current.sessionId,uploadId:id,mimeType:options.mimeType||recordedBlob?.type||'audio/webm',durationSec:options.durationSec||Math.round((Date.now()-recordingStartedAt)/1000),fileName:`CLARITY_${current.sessionId}_candidate_audio.webm`});
-  return result?.ready?result:waitForAudioReady(result)
-}
-async function recoverExistingServerUpload(){
-  const id=serverUploadId();if(!id)return null;
-  const status=await audioUploadStatus();
-  if(status?.ready&&status?.asset?.assetId)return status;
-  if(status?.status==='chunks_ready'||status?.chunks?.complete)return finalizeServerUpload();
-  if(status?.processing||status?.status==='processing')return waitForAudioReady(status);
-  return null
-}
-async function uploadRecordingViaServerChunks(blob){
-  uploadId=uploadId||`IVAUDIO-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2,9).toUpperCase()}`;
-  const total=Math.ceil(blob.size/UPLOAD_CHUNK_BYTES);if(total<1)throw makeStageError('INTERVIEW_AUDIO_UPLOAD_EMPTY','The candidate audio upload contained no chunks.',{sizeBytes:blob.size});
-  setPill('uploadPill',`${L().upload}: 0/${total}`,'warn');setPill('processingUploadPill',`${L().uploading} 0/${total}`,'warn');
-  for(let i=0;i<total;i+=1){const slice=blob.slice(i*UPLOAD_CHUNK_BYTES,Math.min(blob.size,(i+1)*UPLOAD_CHUNK_BYTES));const data=await blobSliceBase64(slice);await request('audioChunk',{sessionId:current.sessionId,uploadId,idx:i,total,data,mimeType:blob.type||'audio/webm'});setPill('uploadPill',`${L().upload}: ${i+1}/${total}`,i+1===total?'ok':'warn');setPill('processingUploadPill',`${L().uploading} ${i+1}/${total}`,i+1===total?'ok':'warn')}
-  return finalizeServerUpload({mimeType:blob.type||'audio/webm',durationSec:Math.round((Date.now()-recordingStartedAt)/1000)})
-}
-async function uploadRecording(blob){
-  if(!blob||blob.size<MIN_RECORDING_BYTES)throw makeStageError('INTERVIEW_AUDIO_RECORDING_EMPTY','No usable candidate audio was produced by the browser.',{sizeBytes:Number(blob?.size||0),minimumBytes:MIN_RECORDING_BYTES,chunkCount:recordChunks.length});
-  setPill('uploadPill',`${L().upload}: Mux`,'warn');setPill('processingUploadPill',`${L().uploading} Mux`,'warn');$('retryUploadBtn').classList.add('hidden');
-  console.info('[CLARITY INTERVIEW AUDIO MUX] upload started',{sessionId:current?.sessionId||'',sizeBytes:blob.size,mimeType:blob.type||'audio/webm',clientVersion:CLIENT_VERSION});
-  try{uploadResult=await uploadRecordingDirectToMux(blob)}catch(primaryError){
-    console.warn('[CLARITY INTERVIEW AUDIO MUX] direct upload unavailable; using authenticated chunk recovery',{code:primaryError?.code||'',message:primaryError?.message||String(primaryError),clientVersion:CLIENT_VERSION});
-    uploadId='';uploadResult=await uploadRecordingViaServerChunks(blob)
-  }
-  setPill('uploadPill',`${L().upload}: ready`,'ok');setPill('processingUploadPill',`${L().upload}: ready`,'ok');console.info('[CLARITY INTERVIEW AUDIO MUX] asset ready',{sessionId:current?.sessionId||'',uploadId:serverUploadId(),assetId:uploadResult?.asset?.assetId||'',playbackId:uploadResult?.asset?.playbackId||'',clientVersion:CLIENT_VERSION});return uploadResult
-}
-async function finalizeCompletionAfterClosing(){
-  if(completionFinalized||completionFinalizing)return;
-  completionFinalizing=true;show('processingView');$('retryUploadBtn').classList.add('hidden');
-  try{
-    clearTimeout(speechDrainTimer);resetAnswerCapture({disableInput:true});speakingQuestion=false;activeSpeechPurpose='idle';
-    uploadResult=uploadResult?.asset?.assetId?uploadResult:await recoverExistingServerUpload();
-    if(!uploadResult?.asset?.assetId){recordedBlob=recordedBlob?.size>=MIN_RECORDING_BYTES?recordedBlob:await stopRecorder();await uploadRecording(recordedBlob)}
-    const done=await request('finish',{sessionId:current.sessionId,audioUploadId:serverUploadId(),audioAssetId:uploadResult?.asset?.assetId||''});
-    completionFinalized=true;$('retryUploadBtn').classList.add('hidden');renderState(done.state);pollStatus()
-  }catch(error){completionFinalizing=false;showProcessingRetry(error)}
-}
-function pollStatus(){clearTimeout(pollTimer);pollTimer=setTimeout(async()=>{try{const state=await request('status',{sessionId:current?.sessionId,includeHistory:false});current=state;if(state.completed||state.participantCompleted){show('completedView');cleanup(false)}else{show('processingView');pollStatus()}}catch(_){pollStatus()}},3500)}
-async function resumeStartedAudioInterview(){
-  if(busy)return;busy=true;
-  try{
-    show('readyView');
-    if(!deviceReady||!micTrack||micTrack.readyState!=='live')await preflight({source:'active_session_recovery'});
-    if(!voiceReady||dc?.readyState!=='open'||pc?.connectionState!=='connected')await prepareVoiceTransport({source:'active_session_recovery'});
-    await ensureRemoteAudioPlayback('active_session_recovery');
-    const state=await request('status',{sessionId:current?.sessionId||'',includeHistory:true});
-    current=state;manualStart=Boolean(state?.sessionId&&state?.started!==false);
-    const question=state.currentQuestion||lastQuestion;
-    renderState(state,question);
-    $('startState').classList.add('hidden');$('activeActions').classList.remove('hidden');
-    if(question?.text)await speakQuestion(question);else throw makeStageError('INTERVIEW_AUDIO_CURRENT_QUESTION_MISSING','The active Interview question could not be restored.',{sessionId:state?.sessionId||''})
-  }catch(error){fail(error)}finally{busy=false;updateStartReadiness()}
-}
-
-async function startAudio(){
-  if(busy)return;
-  if(!deviceReady||!micTrack||!micStream){await preflight({source:'start_button'});if(!deviceReady||!micTrack||!micStream)return}
-  if(!voiceReady||dc?.readyState!=='open'||pc?.connectionState!=='connected'){
-    try{await prepareVoiceTransport({source:'start_button'})}catch(error){fail(error);return}
-  }
-  busy=true;$('startBtn').disabled=true;
-  try{
-    await resumeMeterContext();
-    try{await ensureRemoteAudioPlayback('start_click')}catch(_){}
-    // Keep the preconnected Realtime input muted until the first question has finished.
+async function submitTranscript(transcript, audioMeta = {}, turnIntent = '') {
+    if (busy || completionStarted)
+        return;
+    const normalizedIntent = turnIntent || normalizeVoiceCommand(transcript);
+    if (normalizedIntent === 'repeat') {
+        resetAnswerCapture({ disableInput: true });
+        await speakQuestion(lastQuestion);
+        return;
+    }
+    if (normalizedIntent === 'rephrase') {
+        resetAnswerCapture({ disableInput: true });
+        await speakRephrasedQuestion();
+        return;
+    }
+    if (['continue', 'end_interview'].includes(normalizedIntent) && !isSupplementTurn()) {
+        $('transcriptText').textContent = String(context?.locale || 'en').startsWith('de') ? 'Bitte beantworten Sie zuerst die Hauptfrage.' : 'Please answer the main question first.';
+        void beginCandidateAnswer();
+        return;
+    }
+    busy = true;
+    awaitingCandidateAnswer = false;
+    answerSpeechActive = false;
+    clearAnswerCommitTimer();
+    clearAnswerTranscriptionTimer();
     setCandidateInputEnabled(false);
-    setPill('realtimePill',`${L().voice}: ${L().ready}`,'ok');
-    console.info(`[CLARITY INTERVIEW AUDIO START] canonical start requested ${JSON.stringify({uid:context?.uid||'',clientVersion:CLIENT_VERSION})}`);
-    const data=await request('start',{clientStartId:`IVAUDIOSTART-${context?.uid||Date.now()}`});
-    manualStart=true;backendReady=true;backendDegraded=false;current=data.state;
-    renderState(data.state,data.firstQuestion);
-    $('startState').classList.add('hidden');$('activeActions').classList.remove('hidden');
-    console.info(`[CLARITY INTERVIEW AUDIO START] session started ${JSON.stringify({uid:context?.uid||'',sessionId:current?.sessionId||'',clientVersion:CLIENT_VERSION})}`);
-    await speakWelcome(data.firstQuestion||data.state?.currentQuestion)
-  }catch(error){
-    if(!manualStart)setCandidateInputEnabled(true);
-    fail(error)
-  }finally{busy=false;updateStartReadiness()}
-}
-async function status(options={}){
-  const force=options.force===true;
-  const allowCooldown=options.allowCooldown===true;
-  if(backendStatusPromise&&!force)return backendStatusPromise;
-  if(!force&&allowCooldown&&backendPreflightAttemptedAt&&Date.now()-backendPreflightAttemptedAt<30000)return{ok:true,cooldown:true,degraded:backendDegraded};
-  backendPreflightAttemptedAt=Date.now();
-  const run=(async()=>{
-    const prestart=manualStart!==true&&!current?.sessionId;
-    const action=prestart?'preflight':'status';
-    try{
-      setPill('backendPill',`${L().backend}: checking`,'warn');
-      console.info('[CLARITY INTERVIEW AUDIO BACKEND] request started',{action,uid:context?.uid||'',sessionId:current?.sessionId||'',clientVersion:CLIENT_VERSION});
-      const data=await request(action,{sessionId:current?.sessionId||'',includeHistory:action==='status'});
-      current=data;
-      backendReady=Boolean(data?.readiness?.questionPlanReady&&data?.readiness?.profileReady&&data?.readiness?.consentReady&&data?.readiness?.modeReleased);
-      backendDegraded=false;
-      renderState(data,null);
-      setPill('backendPill',`${L().backend}: ${backendReady?L().ready:'not ready'}`,backendReady?'ok':'warn');
-      updateStartReadiness();
-      console.info('[CLARITY INTERVIEW AUDIO BACKEND] ready',{action,backendReady,prestartFastPath:data?.diagnostics?.prestartFastPath===true,sessionLookupSkipped:data?.diagnostics?.sessionLookupSkipped===true,sessionId:data?.sessionId||'',mode:data?.mode||'',durationMs:data?.diagnostics?.statusDurationMs,version:data?.version||data?.backendVersion||''});
-      if(data.processing&&!completionStarted){completionStarted=true;show('processingView');uploadId=uploadId||String(data?.audio?.uploadId||'');if(data?.audio?.required&&String(data?.audio?.status||'')!=='ready')$('retryUploadBtn').classList.remove('hidden');pollStatus()}
-      if(data.completed||data.participantCompleted)show('completedView');
-      return data
-    }catch(error){
-      const recoverable=isTransport(error)&&manualStart!==true&&!current?.sessionId&&localRuntimeReady();
-      backendReady=false;
-      backendDegraded=recoverable;
-      setPill('backendPill',`${L().backend}: ${recoverable?'verify on start':'error'}`,recoverable?'warn':'err');
-      updateStartReadiness();
-      console.error('[CLARITY INTERVIEW AUDIO BACKEND] failed',{action,code:error?.code,message:error?.message,details:error?.details||null,requestId:error?.requestId,localRuntimeReady:localRuntimeReady(),recoverable,clientVersion:CLIENT_VERSION});
-      if(recoverable)return{ok:true,degraded:true,phase:'ready',mode:'audio',sessionId:'',readiness:{questionPlanReady:true,profileReady:true,consentReady:true,modeReleased:true},diagnostics:{prestartFallback:true,transportErrorCode:error?.code||'',transportErrorMessage:error?.message||''}};
-      throw error
+    updateTurnActions();
+    lastTranscript = transcript;
+    $('transcriptText').textContent = transcript || (['continue', 'end_interview'].includes(normalizedIntent) ? (normalizedIntent === 'end_interview' ? L().endInterview : L().continue) : '');
+    setPill('realtimePill', `${L().voice}: ${L().sending}`, 'warn');
+    try {
+        const data = await request('message', { sessionId: current?.sessionId, clientMessageId: `IVAUDMSG-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, message: ['continue', 'end_interview'].includes(normalizedIntent) ? '' : transcript, turnIntent: normalizedIntent, answerSource: normalizedIntent === 'answer_complete' ? 'audio_explicit_completion_transcript' : ['continue', 'end_interview'].includes(normalizedIntent) ? 'audio_turn_control' : 'audio_realtime_transcript', audioMeta: { ...audioMeta, realtimeClientVersion: CLIENT_VERSION, transcribedAt: new Date().toISOString(), turnType: currentTurnType() } });
+        renderState(data.state, data.nextQuestion);
+        if (data.done) {
+            completionStarted = true;
+            if (micTrack)
+                micTrack.enabled = false;
+            show('processingView');
+            await speakClosing();
+        }
+        else {
+            await sleep(NEXT_QUESTION_PAUSE_MS);
+            await speakQuestion(data.nextQuestion);
+        }
     }
-  })();
-  const tracked=run.finally(()=>{if(backendStatusPromise===tracked)backendStatusPromise=null});
-  backendStatusPromise=tracked;
-  return tracked
+    catch (e) {
+        if (isTransport(e)) {
+            try {
+                const state = await request('status', { sessionId: current?.sessionId, includeHistory: true });
+                renderState(state, state.currentQuestion);
+                if (state.lastProcessedClientMessageId) {
+                    if (state.processing || state.completed) {
+                        completionStarted = true;
+                        show('processingView');
+                        await speakClosing();
+                    }
+                    else {
+                        await sleep(NEXT_QUESTION_PAUSE_MS);
+                        await speakQuestion(state.currentQuestion);
+                    }
+                }
+            }
+            catch (r) {
+                fail(r);
+            }
+        }
+        else
+            fail(e);
+    }
+    finally {
+        busy = false;
+        updateTurnActions();
+    }
 }
-function cleanup(stopTracks=true){
-  clearTimeout(pollTimer);clearSpeechTimers();clearAnswerCommitTimer();clearAnswerTranscriptionTimer();if(meterFrame)cancelAnimationFrame(meterFrame);
-  closeRealtimeTransport();
-  try{if(mediaRecorder&&mediaRecorder.state!=='inactive')mediaRecorder.stop()}catch(_){};try{recordingMicTrack?.stop()}catch(_){};recordingMicTrack=null;recordingMicStream=null;
-  if(stopTracks)micStream?.getTracks().forEach(track=>track.stop());
-  try{audioContext?.close()}catch(_){}
+async function speakRephrasedQuestion() {
+    if (!lastQuestion?.text)
+        return;
+    resetAnswerCapture({ disableInput: true });
+    activeSpeechPurpose = 'question';
+    speakingQuestion = true;
+    speechRetryCount = 0;
+    speechAudioStarted = false;
+    await ensureRemoteAudioPlayback('rephrase_before_create');
+    const de = String(context?.locale || 'en').toLowerCase().startsWith('de');
+    const instructions = de ? `Formuliere die folgende Interviewfrage in einfachen, klaren Worten neu. Verändere nicht die fachliche Bedeutung und füge keine neue Frage hinzu. Sprich nur die neu formulierte Frage:\n\n${lastQuestion.text}` : `Rephrase the following Interview question in simple, clear words. Do not change its meaning and do not add a new question. Speak only the rephrased question:\n\n${lastQuestion.text}`;
+    sendSpeechResponse(instructions, { purpose: 'clarity_locked_interview_question_rephrased', mainQuestionIndex: String(lastQuestion.mainQuestionIndex || ''), followUpIndex: String(lastQuestion.followUpIndex || 0), turnType: currentTurnType() });
 }
-window.addEventListener('message',event=>{if(event.origin!==location.origin)return;const msg=event.data||{};if(msg.channel!==CHANNEL)return;if(msg.type==='INIT'){context=msg.payload||{};if(context.release?.audio!==true||mode()!=='audio')return fail(Object.assign(new Error('Interview Audio Q10 is not released for this link.'),{code:'INTERVIEW_AUDIO_NOT_RELEASED'}));locale();void initializeAudioReadiness();return}if(msg.type==='REFRESH'){context={...(context||{}),...(msg.payload||{})};locale();if(manualStart&&current?.sessionId&&!backendStatusPromise)void status({allowCooldown:true}).catch(error=>console.error('[CLARITY INTERVIEW AUDIO BACKEND] refresh failed',error));if(!deviceReady&&!preflightPromise)void preflight({source:'module_refresh'});if(deviceReady&&!voiceReady&&!voicePreparing&&!voiceLastError)void prepareVoiceTransport({source:'module_refresh'}).catch(()=>{});return}if(msg.type==='RESPONSE'){const result=msg.payload||{},entry=pending.get(result.requestId);if(!entry)return;pending.delete(result.requestId);if(result.ok)entry.resolve(result.data);else entry.reject(Object.assign(new Error(result.error?.message||'Interview request failed.'),result.error||{}))}});$('startBtn').onclick=()=>{void resumeMeterContext();void startAudio()};$('checkMicBtn').onclick=async()=>{void resumeMeterContext();await preflight({source:'permission_button'});if(deviceReady)void prepareVoiceTransport({source:'permission_button'}).catch(()=>{})};$('prepareVoiceBtn').onclick=()=>{voiceLastError=null;void prepareVoiceTransport({source:'retry_button'}).catch(()=>{})};$('repeatBtn').onclick=()=>{if(!lastQuestion||busy||speakingQuestion)return;resetAnswerCapture({disableInput:true});void speakQuestion(lastQuestion)};$('rephraseBtn').onclick=()=>{if(!lastQuestion||busy||speakingQuestion)return;void speakRephrasedQuestion()};$('continueBtn').onclick=()=>{if(!isSupplementTurn()||busy||speakingQuestion||!awaitingCandidateAnswer)return;const intent=currentTurnType()==='final_open_prompt'?'end_interview':'continue';resetAnswerCapture({disableInput:true});void submitTranscript('',{},intent)};$('retryUploadBtn').onclick=()=>{show('processingView');void finalizeCompletionAfterClosing()};$('retryBtn').onclick=()=>{if(completionStarted&&!completionFinalized){show('processingView');void finalizeCompletionAfterClosing();return}if(manualStart||current?.sessionId){void resumeStartedAudioInterview();return}show('readyView');void initializeAudioReadiness()};window.addEventListener('beforeunload',()=>cleanup(true));send('READY',{version:CLIENT_VERSION});setTimeout(height,80);
+async function speakClosing() {
+    resetAnswerCapture({ disableInput: true });
+    activeSpeechPurpose = 'closing';
+    speakingQuestion = true;
+    speechRetryCount = 0;
+    speechAudioStarted = false;
+    await ensureRemoteAudioPlayback('closing_before_create');
+    const instructions = `Speak exactly the following text and nothing else:
+
+${String(context?.locale || 'en').startsWith('de') ? 'Vielen Dank. Sie haben alle zehn Hauptfragen beantwortet. Ihre Aufnahme wird jetzt sicher gespeichert.' : 'Thank you. You have answered all ten main questions. Your recording is now being saved securely.'}`;
+    sendSpeechResponse(instructions, { purpose: 'clarity_interview_closing', mainQuestionIndex: '10', followUpIndex: '0', turnType: 'closing' });
+}
+async function readJsonSafe(response) { const contentType = response.headers.get('content-type') || ''; if (contentType.includes('json'))
+    return response.json(); const raw = await response.text().catch(() => ''); throw makeStageError('INTERVIEW_AUDIO_MUX_NON_JSON', `Mux endpoint returned ${response.status}: ${raw.slice(0, 300)}`, { status: response.status }); }
+function runtimeCompanyId() { return String(context?.runtime?.companyId || context?.branding?.companyId || '').trim(); }
+async function createMuxUpload() { const companyId = runtimeCompanyId(); if (!companyId)
+    throw makeStageError('INTERVIEW_AUDIO_COMPANY_CONTEXT_MISSING', 'Company context is required for the Mux upload.'); const response = await fetch(MUX_UPLOAD_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uid: context?.uid || '', companyId, sessionId: current?.sessionId || '', mode: 'audio' }) }); const data = await readJsonSafe(response); if (!response.ok || !data?.ok)
+    throw makeStageError('INTERVIEW_AUDIO_MUX_CREATE_FAILED', data?.message || data?.error || `Mux upload creation failed (${response.status}).`, { response: data }); if (!data.uploadId || !data.uploadUrl)
+    throw makeStageError('INTERVIEW_AUDIO_MUX_CREATE_INVALID', 'Mux upload response is incomplete.', { response: data }); return data; }
+async function putBlobToMux(uploadUrl, blob) { setPill('processingUploadPill', `${L().uploading} Mux`, 'warn'); const response = await fetch(uploadUrl, { method: 'PUT', headers: { 'Content-Type': blob.type || 'audio/webm' }, body: blob }); if (!response.ok) {
+    const raw = await response.text().catch(() => '');
+    throw makeStageError('INTERVIEW_AUDIO_MUX_PUT_FAILED', `Mux upload failed (${response.status}).`, { status: response.status, response: raw.slice(0, 500) });
+} return response.status; }
+async function fetchMuxAsset(uploadId) { const response = await fetch(`${MUX_ASSET_URL}?uploadId=${encodeURIComponent(uploadId)}`); const data = await readJsonSafe(response); if (!response.ok || !data?.ok)
+    throw makeStageError('INTERVIEW_AUDIO_MUX_STATUS_FAILED', data?.message || data?.error || `Mux status failed (${response.status}).`, { response: data }); return data; }
+async function pollMuxAsset(uploadId, maxMs = 140000) { const started = Date.now(); let last = null; while (Date.now() - started < maxMs) {
+    last = await fetchMuxAsset(uploadId);
+    console.info('[CLARITY INTERVIEW AUDIO MUX] status', { uploadId, assetStatus: last?.assetStatus || '', assetId: last?.assetId || '', playbackId: last?.playbackId || '', clientVersion: CLIENT_VERSION });
+    if (last?.assetStatus === 'ready' && last?.playbackId)
+        return last;
+    if (last?.assetStatus === 'errored')
+        throw makeStageError('INTERVIEW_AUDIO_MUX_PROCESSING_FAILED', last?.error || 'Mux could not process the candidate audio.', { uploadId, last });
+    await sleep(2500);
+} throw makeStageError('INTERVIEW_AUDIO_MUX_PROCESSING_TIMEOUT', 'Mux is still processing the candidate audio. Retry processing in a moment.', { uploadId, maxMs, last }); }
+async function uploadRecordingDirectToMux(blob) { const created = await createMuxUpload(); const putStatus = await putBlobToMux(created.uploadUrl, blob); uploadId = String(created.uploadId || ''); let mux = await fetchMuxAsset(uploadId); if (!(mux?.assetStatus === 'ready' && mux?.playbackId))
+    mux = await pollMuxAsset(uploadId); const durationSec = Math.max(0, Math.round((Date.now() - recordingStartedAt) / 1000)); const result = await request('audioFinalize', { sessionId: current.sessionId, uploadId, mimeType: blob.type || 'audio/webm', sizeBytes: blob.size, durationSec, fileName: `CLARITY_${current.sessionId}_full_interview_audio.webm`, recordingContract: 'full_interview_mixed_ai_candidate_v1', questionAudioIncluded: true, aiVoiceIncluded: true, candidateOnly: false, mux: { provider: 'mux', uploadId, putStatus, assetStatus: mux?.assetStatus || '', assetId: mux?.assetId || '', playbackId: mux?.playbackId || '', playbackUrl: mux?.playbackUrl || '', downloadUrl: mux?.downloadUrl || '', audioOnlyUrl: mux?.audioOnlyUrl || '', staticRenditionsStatus: mux?.staticRenditionsStatus || '', error: mux?.error || '' } }); return result?.ready ? result : waitForAudioReady(result); }
+async function blobSliceBase64(blob) { const buffer = await blob.arrayBuffer(); let binary = ''; const bytes = new Uint8Array(buffer); const step = 0x8000; for (let i = 0; i < bytes.length; i += step)
+    binary += String.fromCharCode(...bytes.subarray(i, Math.min(bytes.length, i + step))); return btoa(binary); }
+function serverUploadId() { return String(uploadId || current?.audio?.uploadId || current?.audioUploadId || '').trim(); }
+async function audioUploadStatus() { const id = serverUploadId(); if (!id)
+    return null; uploadId = id; return request('audioUploadStatus', { sessionId: current?.sessionId || '', uploadId: id }); }
+async function waitForAudioReady(initial = null, timeoutMs = 120000) {
+    let status = initial;
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+        if (status?.ready && status?.asset?.assetId)
+            return status;
+        if (String(status?.status || '').toLowerCase() === 'failed')
+            throw makeStageError('INTERVIEW_AUDIO_MEDIA_PROCESSING_FAILED', 'The candidate audio could not be processed by Mux.', { uploadId: serverUploadId(), status });
+        setPill('processingUploadPill', `${L().upload}: processing`, 'warn');
+        await sleep(1800);
+        status = await audioUploadStatus();
+    }
+    throw makeStageError('INTERVIEW_AUDIO_MEDIA_PROCESSING_TIMEOUT', 'The candidate audio is still being processed. Please retry processing in a moment.', { uploadId: serverUploadId(), timeoutMs });
+}
+async function finalizeServerUpload(options = {}) {
+    const id = serverUploadId();
+    if (!id)
+        throw makeStageError('INTERVIEW_AUDIO_UPLOAD_ID_REQUIRED', 'The audio upload identifier is missing.');
+    const result = await request('audioFinalize', { sessionId: current.sessionId, uploadId: id, mimeType: options.mimeType || recordedBlob?.type || 'audio/webm', durationSec: options.durationSec || Math.round((Date.now() - recordingStartedAt) / 1000), fileName: `CLARITY_${current.sessionId}_full_interview_audio.webm`, recordingContract: 'full_interview_mixed_ai_candidate_v1', questionAudioIncluded: true, aiVoiceIncluded: true, candidateOnly: false });
+    return result?.ready ? result : waitForAudioReady(result);
+}
+async function recoverExistingServerUpload() {
+    const id = serverUploadId();
+    if (!id)
+        return null;
+    const status = await audioUploadStatus();
+    if (status?.ready && status?.asset?.assetId)
+        return status;
+    if (status?.status === 'chunks_ready' || status?.chunks?.complete)
+        return finalizeServerUpload();
+    if (status?.processing || status?.status === 'processing')
+        return waitForAudioReady(status);
+    return null;
+}
+async function uploadRecordingViaServerChunks(blob) {
+    uploadId = uploadId || `IVAUDIO-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 9).toUpperCase()}`;
+    const total = Math.ceil(blob.size / UPLOAD_CHUNK_BYTES);
+    if (total < 1)
+        throw makeStageError('INTERVIEW_AUDIO_UPLOAD_EMPTY', 'The candidate audio upload contained no chunks.', { sizeBytes: blob.size });
+    setPill('uploadPill', `${L().upload}: 0/${total}`, 'warn');
+    setPill('processingUploadPill', `${L().uploading} 0/${total}`, 'warn');
+    for (let i = 0; i < total; i += 1) {
+        const slice = blob.slice(i * UPLOAD_CHUNK_BYTES, Math.min(blob.size, (i + 1) * UPLOAD_CHUNK_BYTES));
+        const data = await blobSliceBase64(slice);
+        await request('audioChunk', { sessionId: current.sessionId, uploadId, idx: i, total, data, mimeType: blob.type || 'audio/webm' });
+        setPill('uploadPill', `${L().upload}: ${i + 1}/${total}`, i + 1 === total ? 'ok' : 'warn');
+        setPill('processingUploadPill', `${L().uploading} ${i + 1}/${total}`, i + 1 === total ? 'ok' : 'warn');
+    }
+    return finalizeServerUpload({ mimeType: blob.type || 'audio/webm', durationSec: Math.round((Date.now() - recordingStartedAt) / 1000) });
+}
+async function uploadRecording(blob) {
+    if (!blob || blob.size < MIN_RECORDING_BYTES)
+        throw makeStageError('INTERVIEW_AUDIO_RECORDING_EMPTY', 'No usable candidate audio was produced by the browser.', { sizeBytes: Number(blob?.size || 0), minimumBytes: MIN_RECORDING_BYTES, chunkCount: recordChunks.length });
+    setPill('uploadPill', `${L().upload}: Mux`, 'warn');
+    setPill('processingUploadPill', `${L().uploading} Mux`, 'warn');
+    $('retryUploadBtn').classList.add('hidden');
+    console.info('[CLARITY INTERVIEW AUDIO MUX] upload started', { sessionId: current?.sessionId || '', sizeBytes: blob.size, mimeType: blob.type || 'audio/webm', clientVersion: CLIENT_VERSION });
+    try {
+        uploadResult = await uploadRecordingDirectToMux(blob);
+    }
+    catch (primaryError) {
+        console.warn('[CLARITY INTERVIEW AUDIO MUX] direct upload unavailable; using authenticated chunk recovery', { code: primaryError?.code || '', message: primaryError?.message || String(primaryError), clientVersion: CLIENT_VERSION });
+        uploadId = '';
+        uploadResult = await uploadRecordingViaServerChunks(blob);
+    }
+    setPill('uploadPill', `${L().upload}: ready`, 'ok');
+    setPill('processingUploadPill', `${L().upload}: ready`, 'ok');
+    console.info('[CLARITY INTERVIEW AUDIO MUX] asset ready', { sessionId: current?.sessionId || '', uploadId: serverUploadId(), assetId: uploadResult?.asset?.assetId || '', playbackId: uploadResult?.asset?.playbackId || '', clientVersion: CLIENT_VERSION });
+    return uploadResult;
+}
+async function finalizeCompletionAfterClosing() {
+    if (completionFinalized || completionFinalizing)
+        return;
+    completionFinalizing = true;
+    show('processingView');
+    $('retryUploadBtn').classList.add('hidden');
+    try {
+        clearTimeout(speechDrainTimer);
+        resetAnswerCapture({ disableInput: true });
+        speakingQuestion = false;
+        activeSpeechPurpose = 'idle';
+        uploadResult = uploadResult?.asset?.assetId ? uploadResult : await recoverExistingServerUpload();
+        if (!uploadResult?.asset?.assetId) {
+            recordedBlob = recordedBlob?.size >= MIN_RECORDING_BYTES ? recordedBlob : await stopRecorder();
+            await uploadRecording(recordedBlob);
+        }
+        const done = await request('finish', { sessionId: current.sessionId, audioUploadId: serverUploadId(), audioAssetId: uploadResult?.asset?.assetId || '' });
+        completionFinalized = true;
+        $('retryUploadBtn').classList.add('hidden');
+        renderState(done.state);
+        pollStatus();
+    }
+    catch (error) {
+        completionFinalizing = false;
+        showProcessingRetry(error);
+    }
+}
+function pollStatus() { clearTimeout(pollTimer); pollTimer = setTimeout(async () => { try {
+    const state = await request('status', { sessionId: current?.sessionId, includeHistory: false });
+    current = state;
+    if (state.completed || state.participantCompleted) {
+        show('completedView');
+        cleanup(false);
+    }
+    else {
+        show('processingView');
+        pollStatus();
+    }
+}
+catch (_) {
+    pollStatus();
+} }, 3500); }
+async function resumeStartedAudioInterview() {
+    if (busy)
+        return;
+    busy = true;
+    try {
+        show('readyView');
+        if (!deviceReady || !micTrack || micTrack.readyState !== 'live')
+            await preflight({ source: 'active_session_recovery' });
+        if (!voiceReady || dc?.readyState !== 'open' || pc?.connectionState !== 'connected')
+            await prepareVoiceTransport({ source: 'active_session_recovery' });
+        await ensureRemoteAudioPlayback('active_session_recovery');
+        const state = await request('status', { sessionId: current?.sessionId || '', includeHistory: true });
+        current = state;
+        manualStart = Boolean(state?.sessionId && state?.started !== false);
+        const question = state.currentQuestion || lastQuestion;
+        renderState(state, question);
+        $('startState').classList.add('hidden');
+        $('activeActions').classList.remove('hidden');
+        if (question?.text)
+            await speakQuestion(question);
+        else
+            throw makeStageError('INTERVIEW_AUDIO_CURRENT_QUESTION_MISSING', 'The active Interview question could not be restored.', { sessionId: state?.sessionId || '' });
+    }
+    catch (error) {
+        fail(error);
+    }
+    finally {
+        busy = false;
+        updateStartReadiness();
+    }
+}
+async function startAudio() {
+    if (busy)
+        return;
+    if (!deviceReady || !micTrack || !micStream) {
+        await preflight({ source: 'start_button' });
+        if (!deviceReady || !micTrack || !micStream)
+            return;
+    }
+    if (!voiceReady || dc?.readyState !== 'open' || pc?.connectionState !== 'connected') {
+        try {
+            await prepareVoiceTransport({ source: 'start_button' });
+        }
+        catch (error) {
+            fail(error);
+            return;
+        }
+    }
+    busy = true;
+    $('startBtn').disabled = true;
+    try {
+        await resumeMeterContext();
+        try {
+            await ensureRemoteAudioPlayback('start_click');
+        }
+        catch (_) { }
+        // Keep the preconnected Realtime input muted until the first question has finished.
+        setCandidateInputEnabled(false);
+        setPill('realtimePill', `${L().voice}: ${L().ready}`, 'ok');
+        console.info(`[CLARITY INTERVIEW AUDIO START] canonical start requested ${JSON.stringify({ uid: context?.uid || '', clientVersion: CLIENT_VERSION })}`);
+        const data = await request('start', { clientStartId: `IVAUDIOSTART-${context?.uid || Date.now()}` });
+        manualStart = true;
+        backendReady = true;
+        backendDegraded = false;
+        current = data.state;
+        renderState(data.state, data.firstQuestion);
+        $('startState').classList.add('hidden');
+        $('activeActions').classList.remove('hidden');
+        console.info(`[CLARITY INTERVIEW AUDIO START] session started ${JSON.stringify({ uid: context?.uid || '', sessionId: current?.sessionId || '', clientVersion: CLIENT_VERSION })}`);
+        await startRecorder();
+        await speakWelcome(data.firstQuestion || data.state?.currentQuestion);
+    }
+    catch (error) {
+        if (!manualStart)
+            setCandidateInputEnabled(true);
+        fail(error);
+    }
+    finally {
+        busy = false;
+        updateStartReadiness();
+    }
+}
+async function status(options = {}) {
+    const force = options.force === true;
+    const allowCooldown = options.allowCooldown === true;
+    if (backendStatusPromise && !force)
+        return backendStatusPromise;
+    if (!force && allowCooldown && backendPreflightAttemptedAt && Date.now() - backendPreflightAttemptedAt < 30000)
+        return { ok: true, cooldown: true, degraded: backendDegraded };
+    backendPreflightAttemptedAt = Date.now();
+    const run = (async () => {
+        const prestart = manualStart !== true && !current?.sessionId;
+        const action = prestart ? 'preflight' : 'status';
+        try {
+            setPill('backendPill', `${L().backend}: checking`, 'warn');
+            console.info('[CLARITY INTERVIEW AUDIO BACKEND] request started', { action, uid: context?.uid || '', sessionId: current?.sessionId || '', clientVersion: CLIENT_VERSION });
+            const data = await request(action, { sessionId: current?.sessionId || '', includeHistory: action === 'status' });
+            current = data;
+            backendReady = Boolean(data?.readiness?.questionPlanReady && data?.readiness?.profileReady && data?.readiness?.consentReady && data?.readiness?.modeReleased);
+            backendDegraded = false;
+            renderState(data, null);
+            setPill('backendPill', `${L().backend}: ${backendReady ? L().ready : 'not ready'}`, backendReady ? 'ok' : 'warn');
+            updateStartReadiness();
+            console.info('[CLARITY INTERVIEW AUDIO BACKEND] ready', { action, backendReady, prestartFastPath: data?.diagnostics?.prestartFastPath === true, sessionLookupSkipped: data?.diagnostics?.sessionLookupSkipped === true, sessionId: data?.sessionId || '', mode: data?.mode || '', durationMs: data?.diagnostics?.statusDurationMs, version: data?.version || data?.backendVersion || '' });
+            if (data.processing && !completionStarted) {
+                completionStarted = true;
+                show('processingView');
+                uploadId = uploadId || String(data?.audio?.uploadId || '');
+                if (data?.audio?.required && String(data?.audio?.status || '') !== 'ready')
+                    $('retryUploadBtn').classList.remove('hidden');
+                pollStatus();
+            }
+            if (data.completed || data.participantCompleted)
+                show('completedView');
+            return data;
+        }
+        catch (error) {
+            const recoverable = isTransport(error) && manualStart !== true && !current?.sessionId && localRuntimeReady();
+            backendReady = false;
+            backendDegraded = recoverable;
+            setPill('backendPill', `${L().backend}: ${recoverable ? 'verify on start' : 'error'}`, recoverable ? 'warn' : 'err');
+            updateStartReadiness();
+            console.error('[CLARITY INTERVIEW AUDIO BACKEND] failed', { action, code: error?.code, message: error?.message, details: error?.details || null, requestId: error?.requestId, localRuntimeReady: localRuntimeReady(), recoverable, clientVersion: CLIENT_VERSION });
+            if (recoverable)
+                return { ok: true, degraded: true, phase: 'ready', mode: 'audio', sessionId: '', readiness: { questionPlanReady: true, profileReady: true, consentReady: true, modeReleased: true }, diagnostics: { prestartFallback: true, transportErrorCode: error?.code || '', transportErrorMessage: error?.message || '' } };
+            throw error;
+        }
+    })();
+    const tracked = run.finally(() => { if (backendStatusPromise === tracked)
+        backendStatusPromise = null; });
+    backendStatusPromise = tracked;
+    return tracked;
+}
+function cleanup(stopTracks = true) {
+    clearTimeout(pollTimer);
+    clearSpeechTimers();
+    clearAnswerCommitTimer();
+    clearAnswerTranscriptionTimer();
+    if (meterFrame)
+        cancelAnimationFrame(meterFrame);
+    closeRealtimeTransport();
+    try {
+        if (mediaRecorder && mediaRecorder.state !== 'inactive')
+            mediaRecorder.stop();
+    }
+    catch (_) { }
+    ;
+    try {
+        recordingMicTrack?.stop();
+    }
+    catch (_) { }
+    ;
+    closeRecordingAudioGraph();
+    recordingMicTrack = null;
+    recordingMicStream = null;
+    if (stopTracks)
+        micStream?.getTracks().forEach(track => track.stop());
+    try {
+        audioContext?.close();
+    }
+    catch (_) { }
+}
+window.addEventListener('message', event => { if (event.origin !== location.origin)
+    return; const msg = event.data || {}; if (msg.channel !== CHANNEL)
+    return; if (msg.type === 'INIT') {
+    context = msg.payload || {};
+    if (context.release?.audio !== true || mode() !== 'audio')
+        return fail(Object.assign(new Error('Interview Audio Q10 is not released for this link.'), { code: 'INTERVIEW_AUDIO_NOT_RELEASED' }));
+    locale();
+    void initializeAudioReadiness();
+    return;
+} if (msg.type === 'REFRESH') {
+    context = { ...(context || {}), ...(msg.payload || {}) };
+    locale();
+    if (manualStart && current?.sessionId && !backendStatusPromise)
+        void status({ allowCooldown: true }).catch(error => console.error('[CLARITY INTERVIEW AUDIO BACKEND] refresh failed', error));
+    if (!deviceReady && !preflightPromise)
+        void preflight({ source: 'module_refresh' });
+    if (deviceReady && !voiceReady && !voicePreparing && !voiceLastError)
+        void prepareVoiceTransport({ source: 'module_refresh' }).catch(() => { });
+    return;
+} if (msg.type === 'RESPONSE') {
+    const result = msg.payload || {}, entry = pending.get(result.requestId);
+    if (!entry)
+        return;
+    pending.delete(result.requestId);
+    if (result.ok)
+        entry.resolve(result.data);
+    else
+        entry.reject(Object.assign(new Error(result.error?.message || 'Interview request failed.'), result.error || {}));
+} });
+$('startBtn').onclick = () => { void resumeMeterContext(); void startAudio(); };
+$('checkMicBtn').onclick = async () => { void resumeMeterContext(); await preflight({ source: 'permission_button' }); if (deviceReady)
+    void prepareVoiceTransport({ source: 'permission_button' }).catch(() => { }); };
+$('prepareVoiceBtn').onclick = () => { voiceLastError = null; void prepareVoiceTransport({ source: 'retry_button' }).catch(() => { }); };
+$('repeatBtn').onclick = () => { if (!lastQuestion || busy || speakingQuestion)
+    return; resetAnswerCapture({ disableInput: true }); void speakQuestion(lastQuestion); };
+$('rephraseBtn').onclick = () => { if (!lastQuestion || busy || speakingQuestion)
+    return; void speakRephrasedQuestion(); };
+$('continueBtn').onclick=()=>{
+ if(busy||speakingQuestion||!awaitingCandidateAnswer)return;const turnType=currentTurnType(),transcript=combinedAnswerTranscript();
+ if(turnType==='main_question'){const quality=candidateTranscriptQuality(transcript);if(!quality.ok){showIncompleteCaptureNotice();updateTurnActions();return}const committedTranscript=stripPreviousAnswerTail(quality.transcript);lastCommittedTranscript=committedTranscript;resetAnswerCapture({disableInput:true});console.info('[CLARITY INTERVIEW EXPLICIT COMPLETION] button confirmed answer',{sessionId:current?.sessionId||'',wordCount:quality.wordCount,clientVersion:CLIENT_VERSION});void submitTranscript(committedTranscript,{explicitCompletion:true,completionMethod:'button',turnGate:'explicit_candidate_confirmation_v1'},'answer_complete');return}
+ if(turnType==='final_open_prompt'){resetAnswerCapture({disableInput:true});void submitTranscript(transcript,{explicitCompletion:true,completionMethod:'button'},transcript?'':'end_interview');return}
+ if(turnType==='supplement_prompt'){resetAnswerCapture({disableInput:true});void submitTranscript('',{completionMethod:'legacy_button'},'continue')}
+};
+$('retryUploadBtn').onclick = () => { show('processingView'); void finalizeCompletionAfterClosing(); };
+$('retryBtn').onclick = () => { if (completionStarted && !completionFinalized) {
+    show('processingView');
+    void finalizeCompletionAfterClosing();
+    return;
+} if (manualStart || current?.sessionId) {
+    void resumeStartedAudioInterview();
+    return;
+} show('readyView'); void initializeAudioReadiness(); };
+window.addEventListener('beforeunload', () => cleanup(true));
+send('READY', { version: CLIENT_VERSION, recordingContract: 'full_interview_mixed_ai_candidate_v1', inputReadinessContract: 'verified_before_answer_gate_v1' });
+setTimeout(height, 80);
+
 </script></body></html>
