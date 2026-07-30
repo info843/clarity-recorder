@@ -2,7 +2,7 @@
 // CLARITY Universal App — Interview module I4.2.0 final E2E stability
 // Lost-response recovery for committed starts and idempotent chat messages.
 
-const MODULE_VERSION='1.7.1-i4-2-0-final-e2e-stability';
+const MODULE_VERSION='1.7.2-i4-2-1-audio-token-handler-recovery';
 const EXPECTED_RECORDER_VERSION='1.2.1-i4-2-0-e2e-final';
 const ACTION_TIMEOUT_MS=Object.freeze({preflight:14000,status:25000,audioToken:20000,start:70000,message:65000,finish:90000,retry:90000,audioChunk:90000,audioFinalize:140000,audioUploadStatus:30000,videoChunk:90000,videoFinalize:180000,videoUploadStatus:30000});
 const FRAME_BY_MODE=Object.freeze({
@@ -38,6 +38,26 @@ export function createInterviewModule(ctx){
       console.info(`[CLARITY INTERVIEW MODULE] action completed ${JSON.stringify({name,endpoint,durationMs:Date.now()-startedAt,moduleVersion:MODULE_VERSION})}`);
       return data
     }catch(error){
+      const normalizedCode=String(error?.code||'').toLowerCase();
+      const normalizedMessage=String(error?.message||error||'').toLowerCase();
+      const audioTokenHandlerMissing=name==='audioToken'&&(
+        normalizedCode==='v2_interview_audio_token_failed'||
+        normalizedCode==='v2interviewaudiotoken_failed'||
+        normalizedMessage.includes('handler is not a function')
+      );
+      if(audioTokenHandlerMissing){
+        console.warn(`[CLARITY INTERVIEW MODULE] canonical audio-token handler unavailable; using authenticated preflight bridge ${JSON.stringify({name,endpoint,code:error?.code||'',message:error?.message||'',moduleVersion:MODULE_VERSION})}`);
+        const bridgeStartedAt=Date.now();
+        const bridge=await api('v2InterviewPreflight',{body:{token:state.token,uid:state.uid,clientModuleVersion:MODULE_VERSION,issueRealtimeToken:true,prepareOnly:true,...payload},timeoutMs});
+        const recovered=bridge?.realtimeToken||null;
+        if(!recovered||(typeof recovered!=='object')||!(recovered.clientSecret||recovered.value)){
+          const bridgeError=Object.assign(new Error('Interview voice preparation bridge did not return a Realtime client secret.'),{code:'INTERVIEW_AUDIO_TOKEN_BRIDGE_EMPTY',details:{bridgeVersion:bridge?.version||'',bridgeDiagnostics:bridge?.diagnostics||null}});
+          console.error(`[CLARITY INTERVIEW MODULE] audio-token bridge failed ${JSON.stringify({name,endpoint,code:bridgeError.code,message:bridgeError.message,durationMs:Date.now()-bridgeStartedAt,moduleVersion:MODULE_VERSION})}`);
+          throw bridgeError
+        }
+        console.info(`[CLARITY INTERVIEW MODULE] audio-token handler recovered through preflight bridge ${JSON.stringify({name,primaryEndpoint:endpoint,bridgeEndpoint:'v2InterviewPreflight',durationMs:Date.now()-bridgeStartedAt,moduleVersion:MODULE_VERSION})}`);
+        return recovered
+      }
       console.error(`[CLARITY INTERVIEW MODULE] action failed ${JSON.stringify({name,endpoint,code:error?.code||'',message:error?.message||'',details:error?.details||null,durationMs:Date.now()-startedAt,moduleVersion:MODULE_VERSION})}`);
       throw error
     }
