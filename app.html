@@ -8,6 +8,28 @@
   <title>CLARITY Universal App · Decision Intelligence Platform</title>
   <link rel="stylesheet" href="./clarity-app.css?v=2.16.0" />
   <link id="appFavicon" rel="icon" href="data:," />
+
+  <style id="interviewProductionUx">
+    .interview-technical-hidden{display:none!important}
+    body.interview-production-mode .hero,
+    body.interview-production-mode .progress-wrap,
+    body.interview-production-mode #moduleView>h2,
+    body.interview-production-mode #moduleView>p,
+    body.interview-production-mode #moduleView>.notice,
+    body.interview-production-mode #moduleView>.module-panel,
+    body.interview-production-mode #moduleView>.actions{display:none!important}
+    body.interview-production-mode #appShell{width:min(100%,1500px)!important;max-width:1500px!important}
+    body.interview-production-mode .content{width:100%!important;max-width:none!important;margin:0!important;padding-top:10px!important}
+    body.interview-production-mode #moduleView{width:100%!important;max-width:none!important;padding:0!important;margin:0!important;border:0!important;background:transparent!important;box-shadow:none!important;overflow:visible!important}
+    body.interview-production-mode #interviewModuleShell{width:100%!important;max-width:none!important;margin:0!important;overflow:hidden!important}
+    body.interview-production-mode #interviewModuleFrame{display:block!important;width:100%!important;max-width:100%!important;border:0!important;overflow:hidden!important}
+    @media(max-width:760px){
+      body.interview-production-mode #appShell{padding-left:0!important;padding-right:0!important}
+      body.interview-production-mode .topbar{padding-left:14px!important;padding-right:14px!important}
+      body.interview-production-mode .content{padding-left:0!important;padding-right:0!important}
+      body.interview-production-mode #interviewModuleShell{border-radius:0!important;box-shadow:none!important}
+    }
+  </style>
 </head>
 <body class="branding-pending">
 <div class="bootstrap-gate" id="bootstrapGate" role="status" aria-live="polite" aria-busy="true">
@@ -315,6 +337,6 @@
     <footer class="footer"><span id="footerLeft">CLARITY Decision Intelligence Platform</span><span id="footerRight">Human decision · AI intelligence</span></footer>
   </main>
 </div>
-<script type="module" src="./clarity-app.js?v=2.25.6-i4-3-6-unified-closeout-final"></script>
+<script type="module" src="./clarity-app.js?v=2.25.7-i4-3-7-interview-production-clean"></script>
 </body>
 </html>
