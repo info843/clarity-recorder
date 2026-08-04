@@ -1,12 +1,13 @@
 // modules/ai-literacy-module.js
-// CLARITY Universal App — AI Literacy vertical v2.15.0
+// CLARITY Universal App — AI Literacy vertical v2.16.1
 
 export function createAiLiteracyModule({ $, state, api, show, setStep, getLocale, onFatal }) {
-  const VERSION = '2.15.0';
+  const VERSION = '2.16.1-certificate-terminal-recovery';
   let active = false;
   let frameReady = false;
   let lastState = null;
   let artifactPolling = false;
+  let completionRecoveryStarted = false;
 
   const frame = () => $('aiLiteracyFrame');
   const statusEl = () => $('aiLiteracyStatus');
@@ -276,21 +277,6 @@ export function createAiLiteracyModule({ $, state, api, show, setStep, getLocale
       } catch (_) {}
     }
 
-    if (last?.legacyReady) {
-      await finalizeArtifacts(sessionId);
-      postToFrame({
-        type: 'IB_USER_ARTIFACTS_PARTIAL',
-        payload: {
-          ...last,
-          degradedFallback: true,
-          message: locale() === 'de'
-            ? 'Die Legacy-Dokumente sind verfügbar. Die Unified-Versionen werden weiter verarbeitet.'
-            : 'Legacy documents are available. Unified versions are still processing.'
-        }
-      });
-      return last;
-    }
-
     postToFrame({
       type: 'IB_USER_ARTIFACTS_UNRESOLVED',
       payload: {
@@ -307,10 +293,8 @@ export function createAiLiteracyModule({ $, state, api, show, setStep, getLocale
       if (index > 0) await sleep(intervalMs);
       try {
         const current = await api('v2AiLiteracyArtifactStatus', { body: baseBody({ sessionId }) });
-        if (stage === 'legacy_report' && current?.legacyReportPdfUrl) return current;
-        if (stage === 'unified_report' && current?.unifiedReportPdfUrl) return current;
-        if (stage === 'legacy_certificate' && current?.legacyCertificatePdfUrl) return current;
-        if (stage === 'unified_certificate' && current?.unifiedCertificatePdfUrl) return current;
+        if (stage === 'unified_report' && current?.unifiedReportReady) return current;
+        if (stage === 'unified_certificate' && current?.unifiedReady && current?.certificateReady) return current;
         if (current?.unifiedReady) return current;
       } catch (_) {}
     }
@@ -328,10 +312,8 @@ export function createAiLiteracyModule({ $, state, api, show, setStep, getLocale
     if (responseLost) {
       const ready = await waitForArtifactStage(sessionId, stage);
       const stageReady = {
-        legacy_report: ready?.legacyReportPdfUrl,
-        unified_report: ready?.unifiedReportPdfUrl,
-        legacy_certificate: ready?.legacyCertificatePdfUrl,
-        unified_certificate: ready?.unifiedCertificatePdfUrl
+        unified_report: ready?.unifiedReportReady,
+        unified_certificate: ready?.unifiedReady && ready?.certificateReady
       }[stage];
       if (!stageReady) throw new Error(locale() === 'de' ? errorDe : errorEn);
     }
@@ -348,22 +330,12 @@ export function createAiLiteracyModule({ $, state, api, show, setStep, getLocale
       });
 
       await callDocumentStage(
-        'v2AiLiteracyReport', sessionId, 'legacy_report',
-        'Der Legacy-Report konnte noch nicht bestätigt werden.',
-        'The legacy report could not yet be confirmed.'
-      );
-      await callDocumentStage(
         'v2AiLiteracyUnifiedReport', sessionId, 'unified_report',
         'Der Unified Report konnte noch nicht bestätigt werden.',
         'The unified report could not yet be confirmed.'
       );
 
       if (String(passStatus || '').toLowerCase() === 'passed') {
-        await callDocumentStage(
-          'v2AiLiteracyCertificate', sessionId, 'legacy_certificate',
-          'Das Legacy-Zertifikat konnte noch nicht bestätigt werden.',
-          'The legacy certificate could not yet be confirmed.'
-        );
         await callDocumentStage(
           'v2AiLiteracyUnifiedCertificate', sessionId, 'unified_certificate',
           'Das Unified Zertifikat konnte noch nicht bestätigt werden.',
@@ -392,7 +364,21 @@ export function createAiLiteracyModule({ $, state, api, show, setStep, getLocale
   }
 
   async function resumeCompletedWorkflow(data = {}) {
-    if (completionRecoveryStarted || data?.artifactStatus?.unifiedReady) return;
+    if (completionRecoveryStarted) return;
+    if (data?.artifactStatus?.unifiedReady) {
+      const readySessionId = data.artifactStatus.sessionId || data?.training?.session?.sessionId || data?.training?.previousAttempt?.sessionId || '';
+      if (readySessionId) {
+        completionRecoveryStarted = true;
+        try {
+          await finalizeArtifacts(readySessionId);
+          postToFrame({ type:'IB_USER_ARTIFACTS_READY', payload:data.artifactStatus });
+          setStatus(t('ready'), 'ok');
+        } finally {
+          completionRecoveryStarted = false;
+        }
+      }
+      return;
+    }
     const recovered = recoveredTestResult(data);
     if (!recovered || !recovered.result?.finalAttempt) return;
     completionRecoveryStarted = true;
