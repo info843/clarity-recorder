@@ -1,4 +1,4 @@
-// CLARITY Assessment Universal App module v2.26.0 — E2.4 VIDEO + CHAT Q10 HANDOVER
+// CLARITY Assessment Universal App module v2.27.0 — E2.5 START + LANGUAGE FREEZE
 // Compact state deltas, one closeout dispatch, status-only polling and immediate
 // fallback-report availability while the Unified PDF finishes asynchronously.
 const COPY = Object.freeze({
@@ -25,7 +25,9 @@ const COPY = Object.freeze({
     question: 'Frage', answered: 'beantwortet', area: 'Bereich', format: 'Format', shortCheck: 'Kurzcheck', scope: 'Umfang', process: 'Ablauf',
     processRule: 'Auswertung nach der letzten Antwort', retry: 'Status erneut prüfen', report: 'Bericht',
     waitingReport: 'Der Bericht wird noch vorbereitet. Die Seite prüft den Status weiter.',
-    transport: 'Die Serverantwort ist noch unklar. Der tatsächliche Status wird geprüft.',
+    transport: 'Die Serverantwort ist noch unklar. Der tatsächliche Status wird geprüft.', yourAnswer:'Ihre Antwort', questions:'Fragen',
+    firstQuestionMissing:'Die erste Frage wurde noch nicht bereitgestellt. Der Status wird erneut geprüft.',
+    technicalInterrupted:'Die Verarbeitung wurde technisch unterbrochen. Mit „Status erneut prüfen“ wird derselbe Vorgang ohne neue Abbuchung fortgesetzt.',
     readinessDelayed: 'Die Vorbereitung dauert länger als erwartet. Der Start bleibt gesperrt, bis alle Moduldaten vollständig geladen sind.',
     audioPreparing: 'Mikrofon und Audio-Modul werden vorbereitet …', audioReady: 'Mikrofon geprüft. Das Audio-Assessment ist bereit.',
     audioRecording: 'Audio-Assessment läuft. Bitte beantworten Sie jede Frage mündlich.',
@@ -67,7 +69,9 @@ const COPY = Object.freeze({
     question: 'Question', answered: 'answered', area: 'Area', format: 'Format', shortCheck: 'Quick check', scope: 'Scope', process: 'Process',
     processRule: 'Evaluation after the final answer', retry: 'Check status again', report: 'Report',
     waitingReport: 'The report is still being prepared. This page continues checking the status.',
-    transport: 'The server response is still unclear. The actual status is being checked.',
+    transport: 'The server response is still unclear. The actual status is being checked.', yourAnswer:'Your answer', questions:'questions',
+    firstQuestionMissing:'The first question has not been prepared yet. Status will be checked again.',
+    technicalInterrupted:'Processing was interrupted technically. “Check status again” continues the same record without a new charge.',
     readinessDelayed: 'Preparation is taking longer than expected. Start remains locked until all module data is fully loaded.',
     audioPreparing: 'Preparing microphone and audio module …', audioReady: 'Microphone checked. The audio assessment is ready.',
     audioRecording: 'Audio assessment is running. Please answer each question verbally.',
@@ -86,6 +90,65 @@ const COPY = Object.freeze({
     videoConsentLabel: 'I consent to video and audio recording for this CLARITY Assessment.',
     videoModuleUnavailable: 'The video module could not be loaded. Refresh the page. No assessment session was started and no credit was consumed.'
   }
+});
+
+const SUPPORTED_LANGUAGES = Object.freeze(['en','de','es','fr','it','pt','nl','pl','tr','ar']);
+const normalizeLanguage = (value = '') => {
+  const code = String(value || '').trim().toLowerCase().replace('_','-').split('-')[0];
+  return SUPPORTED_LANGUAGES.includes(code) ? code : 'en';
+};
+
+// Participant-facing core copy. Media-only diagnostics inherit the complete
+// English baseline when a locale does not override a specialist message.
+const PARTICIPANT_COPY = Object.freeze({
+  es: {
+    assessment:{title:'CLARITY Assessment',eyebrow:'CLARITY Assessment · Escrito',badge:'Proceso seguro',intro:'Responda a las preguntas de la forma más concreta posible y con sus propias palabras. Los ejemplos ayudan a evaluar mejor sus respuestas.',notice:'Pulse Intro para enviar. Mayús + Intro inserta una nueva línea.',start:'Iniciar assessment',preparing:'Preparando el assessment …',ready:'El assessment está listo.',starting:'Iniciando el assessment …',send:'Enviar respuesta',finish:'Finalizar assessment',processing:'Sus respuestas se están evaluando y se está creando el informe. El estado se actualiza automáticamente.',completed:'Assessment finalizado',completedText:'Sus respuestas se enviaron de forma segura. La organización revisará el resultado en CLARITY Workspace. Puede cerrar esta ventana.',startTitle:'Preparación',startText:'Dedique tiempo suficiente a cada respuesta y aporte situaciones o ejemplos concretos cuando sea posible.'},
+    snapshot:{title:'CLARITY Snapshot',eyebrow:'CLARITY Snapshot · Revisión breve',badge:'Proceso conciso',intro:'Responda a las preguntas breves acordadas con sus propias palabras.',notice:'El Snapshot es un resumen estructurado y no sustituye a un assessment completo.',start:'Iniciar Snapshot',preparing:'Preparando Snapshot …',ready:'Snapshot listo.',starting:'Iniciando Snapshot …',send:'Enviar respuesta',finish:'Finalizar Snapshot',processing:'Sus respuestas se están resumiendo. El estado se actualiza automáticamente.',completed:'Snapshot finalizado',completedText:'Sus respuestas se enviaron de forma segura. La organización recibe el resumen en CLARITY Workspace. Puede cerrar esta ventana.',startTitle:'Resumen breve',startText:'Responda de forma breve y concreta.'},
+    placeholder:'Su respuesta …',answerRequired:'Introduzca una respuesta.',question:'Pregunta',answered:'respondidas',yourAnswer:'Su respuesta',questions:'preguntas',area:'Área',format:'Formato',shortCheck:'Revisión breve',scope:'Alcance',process:'Proceso',processRule:'Evaluación tras la última respuesta',retry:'Comprobar estado de nuevo',readinessDelayed:'La preparación está tardando más de lo previsto. El inicio permanece bloqueado hasta que todos los datos estén completos.',transport:'La respuesta del servidor aún no es concluyente. Se está comprobando el estado real.',firstQuestionMissing:'La primera pregunta aún no está preparada. Se volverá a comprobar el estado.',technicalInterrupted:'El procesamiento se interrumpió técnicamente. “Comprobar estado de nuevo” continúa el mismo proceso sin un nuevo cargo.'
+  },
+  fr: {
+    assessment:{title:'CLARITY Assessment',eyebrow:'CLARITY Assessment · Écrit',badge:'Parcours sécurisé',intro:'Répondez aussi concrètement que possible et avec vos propres mots. Des exemples facilitent l’évaluation de vos réponses.',notice:'Appuyez sur Entrée pour envoyer. Maj + Entrée insère une nouvelle ligne.',start:'Démarrer l’assessment',preparing:'Préparation de l’assessment …',ready:'L’assessment est prêt.',starting:'Démarrage de l’assessment …',send:'Envoyer la réponse',finish:'Terminer l’assessment',processing:'Vos réponses sont en cours d’évaluation et le rapport est en cours de création. Le statut se met à jour automatiquement.',completed:'Assessment terminé',completedText:'Vos réponses ont été transmises en toute sécurité. L’organisation consultera le résultat dans CLARITY Workspace. Vous pouvez fermer cette fenêtre.',startTitle:'Préparation',startText:'Prenez suffisamment de temps pour chaque réponse et donnez si possible des situations ou exemples concrets.'},
+    snapshot:{title:'CLARITY Snapshot',eyebrow:'CLARITY Snapshot · Vérification rapide',badge:'Parcours concis',intro:'Répondez aux courtes questions convenues avec vos propres mots.',notice:'Le Snapshot est un aperçu structuré et ne remplace pas un assessment complet.',start:'Démarrer le Snapshot',preparing:'Préparation du Snapshot …',ready:'Le Snapshot est prêt.',starting:'Démarrage du Snapshot …',send:'Envoyer la réponse',finish:'Terminer le Snapshot',processing:'Vos réponses sont en cours de synthèse. Le statut se met à jour automatiquement.',completed:'Snapshot terminé',completedText:'Vos réponses ont été transmises en toute sécurité. L’organisation reçoit la synthèse dans CLARITY Workspace. Vous pouvez fermer cette fenêtre.',startTitle:'Aperçu rapide',startText:'Répondez brièvement et concrètement.'},
+    placeholder:'Votre réponse …',answerRequired:'Veuillez saisir une réponse.',question:'Question',answered:'répondues',yourAnswer:'Votre réponse',questions:'questions',area:'Domaine',format:'Format',shortCheck:'Vérification rapide',scope:'Étendue',process:'Processus',processRule:'Évaluation après la dernière réponse',retry:'Vérifier à nouveau le statut',readinessDelayed:'La préparation prend plus de temps que prévu. Le démarrage reste bloqué jusqu’au chargement complet des données.',transport:'La réponse du serveur reste incertaine. Le statut réel est en cours de vérification.',firstQuestionMissing:'La première question n’est pas encore prête. Le statut va être vérifié à nouveau.',technicalInterrupted:'Le traitement a été interrompu techniquement. « Vérifier à nouveau le statut » reprend le même processus sans nouveau débit.',audioPreparing:'Préparation du microphone et du module audio …',audioReady:'Microphone vérifié. L’assessment audio est prêt.',audioRecording:'L’assessment audio est en cours. Répondez oralement à chaque question.',audioSaving:'Vos réponses audio sont transcrites et enregistrées de manière sécurisée …',audioRetry:'Une réponse audio n’est pas encore enregistrée. La nouvelle vérification reprend le même processus sans nouveau débit.',microphoneRequired:'L’accès au microphone doit être autorisé pour l’assessment audio.'
+  },
+  it: {
+    assessment:{title:'CLARITY Assessment',eyebrow:'CLARITY Assessment · Scritto',badge:'Procedura sicura',intro:'Risponda alle domande nel modo più concreto possibile e con parole proprie. Gli esempi facilitano la valutazione.',notice:'Premere Invio per inviare. Maiusc + Invio inserisce una nuova riga.',start:'Avvia assessment',preparing:'Preparazione assessment …',ready:'L’assessment è pronto.',starting:'Avvio assessment …',send:'Invia risposta',finish:'Completa assessment',processing:'Le risposte sono in fase di valutazione e il report è in creazione. Lo stato si aggiorna automaticamente.',completed:'Assessment completato',completedText:'Le risposte sono state inviate in modo sicuro. L’organizzazione esaminerà il risultato in CLARITY Workspace. Può chiudere questa finestra.',startTitle:'Preparazione',startText:'Dedichi tempo sufficiente a ogni risposta e fornisca situazioni o esempi concreti quando possibile.'},
+    snapshot:{title:'CLARITY Snapshot',eyebrow:'CLARITY Snapshot · Verifica rapida',badge:'Procedura concisa',intro:'Risponda con parole proprie alle brevi domande concordate.',notice:'Lo Snapshot è una panoramica strutturata e non sostituisce un assessment completo.',start:'Avvia Snapshot',preparing:'Preparazione Snapshot …',ready:'Snapshot pronto.',starting:'Avvio Snapshot …',send:'Invia risposta',finish:'Completa Snapshot',processing:'Le risposte sono in fase di sintesi. Lo stato si aggiorna automaticamente.',completed:'Snapshot completato',completedText:'Le risposte sono state inviate in modo sicuro. L’organizzazione riceve la sintesi in CLARITY Workspace. Può chiudere questa finestra.',startTitle:'Panoramica rapida',startText:'Risponda in modo breve e concreto.'},
+    placeholder:'La sua risposta …',answerRequired:'Inserisca una risposta.',question:'Domanda',answered:'risposte',yourAnswer:'La sua risposta',questions:'domande',area:'Area',format:'Formato',shortCheck:'Verifica rapida',scope:'Ambito',process:'Processo',processRule:'Valutazione dopo l’ultima risposta',retry:'Controlla di nuovo lo stato',readinessDelayed:'La preparazione richiede più tempo del previsto. L’avvio resta bloccato finché tutti i dati non sono completi.',transport:'La risposta del server non è ancora conclusiva. È in corso la verifica dello stato effettivo.',firstQuestionMissing:'La prima domanda non è ancora pronta. Lo stato verrà controllato di nuovo.',technicalInterrupted:'L’elaborazione è stata interrotta tecnicamente. Il nuovo controllo riprende lo stesso processo senza un nuovo addebito.'
+  },
+  pt: {
+    assessment:{title:'CLARITY Assessment',eyebrow:'CLARITY Assessment · Escrito',badge:'Processo seguro',intro:'Responda às perguntas da forma mais concreta possível e com as suas próprias palavras. Exemplos ajudam na avaliação.',notice:'Prima Enter para enviar. Shift + Enter insere uma nova linha.',start:'Iniciar assessment',preparing:'A preparar o assessment …',ready:'O assessment está pronto.',starting:'A iniciar o assessment …',send:'Enviar resposta',finish:'Concluir assessment',processing:'As respostas estão a ser avaliadas e o relatório está a ser criado. O estado é atualizado automaticamente.',completed:'Assessment concluído',completedText:'As respostas foram enviadas em segurança. A organização analisará o resultado no CLARITY Workspace. Pode fechar esta janela.',startTitle:'Preparação',startText:'Reserve tempo suficiente para cada resposta e apresente situações ou exemplos concretos sempre que possível.'},
+    snapshot:{title:'CLARITY Snapshot',eyebrow:'CLARITY Snapshot · Verificação rápida',badge:'Processo conciso',intro:'Responda às perguntas breves acordadas com as suas próprias palavras.',notice:'O Snapshot é uma visão estruturada e não substitui um assessment completo.',start:'Iniciar Snapshot',preparing:'A preparar o Snapshot …',ready:'Snapshot pronto.',starting:'A iniciar o Snapshot …',send:'Enviar resposta',finish:'Concluir Snapshot',processing:'As respostas estão a ser resumidas. O estado é atualizado automaticamente.',completed:'Snapshot concluído',completedText:'As respostas foram enviadas em segurança. A organização recebe o resumo no CLARITY Workspace. Pode fechar esta janela.',startTitle:'Visão rápida',startText:'Responda de forma breve e concreta.'},
+    placeholder:'A sua resposta …',answerRequired:'Introduza uma resposta.',question:'Pergunta',answered:'respondidas',yourAnswer:'A sua resposta',questions:'perguntas',area:'Área',format:'Formato',shortCheck:'Verificação rápida',scope:'Âmbito',process:'Processo',processRule:'Avaliação após a última resposta',retry:'Verificar estado novamente',readinessDelayed:'A preparação está a demorar mais do que o previsto. O início permanece bloqueado até todos os dados estarem completos.',transport:'A resposta do servidor ainda não é conclusiva. O estado real está a ser verificado.',firstQuestionMissing:'A primeira pergunta ainda não está pronta. O estado será verificado novamente.',technicalInterrupted:'O processamento foi interrompido tecnicamente. A nova verificação continua o mesmo processo sem nova cobrança.'
+  },
+  nl: {
+    assessment:{title:'CLARITY Assessment',eyebrow:'CLARITY Assessment · Schriftelijk',badge:'Veilig proces',intro:'Beantwoord de vragen zo concreet mogelijk en in uw eigen woorden. Voorbeelden maken de beoordeling beter navolgbaar.',notice:'Druk op Enter om te verzenden. Shift + Enter voegt een nieuwe regel toe.',start:'Assessment starten',preparing:'Assessment wordt voorbereid …',ready:'Assessment is gereed.',starting:'Assessment wordt gestart …',send:'Antwoord verzenden',finish:'Assessment afronden',processing:'Uw antwoorden worden beoordeeld en het rapport wordt gemaakt. De status wordt automatisch bijgewerkt.',completed:'Assessment afgerond',completedText:'Uw antwoorden zijn veilig verzonden. De organisatie bekijkt het resultaat in CLARITY Workspace. U kunt dit venster sluiten.',startTitle:'Voorbereiding',startText:'Neem voldoende tijd voor elk antwoord en geef waar mogelijk concrete situaties of voorbeelden.'},
+    snapshot:{title:'CLARITY Snapshot',eyebrow:'CLARITY Snapshot · Korte check',badge:'Beknopt proces',intro:'Beantwoord de afgesproken korte vragen in uw eigen woorden.',notice:'De Snapshot is een kort gestructureerd overzicht en vervangt geen volledig assessment.',start:'Snapshot starten',preparing:'Snapshot wordt voorbereid …',ready:'Snapshot is gereed.',starting:'Snapshot wordt gestart …',send:'Antwoord verzenden',finish:'Snapshot afronden',processing:'Uw antwoorden worden samengevat. De status wordt automatisch bijgewerkt.',completed:'Snapshot afgerond',completedText:'Uw antwoorden zijn veilig verzonden. De organisatie ontvangt de samenvatting in CLARITY Workspace. U kunt dit venster sluiten.',startTitle:'Kort overzicht',startText:'Antwoord kort en concreet.'},
+    placeholder:'Uw antwoord …',answerRequired:'Voer een antwoord in.',question:'Vraag',answered:'beantwoord',yourAnswer:'Uw antwoord',questions:'vragen',area:'Gebied',format:'Formaat',shortCheck:'Korte check',scope:'Omvang',process:'Proces',processRule:'Beoordeling na het laatste antwoord',retry:'Status opnieuw controleren',readinessDelayed:'De voorbereiding duurt langer dan verwacht. Start blijft geblokkeerd tot alle gegevens compleet zijn.',transport:'De serverreactie is nog niet eenduidig. De werkelijke status wordt gecontroleerd.',firstQuestionMissing:'De eerste vraag is nog niet gereed. De status wordt opnieuw gecontroleerd.',technicalInterrupted:'De verwerking werd technisch onderbroken. Opnieuw controleren hervat hetzelfde proces zonder nieuwe afschrijving.'
+  },
+  pl: {
+    assessment:{title:'CLARITY Assessment',eyebrow:'CLARITY Assessment · Pisemny',badge:'Bezpieczny proces',intro:'Proszę odpowiadać możliwie konkretnie i własnymi słowami. Przykłady ułatwiają rzetelną ocenę odpowiedzi.',notice:'Enter wysyła odpowiedź. Shift + Enter dodaje nowy wiersz.',start:'Rozpocznij assessment',preparing:'Przygotowywanie assessmentu …',ready:'Assessment jest gotowy.',starting:'Uruchamianie assessmentu …',send:'Wyślij odpowiedź',finish:'Zakończ assessment',processing:'Odpowiedzi są analizowane, a raport jest tworzony. Status aktualizuje się automatycznie.',completed:'Assessment zakończony',completedText:'Odpowiedzi zostały bezpiecznie przesłane. Organizacja sprawdzi wynik w CLARITY Workspace. Można zamknąć to okno.',startTitle:'Przygotowanie',startText:'Proszę poświęcić każdej odpowiedzi wystarczająco dużo czasu i podawać konkretne sytuacje lub przykłady.'},
+    snapshot:{title:'CLARITY Snapshot',eyebrow:'CLARITY Snapshot · Szybki przegląd',badge:'Krótki proces',intro:'Proszę odpowiedzieć własnymi słowami na uzgodnione krótkie pytania.',notice:'Snapshot to krótki uporządkowany przegląd, który nie zastępuje pełnego assessmentu.',start:'Rozpocznij Snapshot',preparing:'Przygotowywanie Snapshotu …',ready:'Snapshot jest gotowy.',starting:'Uruchamianie Snapshotu …',send:'Wyślij odpowiedź',finish:'Zakończ Snapshot',processing:'Odpowiedzi są podsumowywane. Status aktualizuje się automatycznie.',completed:'Snapshot zakończony',completedText:'Odpowiedzi zostały bezpiecznie przesłane. Organizacja otrzyma podsumowanie w CLARITY Workspace. Można zamknąć to okno.',startTitle:'Krótki przegląd',startText:'Proszę odpowiadać krótko i konkretnie.'},
+    placeholder:'Twoja odpowiedź …',answerRequired:'Proszę wpisać odpowiedź.',question:'Pytanie',answered:'odpowiedzi',yourAnswer:'Twoja odpowiedź',questions:'pytań',area:'Obszar',format:'Format',shortCheck:'Szybki przegląd',scope:'Zakres',process:'Proces',processRule:'Analiza po ostatniej odpowiedzi',retry:'Sprawdź status ponownie',readinessDelayed:'Przygotowanie trwa dłużej niż oczekiwano. Start pozostaje zablokowany do czasu załadowania kompletnych danych.',transport:'Odpowiedź serwera nie jest jeszcze jednoznaczna. Trwa sprawdzanie rzeczywistego statusu.',firstQuestionMissing:'Pierwsze pytanie nie jest jeszcze gotowe. Status zostanie sprawdzony ponownie.',technicalInterrupted:'Przetwarzanie zostało technicznie przerwane. Ponowne sprawdzenie wznawia ten sam proces bez nowego obciążenia.'
+  },
+  tr: {
+    assessment:{title:'CLARITY Assessment',eyebrow:'CLARITY Assessment · Yazılı',badge:'Güvenli süreç',intro:'Soruları mümkün olduğunca somut ve kendi sözlerinizle yanıtlayın. Örnekler yanıtların daha iyi değerlendirilmesini sağlar.',notice:'Göndermek için Enter’a basın. Shift + Enter yeni satır ekler.',start:'Assessment’ı başlat',preparing:'Assessment hazırlanıyor …',ready:'Assessment hazır.',starting:'Assessment başlatılıyor …',send:'Yanıtı gönder',finish:'Assessment’ı tamamla',processing:'Yanıtlarınız değerlendiriliyor ve rapor oluşturuluyor. Durum otomatik güncellenir.',completed:'Assessment tamamlandı',completedText:'Yanıtlarınız güvenli biçimde iletildi. Kuruluş sonucu CLARITY Workspace’te inceleyecek. Bu pencereyi kapatabilirsiniz.',startTitle:'Hazırlık',startText:'Her yanıt için yeterli zaman ayırın ve mümkünse somut durumlar veya örnekler verin.'},
+    snapshot:{title:'CLARITY Snapshot',eyebrow:'CLARITY Snapshot · Hızlı kontrol',badge:'Kısa süreç',intro:'Kararlaştırılan kısa soruları kendi sözlerinizle yanıtlayın.',notice:'Snapshot kısa ve yapılandırılmış bir genel bakıştır; tam assessment’ın yerini almaz.',start:'Snapshot’ı başlat',preparing:'Snapshot hazırlanıyor …',ready:'Snapshot hazır.',starting:'Snapshot başlatılıyor …',send:'Yanıtı gönder',finish:'Snapshot’ı tamamla',processing:'Yanıtlarınız özetleniyor. Durum otomatik güncellenir.',completed:'Snapshot tamamlandı',completedText:'Yanıtlarınız güvenli biçimde iletildi. Kuruluş özeti CLARITY Workspace’te alır. Bu pencereyi kapatabilirsiniz.',startTitle:'Hızlı genel bakış',startText:'Kısa ve somut yanıt verin.'},
+    placeholder:'Yanıtınız …',answerRequired:'Lütfen bir yanıt girin.',question:'Soru',answered:'yanıtlandı',yourAnswer:'Yanıtınız',questions:'soru',area:'Alan',format:'Biçim',shortCheck:'Hızlı kontrol',scope:'Kapsam',process:'Süreç',processRule:'Son yanıttan sonra değerlendirme',retry:'Durumu tekrar kontrol et',readinessDelayed:'Hazırlık beklenenden uzun sürüyor. Tüm veriler tamamlanana kadar başlatma kilitli kalır.',transport:'Sunucu yanıtı henüz kesin değil. Gerçek durum kontrol ediliyor.',firstQuestionMissing:'İlk soru henüz hazır değil. Durum tekrar kontrol edilecek.',technicalInterrupted:'İşlem teknik olarak kesintiye uğradı. Yeniden kontrol aynı süreci yeni ücret olmadan sürdürür.'
+  }
+});
+
+const AREA_COPY = Object.freeze({
+  en:{aptitude:'Cognitive abilities',personality:'Personality',skills:'Professional skills',language:'Language proficiency',general:'General'},
+  de:{aptitude:'Kognitive Fähigkeiten',personality:'Persönlichkeit',skills:'Fachliche Kompetenzen',language:'Sprachkompetenz',general:'Allgemein'},
+  es:{aptitude:'Capacidades cognitivas',personality:'Personalidad',skills:'Competencias profesionales',language:'Competencia lingüística',general:'General'},
+  fr:{aptitude:'Capacités cognitives',personality:'Personnalité',skills:'Compétences professionnelles',language:'Compétence linguistique',general:'Général'},
+  it:{aptitude:'Capacità cognitive',personality:'Personalità',skills:'Competenze professionali',language:'Competenza linguistica',general:'Generale'},
+  pt:{aptitude:'Capacidades cognitivas',personality:'Personalidade',skills:'Competências profissionais',language:'Competência linguística',general:'Geral'},
+  nl:{aptitude:'Cognitieve vaardigheden',personality:'Persoonlijkheid',skills:'Professionele competenties',language:'Taalvaardigheid',general:'Algemeen'},
+  pl:{aptitude:'Zdolności poznawcze',personality:'Osobowość',skills:'Kompetencje zawodowe',language:'Kompetencje językowe',general:'Ogólne'},
+  tr:{aptitude:'Bilişsel yetenekler',personality:'Kişilik',skills:'Mesleki yetkinlikler',language:'Dil yeterliliği',general:'Genel'},
+  ar:{aptitude:'القدرات المعرفية',personality:'الشخصية',skills:'الكفاءات المهنية',language:'الكفاءة اللغوية',general:'عام'}
 });
 
 function isAmbiguous(error) {
@@ -184,6 +247,23 @@ export function createAssessmentModule(ctx) {
   const failedMediaTurns = new Map();
 
   const product = () => String(state.payload?.runtime?.productKey || '').toLowerCase();
+  const participantLanguage = () => normalizeLanguage(
+    current?.runtime?.userCommLang ||
+    current?.userCommLang ||
+    state.payload?.runtime?.userCommLang ||
+    state.payload?.runtime?.participantLang ||
+    state.payload?.runtime?.workflowSnapshot?.userCommLang ||
+    state.payload?.link?.userCommLang ||
+    getLocale()
+  );
+  const reportLanguage = () => normalizeLanguage(
+    current?.runtime?.reportLang ||
+    current?.reportLang ||
+    state.payload?.runtime?.reportLang ||
+    state.payload?.runtime?.workflowSnapshot?.reportLang ||
+    state.payload?.link?.reportLang ||
+    'en'
+  );
   const runtimeMode = () => {
     const raw = String(current?.mode || state.payload?.runtime?.mode || state.payload?.runtime?.workflowSnapshot?.mode || 'chat').toLowerCase().replace(/[+\s-]+/g, '_');
     if (['chat_audio','audiochat'].includes(raw)) return 'audio_chat';
@@ -196,11 +276,16 @@ export function createAssessmentModule(ctx) {
   const isVideoMode = () => product() === 'assessment' && ['video','video_chat'].includes(runtimeMode());
   const isHybridMode = () => isAudioChatMode() || isVideoChatMode();
   const isMediaMode = () => isAudioMode() || isVideoMode();
-  const assessmentMediaMode = () => isVideoChatMode() ? 'video_chat' : assessmentMediaMode();
+  const assessmentMediaMode = () => isVideoChatMode() ? 'video_chat' : isAudioChatMode() ? 'audio_chat' : isVideoMode() ? 'video' : 'audio';
   const mediaCopy = (audioKey, videoKey) => isHybridMode() ? L()[audioKey.replace(/^audio/,'mix')] || L()[audioKey] : isVideoMode() ? L()[videoKey] : L()[audioKey];
   const L = () => {
-    const base = COPY[getLocale() === 'de' ? 'de' : 'en'];
-    return { ...base, ...(product() === 'snapshot' ? base.snapshot : base.assessment) };
+    const language = participantLanguage();
+    const base = COPY.en;
+    const localized = language === 'de' ? COPY.de : (PARTICIPANT_COPY[language] || {});
+    const productCopy = product() === 'snapshot'
+      ? { ...base.snapshot, ...localized.snapshot }
+      : { ...base.assessment, ...localized.assessment };
+    return { ...base, ...localized, ...productCopy };
   };
   const endpoint = (name) => `v2Assessment${name}`;
   const MEDIA_RECORDER_ROUTES = Object.freeze({
@@ -263,9 +348,9 @@ export function createAssessmentModule(ctx) {
       assessmentQuestionSnapshot: questions,
       questions,
       position: runtime.position || runtime.configurationSnapshot?.position || '',
-      userCommLang: getLocale(),
-      reportLang: runtime.reportLang || getLocale(),
-      lang: getLocale(),
+      userCommLang: participantLanguage(),
+      reportLang: reportLanguage(),
+      lang: participantLanguage(),
       startQuestionIndex: Math.max(1, Number(current?.answeredCount || 0) + 1)
     };
   }
@@ -291,8 +376,8 @@ export function createAssessmentModule(ctx) {
       mode: assessmentMediaMode(),
       audioOnly: isVideoMode() ? '0' : '1',
       autostart: '0',
-      lang: getLocale(),
-      reportLang: String(runtime.reportLang || getLocale())
+      lang: participantLanguage(),
+      reportLang: reportLanguage()
     });
     return `${route}?${query.toString()}`;
   }
@@ -346,10 +431,10 @@ export function createAssessmentModule(ctx) {
       mediaShell.className = 'clarity-assessment-media-shell';
       const heading = document.createElement('div');
       heading.className = 'clarity-assessment-media-heading';
-      heading.textContent = isAudioChatMode() ? (getLocale() === 'de' ? 'Audio + Chat Assessment' : 'Audio + Chat assessment') : isVideoMode() ? (getLocale() === 'de' ? 'Video-Assessment' : 'Video assessment') : (getLocale() === 'de' ? 'Audio-Assessment' : 'Audio assessment');
+      heading.textContent = isAudioChatMode() ? 'Audio + Chat Assessment' : isVideoMode() ? 'Video Assessment' : 'Audio Assessment';
       mediaFrame = document.createElement('iframe');
       mediaFrame.id = 'clarityAssessmentMediaFrame';
-      mediaFrame.title = isAudioChatMode() ? (getLocale() === 'de' ? 'CLARITY Audio + Chat Assessment' : 'CLARITY Audio + Chat assessment') : isVideoMode() ? (getLocale() === 'de' ? 'CLARITY Video-Assessment' : 'CLARITY video assessment') : (getLocale() === 'de' ? 'CLARITY Audio-Assessment' : 'CLARITY audio assessment');
+      mediaFrame.title = isAudioChatMode() ? 'CLARITY Audio + Chat Assessment' : isVideoMode() ? 'CLARITY Video Assessment' : 'CLARITY Audio Assessment';
       mediaFrame.allow = isVideoMode() ? 'camera; microphone; autoplay' : 'microphone; autoplay';
       mediaFrame.referrerPolicy = 'strict-origin-when-cross-origin';
       mediaFrame.loading = 'eager';
@@ -475,7 +560,7 @@ export function createAssessmentModule(ctx) {
       mediaTurnId: payload.mediaTurnId || `${state.uid}:${isVideoMode() ? 'video' : 'audio'}-slot:${questionIndex}`,
       idempotencyKey: payload.mediaTurnId || `${state.uid}:${isVideoMode() ? 'video' : 'audio'}-slot:${questionIndex}`,
       captureSource: isVideoMode() ? 'video' : 'audio',
-      language: getLocale(),
+      language: participantLanguage(),
       companyId: resolvedCompanyId(),
       noSpeechDetected: payload.noSpeechDetected === true,
       voiceDetected: payload.voiceDetected !== false,
@@ -497,7 +582,7 @@ export function createAssessmentModule(ctx) {
     }
     const companyId = resolvedCompanyId();
     if (!companyId) {
-      const error = new Error(getLocale() === 'de'
+      const error = new Error(participantLanguage() === 'de'
         ? 'Der Unternehmenskontext des Medien-Assessments ist noch nicht vollständig geladen.'
         : 'The Assessment company context has not finished loading.');
       error.code = 'ASSESSMENT_COMPANY_CONTEXT_MISSING';
@@ -527,7 +612,7 @@ export function createAssessmentModule(ctx) {
     return Promise.race([
       mediaResultPromise,
       new Promise((_, reject) => window.setTimeout(() => {
-        const error = new Error(getLocale() === 'de'
+        const error = new Error(participantLanguage() === 'de'
           ? (isVideoMode() ? 'Die Video-Datei wird noch verarbeitet. Bitte prüfen Sie den Status erneut.' : 'Die Audio-Datei wird noch verarbeitet. Bitte prüfen Sie den Status erneut.')
           : (isVideoMode() ? 'The video file is still processing. Please check the status again.' : 'The audio file is still processing. Please check the status again.'));
         error.code = 'ASSESSMENT_MEDIA_RESULT_TIMEOUT';
@@ -548,7 +633,7 @@ export function createAssessmentModule(ctx) {
       mediaRecordStarted = false;
       mediaShell?.classList.add('hidden');
       render(data.state || data);
-      status(getLocale()==='de' ? 'Der Chatteil Q8–Q10 ist bereit.' : 'Chat questions Q8–Q10 are ready.', 'ok');
+      status(participantLanguage()==='de' ? 'Der Chatteil Q8–Q10 ist bereit.' : 'Chat questions Q8–Q10 are ready.', 'ok');
       $('assessmentInput')?.focus();
     } catch (error) {
       hybridHandoverStarted = false;
@@ -699,11 +784,8 @@ export function createAssessmentModule(ctx) {
 
   function areaLabel(value) {
     const normalized = String(value || '').toLowerCase();
-    const de = getLocale() === 'de';
-    const labels = de
-      ? { aptitude: 'Kognitive Fähigkeiten', personality: 'Persönlichkeit', skills: 'Fachliche Kompetenzen', language: 'Sprachkompetenz' }
-      : { aptitude: 'Cognitive abilities', personality: 'Personality', skills: 'Professional skills', language: 'Language proficiency' };
-    return labels[normalized] || value || (de ? 'Allgemein' : 'General');
+    const labels = AREA_COPY[participantLanguage()] || AREA_COPY.en;
+    return labels[normalized] || value || labels.general;
   }
 
   function reportIdentity() {
@@ -812,7 +894,7 @@ export function createAssessmentModule(ctx) {
       const row = document.createElement('div');
       row.className = `assessment-message ${entry.role === 'assistant' ? 'assistant' : 'user'}`;
       const label = document.createElement('span');
-      label.textContent = entry.role === 'assistant' ? (entry.questionIndex ? `${L().question} ${entry.questionIndex}` : 'CLARITY') : (getLocale() === 'de' ? 'Ihre Antwort' : 'Your answer');
+      label.textContent = entry.role === 'assistant' ? (entry.questionIndex ? `${L().question} ${entry.questionIndex}` : 'CLARITY') : L().yourAnswer;
       const body = document.createElement('p');
       body.textContent = entry.text || '';
       row.append(label, body);
@@ -823,7 +905,7 @@ export function createAssessmentModule(ctx) {
 
   function renderMeta(data) {
     $('assessmentArea').textContent = product() === 'snapshot' ? L().shortCheck : areaLabel(data.moduleArea || 'personality');
-    $('assessmentScope').textContent = `${data.questionCount || 0} ${getLocale() === 'de' ? 'Fragen' : 'questions'}`;
+    $('assessmentScope').textContent = `${data.questionCount || 0} ${L().questions}`;
     $('assessmentCredit').textContent = L().processRule;
     const answered = Number(data.answeredCount || 0);
     const expected = Math.max(1, Number(data.expectedAnswers || data.questionCount || 1));
@@ -887,7 +969,7 @@ export function createAssessmentModule(ctx) {
 
       status(L().completedText, 'ok');
     } else if (failed) {
-      status(getLocale() === 'de' ? 'Die Verarbeitung wurde technisch unterbrochen. Mit „Status erneut prüfen“ wird derselbe Vorgang ohne neue Abbuchung fortgesetzt.' : 'Processing was interrupted technically. “Check status again” continues the same record without a new charge.', 'err');
+      status(L().technicalInterrupted, 'err');
     } else if (processing) {
       status(L().processing, 'warn');
     } else if (running) {
@@ -957,11 +1039,11 @@ export function createAssessmentModule(ctx) {
       if (Date.now() - pollStartedAt >= 5 * 60 * 1000) {
         polling = false;
         if (next.report?.available) {
-          status(getLocale() === 'de'
+          status(participantLanguage() === 'de'
             ? 'Der verfügbare Bericht kann geöffnet werden. Die Unified-Version wird weiterhin im Hintergrund erstellt.'
             : 'The available report can be opened. The unified version continues processing in the background.', 'warn');
         } else {
-          status(getLocale() === 'de'
+          status(participantLanguage() === 'de'
             ? 'Die Verarbeitung läuft weiter. Sie können diese Seite später mit demselben Link erneut öffnen.'
             : 'Processing continues. You can reopen this page later using the same link.', 'warn');
         }
@@ -1051,9 +1133,7 @@ export function createAssessmentModule(ctx) {
       const firstQuestion = data.firstQuestion || data.chat?.firstQuestion ||
         (Array.isArray(next.history) ? next.history.find(item => item?.role === 'assistant' && item?.text) : null);
       if (next.phase === 'running' && !String(firstQuestion?.text || '').trim()) {
-        const error = new Error(getLocale() === 'de'
-          ? 'Die erste Frage wurde noch nicht bereitgestellt. Der Status wird erneut geprüft.'
-          : 'The first question has not been prepared yet. Status will be checked again.');
+        const error = new Error(L().firstQuestionMissing);
         error.code = 'ASSESSMENT_START_QUESTION_MISSING';
         throw error;
       }
@@ -1178,7 +1258,7 @@ export function createAssessmentModule(ctx) {
   function applyCopy() {
     const copy = L();
     ensureAssessmentStyles();
-    $('assessmentTitle').textContent = isAudioChatMode() ? (getLocale()==='de' ? 'CLARITY Assessment · Audio + Chat' : 'CLARITY Assessment · Audio + Chat') : copy.title;
+    $('assessmentTitle').textContent = isAudioChatMode() ? 'CLARITY Assessment · Audio + Chat' : copy.title;
     $('assessmentText').textContent = copy.intro;
     $('assessmentReleaseText').textContent = copy.notice;
     $('assessmentStartBtn').textContent = startAllowed() ? copy.start : (isMediaMode() ? mediaCopy('audioPreparing','videoPreparing') : copy.preparing);
