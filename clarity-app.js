@@ -1,7 +1,7 @@
 import { resolveModuleView } from './modules/router-module.js';
 import { createCvModule } from './modules/cv-module.js';
 import { createVideoPresentationModule } from './modules/video-presentation-module.js';
-import { createAiLiteracyModule } from './modules/ai-literacy-module.js?v=2.15.0';
+import { createAiLiteracyModule } from './modules/ai-literacy-module.js?v=2.16.1-ail-certificate-recovery';
 import { createAssessmentModule } from './modules/assessment-module.js?v=2.17.0';
 import { createInterviewModule } from './modules/interview-module.js?v=1.9.0-i4-4-1-closeout-loop-recovery';
 
