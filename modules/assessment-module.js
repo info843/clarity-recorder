@@ -289,10 +289,10 @@ export function createAssessmentModule(ctx) {
   };
   const endpoint = (name) => `v2Assessment${name}`;
   const MEDIA_RECORDER_ROUTES = Object.freeze({
-    audio: ['/modules/assessment-audio-recorder.html', '/live.assessment.html'],
-    video: ['/modules/assessment-video-recorder.html', '/live.assessment.html'],
-    audio_chat: ['/modules/assessment-audio-chat-recorder.html', '/live.assessment.html'],
-    video_chat: ['/modules/assessment-video-chat-recorder.html', '/modules/assessment-audio-chat-recorder.html', '/live.assessment.html']
+    audio: ['/modules/assessment-audio-recorder.html', '/liveAssessment.html'],
+    video: ['/modules/assessment-video-recorder.html', '/liveAssessment.html'],
+    audio_chat: ['/modules/assessment-audio-chat-recorder.html', '/liveAssessment.html'],
+    video_chat: ['/modules/assessment-video-chat-recorder.html', '/modules/assessment-audio-chat-recorder.html', '/liveAssessment.html']
   });
 
   function resolvedCompanyId() {
