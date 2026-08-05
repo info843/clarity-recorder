@@ -1,6 +1,6 @@
 <!-- assessment-video-chat-recorder.html — v2.10.0 E2.4 VIDEO_CHAT_Q10 | CLARITY Assessment. Camera and microphone readiness, Q1–Q7 video evidence, Q8–Q10 chat handover, full video Mux asset. -->
 <!doctype html>
-<html lang="de">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <title>CLARITY Assessment</title>
@@ -18,22 +18,22 @@
   <div class="wrap">
     <section class="card">
       <div class="rowBetween">
-        <div><span id="status" class="badge">Initialisierung…</span><span id="slotBadge" class="badge" style="margin-left:6px">Slot 0/10</span></div>
-        <button id="btnStop" class="btn">Assessment beenden</button>
+        <div><span id="status" class="badge">Initializing…</span><span id="slotBadge" class="badge" style="margin-left:6px">Slot 0/10</span></div>
+        <button id="btnStop" class="btn">End assessment</button>
       </div>
-      <div id="questionText" class="question">Assessment wird vorbereitet…</div>
-      <div id="hintText" class="hint">Bitte bleiben Sie auf dieser Seite.</div>
+      <div id="questionText" class="question">Preparing assessment…</div>
+      <div id="hintText" class="hint">Please stay on this page.</div>
       <div class="grid2" style="margin-top:12px">
         <div>
-          <div id="cameraLabel" class="muted" style="margin-bottom:6px">Kamera-Vorschau</div>
+          <div id="cameraLabel" class="muted" style="margin-bottom:6px">Camera preview</div>
           <video id="localVideo" autoplay playsinline muted></video>
-          <div class="muted" style="margin:8px 0 4px">Mikrofon</div>
+          <div class="muted" style="margin:8px 0 4px">Microphone</div>
           <div class="bar"><i id="micLevel"></i></div>
         </div>
         <div>
-          <div class="muted" style="margin-bottom:6px">Ablauf</div>
+          <div class="muted" style="margin-bottom:6px">Progress</div>
           <div class="bar"><i id="slotProgress"></i></div>
-          <div id="phaseText" class="hint" style="margin-top:10px">Warten auf Start…</div>
+          <div id="phaseText" class="hint" style="margin-top:10px">Waiting to start…</div>
         </div>
       </div>
     </section>
@@ -82,7 +82,7 @@
   const $ = (id) => document.getElementById(id);
   const $status = $('status'), $slotBadge = $('slotBadge'), $question = $('questionText'), $hint = $('hintText'), $phase = $('phaseText'), $mic = $('micLevel'), $slotProgress = $('slotProgress'), $log = $('log'), $localVideo = $('localVideo'), $btnStop = $('btnStop'), $recState = $('recState'), $muxState = $('muxState'), $recProgress = $('recProgress');
 
-  let CTX = { uid: UID, linkId: UID, companyId: COMPANY_ID, lang: Q.get('lang') || 'de', reportLang: Q.get('reportLang') || Q.get('reportlang') || Q.get('lang') || 'de', mode: AUDIO_ONLY ? 'audio' : 'video', productType: 'modul1', assessment: true };
+  let CTX = { uid: UID, linkId: UID, companyId: COMPANY_ID, lang: Q.get('lang') || 'en', reportLang: Q.get('reportLang') || Q.get('reportlang') || Q.get('lang') || 'en', mode: AUDIO_ONLY ? 'audio' : 'video', productType: 'modul1', assessment: true };
   function effectiveCompanyId(){ return clean(CTX.companyId || COMPANY_ID || ''); }
   let localStream = null, mediaRecorder = null, candidateRecorder = null, mixedStream = null;
   let recordAudioCtx = null, recordDestination = null, recordMicSource = null;
@@ -672,7 +672,7 @@ function personalizeAssessmentQuestion(q, position=''){
   }
   function speakBrowser(text, opts={}){ return new Promise(resolve => { const raw = clean(text); if (!raw || !('speechSynthesis' in window)) { timer(resolve, estimateSpeechMs(raw)); return; }
       let done = false; const finish = (why) => { if (done) return; done = true; debug('v262_browser_tts_done', { why, textPreview: raw.slice(0,80) }); resolve(); };
-      try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(raw); const lk = activeLang(); u.lang = lk === 'de' ? 'de-DE' : lk === 'es' ? 'es-ES' : lk === 'fr' ? 'fr-FR' : lk === 'it' ? 'it-IT' : 'en-US'; const v = pickVoice(u.lang); if (v) u.voice = v; u.rate = opts.rate || 0.94; u.pitch = 1; u.volume = 1; u.onend = () => finish('onend'); u.onerror = (e) => finish(`onerror_${e?.error || 'unknown'}`); speechSynthesis.speak(u); timer(()=>finish('fallback_timer'), Math.max(6000, estimateSpeechMs(raw)+3500)); }
+      try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(raw); const lk = activeLang(); const speechLocales={de:'de-DE',en:'en-US',es:'es-ES',fr:'fr-FR',it:'it-IT',pt:'pt-PT',nl:'nl-NL',pl:'pl-PL',tr:'tr-TR',ar:'ar-SA'}; u.lang = speechLocales[lk] || 'en-US'; const v = pickVoice(u.lang); if (v) u.voice = v; u.rate = opts.rate || 0.94; u.pitch = 1; u.volume = 1; u.onend = () => finish('onend'); u.onerror = (e) => finish(`onerror_${e?.error || 'unknown'}`); speechSynthesis.speak(u); timer(()=>finish('fallback_timer'), Math.max(6000, estimateSpeechMs(raw)+3500)); }
       catch(e){ debug('v262_browser_tts_failed', { message: errMsg(e) }); timer(resolve, estimateSpeechMs(raw)); }
     }); }
   async function speak(text, opts={}){
@@ -869,7 +869,7 @@ function personalizeAssessmentQuestion(q, position=''){
   }
   function manualStop(reason='manual_stop'){ if (!recordEnabled || !recordingStartedAt) return; debug('v270_manual_stop', { reason, currentSlot }); finishAssessment(reason); }
 
-  function handleMessage(ev){ let msg = ev?.data; try { if (typeof msg === 'string') msg = JSON.parse(msg); } catch(_){} if (!msg || typeof msg !== 'object') return; const type = msg.type; const data = msg.data || msg.payload || {}; if (type === 'clarity.live.context' || type === 'clarity.live.prime'){ CTX = { ...CTX, ...(data||{}) }; startSlotIndex = Math.max(1, Number(data.startQuestionIndex || CTX.startQuestionIndex || 1)); CTX.lang = firstNonEmpty(CTX.userCommLang, CTX.interviewLang, CTX.interviewLanguage, CTX.lang, Q.get('lang'), 'en'); CTX.reportLang = firstNonEmpty(CTX.reportLang, CTX.reportLanguage, Q.get('reportLang'), CTX.lang); CTX.ttsVoice = firstNonEmpty(CTX.ttsVoice, data.ttsVoice, Q.get('ttsVoice'), Q.get('voice'), 'marin'); $btnStop.textContent = t('endBtn'); setStatus('info', t('init')); debug('v270_context_received', { mode:CTX.mode, assessmentMode:CTX.assessmentMode, moduleArea:CTX.moduleArea, questionCount:CTX.questionCount, totalQuestionCount:CTX.totalQuestionCount, mediaQuestionCount:CTX.mediaQuestionCount, sessionId:CTX.sessionId, lang:CTX.lang }); return; } if (type === 'clarity.live.prepare' || type === 'clarity.live.start'){ startAssessment(); return; } if (type === 'clarity.live.record'){ recordEnabled = data?.enabled !== false; debug('v270_record_enabled', { recordEnabled, prepared, sessionId:CTX.sessionId }); if (recordEnabled && prepared && !recordingStartedAt) beginAssessmentFlow(); return; } if (type === 'clarity.live.hangup' || type === 'clarity.live.stop' || type === 'recorder:stop'){ manualStop(type); return; } }
+  function handleMessage(ev){ let msg = ev?.data; try { if (typeof msg === 'string') msg = JSON.parse(msg); } catch(_){} if (!msg || typeof msg !== 'object') return; const type = msg.type; const data = msg.data || msg.payload || {}; if (type === 'clarity.live.context' || type === 'clarity.live.prime'){ CTX = { ...CTX, ...(data||{}) }; startSlotIndex = Math.max(1, Number(data.startQuestionIndex || CTX.startQuestionIndex || 1)); CTX.lang = firstNonEmpty(CTX.userCommLang, CTX.interviewLang, CTX.interviewLanguage, CTX.lang, Q.get('lang'), 'en'); CTX.reportLang = firstNonEmpty(CTX.reportLang, CTX.reportLanguage, Q.get('reportLang'), CTX.lang); CTX.ttsVoice = firstNonEmpty(CTX.ttsVoice, data.ttsVoice, Q.get('ttsVoice'), Q.get('voice'), 'marin'); document.documentElement.lang=activeLang(); document.documentElement.dir=activeLang()=== 'ar' ? 'rtl' : 'ltr'; $btnStop.textContent = t('endBtn'); setStatus('info', t('init')); debug('v270_context_received', { mode:CTX.mode, assessmentMode:CTX.assessmentMode, moduleArea:CTX.moduleArea, questionCount:CTX.questionCount, totalQuestionCount:CTX.totalQuestionCount, mediaQuestionCount:CTX.mediaQuestionCount, sessionId:CTX.sessionId, lang:CTX.lang }); return; } if (type === 'clarity.live.prepare' || type === 'clarity.live.start'){ startAssessment(); return; } if (type === 'clarity.live.record'){ recordEnabled = data?.enabled !== false; debug('v270_record_enabled', { recordEnabled, prepared, sessionId:CTX.sessionId }); if (recordEnabled && prepared && !recordingStartedAt) beginAssessmentFlow(); return; } if (type === 'clarity.live.hangup' || type === 'clarity.live.stop' || type === 'recorder:stop'){ manualStop(type); return; } }
   window.addEventListener('message', handleMessage);
   $btnStop.addEventListener('click', () => manualStop('local_button'));
 
