@@ -1,4 +1,4 @@
-// CLARITY Assessment Universal App module v2.27.0 — E2.5 START + LANGUAGE FREEZE
+// CLARITY Assessment Universal App module v3.1.0 — Q10 freeze + Q20/Q30 linear final-open scale
 // Compact state deltas, one closeout dispatch, status-only polling and immediate
 // fallback-report availability while the Unified PDF finishes asynchronously.
 const COPY = Object.freeze({
@@ -138,6 +138,18 @@ const PARTICIPANT_COPY = Object.freeze({
   }
 });
 
+const FINAL_OPEN_COPY = Object.freeze({
+  de:{prompt:'Möchten Sie abschließend noch etwas ergänzen, das durch die gestellten Fragen nicht abgedeckt wurde? Diese Ergänzung ist freiwillig.',placeholder:'Freiwillige Abschluss-Ergänzung …',save:'Ergänzung speichern',skip:'Ohne Ergänzung abschließen'},
+  en:{prompt:'Would you like to add anything that was not covered by the questions? This final statement is voluntary.',placeholder:'Voluntary final statement …',save:'Save statement',skip:'Finish without statement'},
+  es:{prompt:'¿Desea añadir algo que no se haya tratado en las preguntas? Esta declaración final es voluntaria.',placeholder:'Declaración final voluntaria …',save:'Guardar declaración',skip:'Finalizar sin declaración'},
+  fr:{prompt:'Souhaitez-vous ajouter un élément qui n’a pas été abordé par les questions ? Cette déclaration finale est facultative.',placeholder:'Déclaration finale facultative …',save:'Enregistrer la déclaration',skip:'Terminer sans déclaration'},
+  it:{prompt:'Desidera aggiungere qualcosa che non è stato trattato nelle domande? Questa dichiarazione finale è facoltativa.',placeholder:'Dichiarazione finale facoltativa …',save:'Salva dichiarazione',skip:'Termina senza dichiarazione'},
+  pt:{prompt:'Gostaria de acrescentar algo que não tenha sido abordado nas perguntas? Esta declaração final é voluntária.',placeholder:'Declaração final voluntária …',save:'Guardar declaração',skip:'Concluir sem declaração'},
+  nl:{prompt:'Wilt u nog iets toevoegen dat niet door de gestelde vragen is behandeld? Deze slotverklaring is vrijwillig.',placeholder:'Vrijwillige slotverklaring …',save:'Verklaring opslaan',skip:'Afronden zonder verklaring'},
+  pl:{prompt:'Czy chcesz dodać coś, czego nie obejmowały zadane pytania? Ta wypowiedź końcowa jest dobrowolna.',placeholder:'Dobrowolna wypowiedź końcowa …',save:'Zapisz wypowiedź',skip:'Zakończ bez wypowiedzi'},
+  tr:{prompt:'Sorularda ele alınmayan başka bir şey eklemek ister misiniz? Bu son ifade isteğe bağlıdır.',placeholder:'İsteğe bağlı son ifade …',save:'İfadeyi kaydet',skip:'İfade olmadan tamamla'}
+});
+
 const AREA_COPY = Object.freeze({
   en:{aptitude:'Cognitive abilities',personality:'Personality',skills:'Professional skills',language:'Language proficiency',general:'General'},
   de:{aptitude:'Kognitive Fähigkeiten',personality:'Persönlichkeit',skills:'Fachliche Kompetenzen',language:'Sprachkompetenz',general:'Allgemein'},
@@ -245,6 +257,7 @@ export function createAssessmentModule(ctx) {
   let lastMediaResultPayload = null;
   let videoConsentControl = null;
   const failedMediaTurns = new Map();
+  let failedFinalOpenDecision = null;
 
   const product = () => String(state.payload?.runtime?.productKey || '').toLowerCase();
   const participantLanguage = () => normalizeLanguage(
@@ -277,7 +290,12 @@ export function createAssessmentModule(ctx) {
   const isHybridMode = () => isAudioChatMode() || isVideoChatMode();
   const isMediaMode = () => isAudioMode() || isVideoMode();
   const assessmentMediaMode = () => isVideoChatMode() ? 'video_chat' : isAudioChatMode() ? 'audio_chat' : isVideoMode() ? 'video' : 'audio';
-  const mediaCopy = (audioKey, videoKey) => isHybridMode() ? L()[audioKey.replace(/^audio/,'mix')] || L()[audioKey] : isVideoMode() ? L()[videoKey] : L()[audioKey];
+  const totalQuestionCount = () => { const value=Number(current?.questionCount||current?.media?.questionCount||state.payload?.runtime?.questionCount||state.payload?.runtime?.workflowSnapshot?.questionCount||10);return[10,20,30].includes(value)?value:10 };
+  const scaledFinalOpenRequired = () => product() === 'assessment' && totalQuestionCount() > 10;
+  const finalOpenPending = (data=current) => scaledFinalOpenRequired() && Number(data?.answeredCount||0) >= Number(data?.expectedAnswers||data?.questionCount||totalQuestionCount()) && data?.finalOpenCompleted !== true;
+  const hybridSlotContract = () => { const total=totalQuestionCount();const media=Number(current?.media?.mediaQuestionCount||current?.mediaQuestionCount||(total===10?7:Math.ceil(total*.7)));return{total,media,chat:total-media,chatStart:media+1} };
+  const hybridStatus = (kind='recording') => { const slots=hybridSlotContract();const values={de:{recording:`Mündlicher Teil Q1–Q${slots.media} läuft. Danach folgen Q${slots.chatStart}–Q${slots.total} im Chat.`,handover:`Der mündliche Teil ist abgeschlossen. Der Chatteil Q${slots.chatStart}–Q${slots.total} wird geöffnet …`,ready:`Der Chatteil Q${slots.chatStart}–Q${slots.total} ist bereit.`},en:{recording:`Spoken part Q1–Q${slots.media} is running. Q${slots.chatStart}–Q${slots.total} will follow in chat.`,handover:`The spoken part is complete. Opening chat questions Q${slots.chatStart}–Q${slots.total} …`,ready:`Chat questions Q${slots.chatStart}–Q${slots.total} are ready.`},es:{recording:`La parte oral Q1–Q${slots.media} está en curso. Después siguen Q${slots.chatStart}–Q${slots.total} en el chat.`,handover:`La parte oral ha terminado. Se abren las preguntas Q${slots.chatStart}–Q${slots.total} en el chat …`,ready:`Las preguntas Q${slots.chatStart}–Q${slots.total} del chat están listas.`},fr:{recording:`La partie orale Q1–Q${slots.media} est en cours. Q${slots.chatStart}–Q${slots.total} suivront dans le chat.`,handover:`La partie orale est terminée. Ouverture des questions Q${slots.chatStart}–Q${slots.total} dans le chat …`,ready:`Les questions Q${slots.chatStart}–Q${slots.total} du chat sont prêtes.`},it:{recording:`La parte orale Q1–Q${slots.media} è in corso. Seguiranno Q${slots.chatStart}–Q${slots.total} nella chat.`,handover:`La parte orale è terminata. Apertura delle domande Q${slots.chatStart}–Q${slots.total} nella chat …`,ready:`Le domande Q${slots.chatStart}–Q${slots.total} della chat sono pronte.`},pt:{recording:`A parte oral Q1–Q${slots.media} está em curso. Depois seguem Q${slots.chatStart}–Q${slots.total} no chat.`,handover:`A parte oral terminou. A abrir as perguntas Q${slots.chatStart}–Q${slots.total} no chat …`,ready:`As perguntas Q${slots.chatStart}–Q${slots.total} do chat estão prontas.`},nl:{recording:`Het mondelinge deel Q1–Q${slots.media} loopt. Daarna volgen Q${slots.chatStart}–Q${slots.total} in de chat.`,handover:`Het mondelinge deel is afgerond. Chatvragen Q${slots.chatStart}–Q${slots.total} worden geopend …`,ready:`Chatvragen Q${slots.chatStart}–Q${slots.total} zijn klaar.`},pl:{recording:`Trwa część ustna Q1–Q${slots.media}. Następnie pojawią się Q${slots.chatStart}–Q${slots.total} na czacie.`,handover:`Część ustna została zakończona. Otwieranie pytań Q${slots.chatStart}–Q${slots.total} na czacie …`,ready:`Pytania Q${slots.chatStart}–Q${slots.total} na czacie są gotowe.`},tr:{recording:`Sözlü bölüm Q1–Q${slots.media} devam ediyor. Ardından sohbette Q${slots.chatStart}–Q${slots.total} gelecek.`,handover:`Sözlü bölüm tamamlandı. Sohbet soruları Q${slots.chatStart}–Q${slots.total} açılıyor …`,ready:`Sohbet soruları Q${slots.chatStart}–Q${slots.total} hazır.`}};return(values[participantLanguage()]||values.en)[kind] };
+  const mediaCopy = (audioKey, videoKey) => isHybridMode() ? (audioKey==='audioRecording'?hybridStatus('recording'):L()[audioKey.replace(/^audio/,'mix')] || L()[audioKey]) : isVideoMode() ? L()[videoKey] : L()[audioKey];
   const L = () => {
     const language = participantLanguage();
     const base = COPY.en;
@@ -287,12 +305,14 @@ export function createAssessmentModule(ctx) {
       : { ...base.assessment, ...localized.assessment };
     return { ...base, ...localized, ...productCopy };
   };
+  const finalOpenCopy = () => FINAL_OPEN_COPY[participantLanguage()] || FINAL_OPEN_COPY.en;
   const endpoint = (name) => `v2Assessment${name}`;
+  const ASSESSMENT_RECORDER_RELEASE = '3.1.0-q20-q30-linear-final-open';
   const MEDIA_RECORDER_ROUTES = Object.freeze({
-    audio: ['/modules/assessment-audio-recorder.html', '/liveAssessment.html'],
-    video: ['/modules/assessment-video-recorder.html', '/liveAssessment.html'],
-    audio_chat: ['/modules/assessment-audio-chat-recorder.html', '/liveAssessment.html'],
-    video_chat: ['/modules/assessment-video-chat-recorder.html', '/modules/assessment-audio-chat-recorder.html', '/liveAssessment.html']
+    audio: [`/modules/assessment-audio-recorder.html?v=${ASSESSMENT_RECORDER_RELEASE}`, `/liveAssessment.html?v=${ASSESSMENT_RECORDER_RELEASE}`],
+    video: [`/modules/assessment-video-recorder.html?v=${ASSESSMENT_RECORDER_RELEASE}`, `/liveAssessment.html?v=${ASSESSMENT_RECORDER_RELEASE}`],
+    audio_chat: [`/modules/assessment-audio-chat-recorder.html?v=${ASSESSMENT_RECORDER_RELEASE}`, `/liveAssessment.html?v=${ASSESSMENT_RECORDER_RELEASE}`],
+    video_chat: [`/modules/assessment-video-chat-recorder.html?v=${ASSESSMENT_RECORDER_RELEASE}`, `/modules/assessment-audio-chat-recorder.html?v=${ASSESSMENT_RECORDER_RELEASE}`, `/liveAssessment.html?v=${ASSESSMENT_RECORDER_RELEASE}`]
   });
 
   function resolvedCompanyId() {
@@ -340,11 +360,14 @@ export function createAssessmentModule(ctx) {
       moduleArea: current?.moduleArea || runtime.moduleArea || runtime.configurationSnapshot?.moduleArea || 'personality',
       questionCount: Number(current?.questionCount || media.questionCount || questions.length || 10),
       totalQuestionCount: Number(current?.questionCount || media.questionCount || questions.length || 10),
-      mediaQuestionCount: isHybridMode() ? 7 : Number(current?.questionCount || media.questionCount || questions.length || 10),
-      chatQuestionCount: isHybridMode() ? 3 : 0,
-      chatSlotStartIndex: isHybridMode() ? 8 : 0,
-      chatSlotEndIndex: isHybridMode() ? 10 : 0,
+      mediaQuestionCount: isHybridMode() ? hybridSlotContract().media : Number(current?.questionCount || media.questionCount || questions.length || 10),
+      chatQuestionCount: isHybridMode() ? hybridSlotContract().chat : 0,
+      chatSlotStartIndex: isHybridMode() ? hybridSlotContract().chatStart : 0,
+      chatSlotEndIndex: isHybridMode() ? hybridSlotContract().total : 0,
       hybridAssessment: isHybridMode(),
+      conversationContract: scaledFinalOpenRequired() ? 'linear_main_questions_final_open_v1' : '',
+      adaptiveFollowUpsEnabled: false,
+      finalOpenRequired: scaledFinalOpenRequired(),
       assessmentQuestionSnapshot: questions,
       questions,
       position: runtime.position || runtime.configurationSnapshot?.position || '',
@@ -514,6 +537,7 @@ export function createAssessmentModule(ctx) {
     mediaFatalError = null;
     lastMediaResultPayload = null;
     failedMediaTurns.clear();
+    failedFinalOpenDecision = null;
     const deferred = createDeferred();
     mediaResultDeferred = deferred;
     mediaResultPromise = deferred.promise;
@@ -564,13 +588,34 @@ export function createAssessmentModule(ctx) {
       companyId: resolvedCompanyId(),
       noSpeechDetected: payload.noSpeechDetected === true,
       voiceDetected: payload.voiceDetected !== false,
-      voiceActivityMs: Number(payload.voiceActivityMs || 0)
+      voiceActivityMs: Number(payload.voiceActivityMs || 0),
+      finalOpen: payload.finalOpen === true,
+      finalOpenSkipped: payload.finalOpenSkipped === true,
+      turnType: payload.finalOpen === true ? 'final_open' : String(payload.turnType || 'main_answer')
     };
     const saved = await withMediaRetry(() => api(endpoint('MediaTurn'), { body }), 3);
     failedMediaTurns.delete(questionIndex);
     mediaTurnCount = Math.max(mediaTurnCount, Number(saved?.state?.answeredCount || questionIndex));
     if (saved?.state) render(saved.state);
     return saved;
+  }
+
+  async function persistFinalOpenDecision(message = '', skipped = false, source = 'media') {
+    const data = await api(endpoint('Message'), {
+      body: {
+        token:state.token,
+        uid:state.uid,
+        sessionId:current?.sessionId || '',
+        message:String(message || '').trim(),
+        finalOpen:true,
+        finalOpenSkipped:skipped === true,
+        turnType:'final_open',
+        captureSource:source
+      }
+    });
+    const next = data.state || data;
+    render(next);
+    return next;
   }
 
   async function persistMediaResult(payload = {}) {
@@ -625,7 +670,7 @@ export function createAssessmentModule(ctx) {
   async function beginHybridChatHandover() {
     if (!isHybridMode() || hybridHandoverStarted) return;
     hybridHandoverStarted = true;
-    status(L().mixHandover, 'warn');
+    status(hybridStatus('handover'), 'warn');
     try {
       const runtimeAccessId = String(state.payload?.runtime?.runtimeAccessId || state.uid || '').trim();
       const data = await api(endpoint('Start'), { body: { token:state.token, uid:state.uid, sessionId:current?.sessionId||'', handoverToChat:true, idempotencyKey:`${runtimeAccessId}:assessment-${assessmentMediaMode()}-handover` } });
@@ -633,7 +678,7 @@ export function createAssessmentModule(ctx) {
       mediaRecordStarted = false;
       mediaShell?.classList.add('hidden');
       render(data.state || data);
-      status(participantLanguage()==='de' ? 'Der Chatteil Q8–Q10 ist bereit.' : 'Chat questions Q8–Q10 are ready.', 'ok');
+      status(hybridStatus('ready'), 'ok');
       $('assessmentInput')?.focus();
     } catch (error) {
       hybridHandoverStarted = false;
@@ -649,14 +694,15 @@ export function createAssessmentModule(ctx) {
     status(mediaCopy('audioSaving','videoSaving'), 'warn');
     try {
       await mediaTurnChain;
-      if (failedMediaTurns.size) {
+      if (failedMediaTurns.size || failedFinalOpenDecision) {
+        if (failedFinalOpenDecision && mediaFatalError) throw mediaFatalError;
         const error = new Error(mediaCopy('audioRetry','videoRetry'));
         error.code = 'ASSESSMENT_MEDIA_TURNS_INCOMPLETE';
         error.retryable = true;
         throw error;
       }
       await waitForMediaResult();
-      const expected = isHybridMode() ? Number(current?.media?.mediaQuestionCount || 7) : Number(current?.expectedAnswers || current?.questionCount || 10);
+      const expected = isHybridMode() ? hybridSlotContract().media : Number(current?.expectedAnswers || current?.questionCount || 10);
       const refreshed = await readStatus({ includeHistory: false, includeReportLookup: false });
       if (Number(refreshed?.answeredCount || 0) < expected) {
         const error = new Error(mediaCopy('audioRetry','videoRetry'));
@@ -680,9 +726,14 @@ export function createAssessmentModule(ctx) {
   async function retryFailedMedia() {
     if (!isMediaMode()) return false;
     const pending = [...failedMediaTurns.values()];
-    if (!pending.length && !mediaFatalError && !lastMediaResultPayload) return false;
+    if (!pending.length && !failedFinalOpenDecision && !mediaFatalError && !lastMediaResultPayload) return false;
     mediaFatalError = null;
     status(mediaCopy('audioSaving','videoSaving'), 'warn');
+    if (failedFinalOpenDecision) {
+      const decision = failedFinalOpenDecision;
+      await persistFinalOpenDecision(decision.message, decision.skipped, decision.source);
+      failedFinalOpenDecision = null;
+    }
     for (const payload of pending) {
       await persistMediaTurn(payload);
     }
@@ -723,6 +774,17 @@ export function createAssessmentModule(ctx) {
 
     if (type === 'candidate-audio:slot-finished') {
       const questionIndex = Number(data.questionIndex || 0);
+      if (data.finalOpen === true && data.noSpeechDetected === true) {
+        failedFinalOpenDecision = { message:'', skipped:true, source:isVideoMode() ? 'video' : 'audio' };
+        mediaTurnChain = mediaTurnChain
+          .then(() => persistFinalOpenDecision('', true, isVideoMode() ? 'video' : 'audio'))
+          .then(() => { failedFinalOpenDecision = null; })
+          .catch((error) => {
+            mediaFatalError = error;
+            status(error.message || mediaCopy('audioRetry','videoRetry'), 'err');
+          });
+        return;
+      }
       failedMediaTurns.set(questionIndex, data);
       mediaTurnChain = mediaTurnChain
         .then(() => persistMediaTurn(data))
@@ -770,7 +832,7 @@ export function createAssessmentModule(ctx) {
 
     if (type === 'clarity.assessment.v2.oral_completed') {
       mediaEnded = true;
-      status(L().mixHandover, 'warn');
+      status(hybridStatus('handover'), 'warn');
       return;
     }
 
@@ -929,7 +991,6 @@ export function createAssessmentModule(ctx) {
       history
     };
     renderMeta(current);
-    renderHistory(current.history || []);
     adoptReadiness(current);
     const phase = current.phase || 'not_started';
     const notStarted = phase === 'not_started';
@@ -953,8 +1014,16 @@ export function createAssessmentModule(ctx) {
     $('assessmentCompletePanel').classList.toggle('hidden', !completed);
     $('assessmentComposer').classList.toggle('hidden', mediaStage || !running);
     const allAnswered = Number(current.answeredCount || 0) >= Number(current.expectedAnswers || current.questionCount || 1);
+    const closingPending = finalOpenPending(current);
+    const displayHistory = [...(current.history || [])];
+    if (closingPending) displayHistory.push({ role:'assistant', text:finalOpenCopy().prompt, questionIndex:0, turnType:'final_open_prompt' });
+    if (current.finalOpenCompleted === true && current.finalOpenUsed === true && current.finalOpenAnswer) displayHistory.push({ role:'user', text:current.finalOpenAnswer, questionIndex:0, turnType:'final_open' });
+    renderHistory(displayHistory);
     $('assessmentFinishBtn').classList.toggle('hidden', mediaStage || !running || !allAnswered);
-    $('assessmentSendBtn').classList.toggle('hidden', mediaStage || !running || allAnswered);
+    $('assessmentSendBtn').classList.toggle('hidden', mediaStage || !running || (allAnswered && !closingPending));
+    if ($('assessmentInput')) $('assessmentInput').placeholder = closingPending ? finalOpenCopy().placeholder : L().placeholder;
+    if ($('assessmentSendBtn')) $('assessmentSendBtn').textContent = closingPending ? finalOpenCopy().save : L().send;
+    if ($('assessmentFinishBtn')) $('assessmentFinishBtn').textContent = closingPending ? finalOpenCopy().skip : L().finish;
     if (mediaStage && running && mediaRecordStarted) status(mediaCopy('audioRecording','videoRecording'), 'ok');
     if (completed) {
       closeoutStarted = true;
@@ -1177,25 +1246,26 @@ export function createAssessmentModule(ctx) {
     const input = $('assessmentInput');
     const message = input.value.trim();
     if (!message) return status(L().answerRequired, 'warn');
+    const closingAnswer = finalOpenPending(current);
     let autoFinish = false;
     setBusy(true, $('assessmentSendBtn'));
     try {
       const data = await api(endpoint('Message'), {
-        body: { token: state.token, uid: state.uid, sessionId: current?.sessionId || '', message }
+        body: { token: state.token, uid: state.uid, sessionId: current?.sessionId || '', message, finalOpen:closingAnswer, turnType:closingAnswer?'final_open':'main_answer', captureSource:'chat' }
       });
       input.value = '';
       const next = data.state || data;
       render(next);
-      autoFinish = next.done === true ||
-        Number(next.answeredCount || 0) >= Number(next.expectedAnswers || next.questionCount || Number.MAX_SAFE_INTEGER);
+      autoFinish = next.done === true || (closingAnswer && next.finalOpenCompleted === true) || (
+        next.finalOpenRequired !== true && Number(next.answeredCount || 0) >= Number(next.expectedAnswers || next.questionCount || Number.MAX_SAFE_INTEGER)
+      );
     } catch (error) {
       if (isAmbiguous(error)) {
         status(L().transport, 'warn');
         const recovered = await readStatus({ includeHistory: false, includeReportLookup: false }).catch(() => null);
-        autoFinish = recovered && (
-          recovered.done === true ||
-          Number(recovered.answeredCount || 0) >= Number(recovered.expectedAnswers || recovered.questionCount || Number.MAX_SAFE_INTEGER)
-        );
+        autoFinish = recovered && (recovered.done === true || (closingAnswer && recovered.finalOpenCompleted === true) || (
+          recovered.finalOpenRequired !== true && Number(recovered.answeredCount || 0) >= Number(recovered.expectedAnswers || recovered.questionCount || Number.MAX_SAFE_INTEGER)
+        ));
       } else status(error.message || String(error), 'err');
     } finally {
       setBusy(false, $('assessmentSendBtn'));
@@ -1215,7 +1285,7 @@ export function createAssessmentModule(ctx) {
     status(L().processing, 'warn');
     try {
       const data = await api(endpoint('Finish'), {
-        body: { token: state.token, uid: state.uid, sessionId: current?.sessionId || '' }
+        body: { token: state.token, uid: state.uid, sessionId: current?.sessionId || '', finalOpenSkipped:finalOpenPending(current) }
       });
       render(data.state || data);
       if ((data.state || data).phase !== 'completed') {
