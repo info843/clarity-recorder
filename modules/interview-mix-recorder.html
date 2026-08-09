@@ -51,7 +51,7 @@ html,body{width:100%;max-width:100%;overflow-x:hidden;overflow-y:hidden}
 <section class="card hidden state" id="errorView"><div class="error" style="font-size:40px">!</div><h2 id="errorTitle">Mix Interview interrupted</h2><p id="errorText"></p><button class="btn secondary" id="retryBtn">Try again</button></section></main><audio autoplay="" id="remoteAudio"></audio>
 <script>
 const CHANNEL = 'CLARITY_INTERVIEW_V2';
-const CLIENT_VERSION = '1.4.0-q10-language-shell';
+const CLIENT_VERSION = '2.0.0-q10-q20-q30-linear-shell';
 let API_BASE = '';
 function resolveApplicationApiBase(value = '') {
     const explicit = String(value || '').trim().replace(/\/+$/, '');
@@ -234,7 +234,7 @@ const RECORDER_LANGUAGE={
  ar:['مقابلة منظمة','عشرة أسئلة رئيسية وفرصة أخيرة لإضافة معلومات.','أجب بالوتيرة التي تناسبك ولا تُنهِ الإجابة حتى تذكر كل ما تريد.','تنتظر المقابلة بدءك.','جاهز للبدء','تحقق من جهازك ثم ابدأ المقابلة.','بدء المقابلة','فحص الجهاز','إنهاء الإجابة','الانتقال إلى السؤال التالي','إنهاء المقابلة','جارٍ حفظ المقابلة','اكتملت المقابلة','شكراً لك. تم إرسال المقابلة بنجاح. يمكنك إغلاق هذه النافذة.','انقطعت المقابلة','إعادة المحاولة','يرجى الإجابة الآن.','جارٍ تحويل الإجابة إلى نص …','جارٍ حفظ الإجابة بأمان …','جارٍ نطق السؤال …','جاهز','الجهاز','الصوت','التسجيل','من الأسئلة الرئيسية تمت الإجابة عنها','السؤال الرئيسي','جولة إضافة','إضافة ختامية']
 };
 for(const[code,v]of Object.entries(RECORDER_LANGUAGE)){STR[code]={...STR.en,title:v[0],subtitle:v[1],intro:v[2],wait:v[3],startTitle:v[4],startText:v[5],start:v[6],checkMic:v[7],finishAnswer:v[8],continue:v[9],endInterview:v[10],processingTitle:v[11],completedTitle:v[12],completedText:v[13],errorTitle:v[14],retry:v[15],listening:v[16],transcribing:v[17],sending:v[18],speaking:v[19],ready:v[20],device:v[21],voice:v[22],recording:v[23],progress:(n)=>`${n} / 10 ${v[24]}`,main:(i)=>`${v[25]} ${i} / 10`,supplement:(i)=>`${v[26]} · ${i}`,finalOpen:v[27]}}
-function recorderLanguage(){const code=String(context?.locale||'en').toLowerCase().split(/[-_]/)[0];return STR[code]?code:'en'}function L(){return STR[recorderLanguage()]||STR.en}
+function recorderLanguage(){const code=String(context?.locale||'en').toLowerCase().split(/[-_]/)[0];return STR[code]?code:'en'}function L(){return STR[recorderLanguage()]||STR.en}function totalQuestionCount(){const value=Number(current?.questionCount||context?.questionCount||context?.runtime?.questionCount||context?.runtime?.workflowSnapshot?.questionCount||10);return[10,20,30].includes(value)?value:10}function mixMediaQuestions(){const q=totalQuestionCount();return q===10?7:Math.ceil(q*.7)}function mixChatStart(){return mixMediaQuestions()+1}function countedCopy(value){return totalQuestionCount()===10?String(value||''):String(value||'').replace(/Q10/g,`Q${totalQuestionCount()}`).replace(/10/g,String(totalQuestionCount()))}function progressCopy(n){return countedCopy(L().progress(n))}function mainCopy(i){return countedCopy(L().main(i))}function scaledFlowSummary(){const q=totalQuestionCount(),media=mixMediaQuestions(),chat=q-media;const copy={de:`${q} feste Hauptfragen ohne Nachfragen: ${media} per Video, danach ${chat} im Chat, plus freiwillige Abschlussergänzung.`,en:`${q} fixed main questions without follow-ups: ${media} by video, then ${chat} in chat, plus one voluntary final addition.`,es:`${q} preguntas fijas sin seguimiento: ${media} en vídeo y después ${chat} en chat, más una aportación final voluntaria.`,fr:`${q} questions fixes sans relance : ${media} en vidéo puis ${chat} par chat, plus un complément final facultatif.`,it:`${q} domande fisse senza approfondimenti: ${media} in video, poi ${chat} in chat, più un’aggiunta finale facoltativa.`,pt:`${q} perguntas fixas sem seguimentos: ${media} em vídeo e depois ${chat} em chat, mais uma contribuição final voluntária.`,nl:`${q} vaste vragen zonder vervolgvragen: ${media} via video, daarna ${chat} via chat, plus één vrijwillige slotaanvulling.`,pl:`${q} stałych pytań bez pytań uzupełniających: ${media} wideo, następnie ${chat} na czacie oraz dobrowolne zakończenie.`,tr:`Takip sorusu olmadan ${q} sabit soru: ${media} video, ardından ${chat} sohbet ve isteğe bağlı son ekleme.`};return copy[recorderLanguage()]||copy.en}
 function send(type, payload = {}) { parent.postMessage({ channel: CHANNEL, type, payload }, '*'); }
 let heightFrame = 0, lastReportedHeight = 0;
 function height() {
@@ -275,8 +275,8 @@ let mixPhase = 'video';
 let mediaPhaseStopped = false;
 let mediaHandoverPromise = null;
 function questionIndex(q = lastQuestion) { return Number(q?.mainQuestionIndex || current?.currentMainQuestionIndex || 1); }
-function isChatPhaseQuestion(q = lastQuestion) { return questionIndex(q) >= 8 || mixPhase === 'chat'; }
-function syncMixPhase(q = lastQuestion) { const next = questionIndex(q) >= 8 || mediaPhaseStopped ? 'chat' : 'video'; mixPhase = next; renderMixPhase(); }
+function isChatPhaseQuestion(q = lastQuestion) { return questionIndex(q) >= mixChatStart() || mixPhase === 'chat'; }
+function syncMixPhase(q = lastQuestion) { const next = questionIndex(q) >= mixChatStart() || mediaPhaseStopped ? 'chat' : 'video'; mixPhase = next; renderMixPhase(); }
 function renderMixPhase() { const de = String(context?.locale || 'en').toLowerCase().startsWith('de'); const chat = mixPhase === 'chat'; $('mixPhaseTitle').textContent = chat ? (de ? 'Chat-Phase · Fragen 8–10' : 'Chat phase · Questions 8–10') : (de ? 'Video-Phase · Fragen 1–7' : 'Video phase · Questions 1–7'); $('mixPhaseText').textContent = chat ? (de ? 'Kamera und Mikrofon sind beendet. Antworten Sie schriftlich.' : 'Camera and microphone are finished. Answer in writing.') : (de ? 'Kamera und Mikrofon werden nur in dieser Phase aufgezeichnet.' : 'Camera and microphone are recorded only during this phase.'); $('chatComposer').classList.toggle('active', chat); $('localVideo').closest('.panel')?.classList.toggle('hidden', chat); $('speechTitle').textContent = chat ? (de ? 'Antwort im Chat' : 'Chat answer') : L().speech; setPill('realtimePill', chat ? (de ? 'Chat: bereit' : 'Chat: ready') : `${L().voice}: ${voiceReady ? L().ready : 'waiting'}`, chat ? 'ok' : voiceReady ? 'ok' : ''); }
 async function enterMixChatHandover() {
     if (mediaHandoverPromise)
@@ -300,7 +300,7 @@ async function enterMixChatHandover() {
         await setCandidateInputEnabled(false, 'mix_chat_handover');
         closeRealtimeTransport();
         $('localVideo').srcObject = null;
-        diagnosticInfo('[CLARITY INTERVIEW MIX] video-to-chat handover completed', { sessionId: current?.sessionId || '', mediaQuestions: 7, chatStartIndex: 8, recordingBytes: recordedBlob?.size || 0, clientVersion: CLIENT_VERSION });
+        diagnosticInfo('[CLARITY INTERVIEW MIX] video-to-chat handover completed', { sessionId: current?.sessionId || '', mediaQuestions: mixMediaQuestions(), chatStartIndex: mixChatStart(), recordingBytes: recordedBlob?.size || 0, clientVersion: CLIENT_VERSION });
         return recordedBlob;
     })();
     return mediaHandoverPromise;
@@ -518,7 +518,7 @@ function brandLogoValue(b = {}) { const values = [b.logoUrl, b.logoPublicUrl, b.
 } return ''; }
 function applyBranding() { const b = branding(); const bm = normalizedBrandingMode(); const white = bm === 'whitelabel' || b.whiteLabelEnabled === true; const co = bm === 'cobranded' || b.coBrandingEnabled === true; const root = document.documentElement.style; ['--accent', '--secondary', '--background', '--surface', '--text'].forEach(k => root.removeProperty(k)); const c = b.colors || {}; if (white || co) {
     [['--accent', first(c.accent, b.accentColor)], ['--secondary', first(c.secondary, b.secondaryColor)], ['--background', white ? first(c.background, b.backgroundColor) : ''], ['--surface', white ? first(c.surface, b.surfaceColor, c.primary) : ''], ['--text', white ? first(c.text, c.textInverse) : '']].forEach(([k, v]) => v && root.setProperty(k, v));
-} const name = white || co ? first(b.reportBrandName, b.brandName, b.companyName, 'Company') : 'CLARITY'; const logo = (b.customerLogoVisible === false && white) ? '' : brandLogoValue(b); $('eyebrow').textContent = co ? `${name} · Mix Q10 · Powered by CLARITY` : `${name} Interview · Mix Q10`; if (logo) {
+} const name = white || co ? first(b.reportBrandName, b.brandName, b.companyName, 'Company') : 'CLARITY'; const logo = (b.customerLogoVisible === false && white) ? '' : brandLogoValue(b); $('eyebrow').textContent = co ? `${name} · Mix Q${totalQuestionCount()} · Powered by CLARITY` : `${name} Interview · Mix Q${totalQuestionCount()}`; if (logo) {
     $('brandLogo').src = logo;
     $('brandLogo').alt = `${name} logo`;
     $('brandLogo').style.display = 'block';
@@ -527,7 +527,7 @@ else {
     $('brandLogo').removeAttribute('src');
     $('brandLogo').style.display = 'none';
 } }
-function locale() { const l = L(); document.documentElement.lang = context?.locale || 'en'; $('title').textContent = l.title; $('subtitle').textContent = l.subtitle; $('badge').textContent = l.badge; $('intro').textContent = l.intro; $('microphoneTitle').textContent = l.mic; $('microphoneText').textContent = l.micText; $('speechTitle').textContent = l.speech; $('transcriptText').textContent = l.wait; $('progressText').textContent = l.progress(Number(current?.answeredCount || 0)); $('startTitle').textContent = l.startTitle; $('startText').textContent = l.startText; $('startBtn').textContent = l.start; $('checkMicBtn').textContent = l.checkMic; $('prepareVoiceBtn').textContent = l.prepareVoice; $('reconnectVoiceBtn').textContent = l.reconnectVoice; $('repeatBtn').textContent = l.repeat; $('rephraseBtn').textContent = l.rephrase; $('continueBtn').textContent = l.finishAnswer || flowCopy().finish; $('retryUploadBtn').textContent = l.retryProcessing; setPill('backendPill', `${l.backend}: ${backendReady ? l.ready : 'waiting'}`, backendReady ? 'ok' : ''); $('processingTitle').textContent = l.processingTitle; $('processingText').textContent = l.processingText; $('completedTitle').textContent = l.completedTitle; $('completedText').textContent = l.completedText; $('errorTitle').textContent = l.errorTitle; $('retryBtn').textContent = l.retry; applyBranding(); }
+function locale() { const l = L(); document.documentElement.lang = context?.locale || 'en'; $('title').textContent = l.title; $('subtitle').textContent = totalQuestionCount()===10?l.subtitle:scaledFlowSummary(); $('badge').textContent = countedCopy(l.badge); $('intro').textContent = l.intro; $('microphoneTitle').textContent = l.mic; $('microphoneText').textContent = l.micText; $('speechTitle').textContent = l.speech; $('transcriptText').textContent = l.wait; $('progressText').textContent = progressCopy(Number(current?.answeredCount || 0)); $('startTitle').textContent = l.startTitle; $('startText').textContent = l.startText; $('startBtn').textContent = l.start; $('checkMicBtn').textContent = l.checkMic; $('prepareVoiceBtn').textContent = l.prepareVoice; $('reconnectVoiceBtn').textContent = l.reconnectVoice; $('repeatBtn').textContent = l.repeat; $('rephraseBtn').textContent = l.rephrase; $('continueBtn').textContent = l.finishAnswer || flowCopy().finish; $('retryUploadBtn').textContent = l.retryProcessing; setPill('backendPill', `${l.backend}: ${backendReady ? l.ready : 'waiting'}`, backendReady ? 'ok' : ''); $('processingTitle').textContent = l.processingTitle; $('processingText').textContent = l.processingText; $('completedTitle').textContent = l.completedTitle; $('completedText').textContent = l.completedText; $('errorTitle').textContent = l.errorTitle; $('retryBtn').textContent = l.retry; applyBranding(); }
 function request(action, payload = {}) {
     return new Promise((resolve, reject) => {
         const requestId = `IVAUD-${Date.now()}-${++seq}`;
@@ -550,12 +550,12 @@ function request(action, payload = {}) {
 function isTransport(e) { return e?.transport === true || /network|failed to fetch|timed out|load failed/i.test(`${e?.code || ''} ${e?.message || e || ''}`); }
 function fail(e) { $('errorText').textContent = e?.message || String(e || 'Unknown error'); show('errorView'); debug({ error: { code: e?.code, message: e?.message } }); }
 function showProcessingRetry(e) { const l = L(); clearTimeout(pollTimer); pollTimer = null; show('processingView'); $('processingText').textContent = l.processingRetryText; $('retryUploadBtn').classList.remove('hidden'); setPill('processingUploadPill', `${l.upload}: retry required`, 'err'); debug({ processingRetry: { code: e?.code || '', message: e?.message || String(e || '') } }); }
-function renderState(state, question = null) { current = state || current || {}; uploadId = uploadId || String(current?.video?.uploadId || current?.videoUploadId || ''); applyBranding(); const n = Number(current.answeredCount || 0); $('progressText').textContent = L().progress(n); $('progressBar').style.width = `${Math.min(100, n * 10)}%`; const q = manualStart ? (question || current.currentQuestion) : null; if (q?.text) {
+function renderState(state, question = null) { current = state || current || {}; uploadId = uploadId || String(current?.video?.uploadId || current?.videoUploadId || ''); applyBranding(); const n = Number(current.answeredCount || 0); $('progressText').textContent = progressCopy(n); $('progressBar').style.width = `${Math.min(100, n / totalQuestionCount() * 100)}%`; const q = manualStart ? (question || current.currentQuestion) : null; if (q?.text) {
     lastQuestion = q;
     syncMixPhase(q);
     $('questionCard').classList.remove('hidden');
     const turn = String(q.turnType || 'main_question');
-    $('questionLabel').textContent = turn === 'supplement_prompt' ? L().supplement(Number(q.mainQuestionIndex || 1)) : turn === 'final_open_prompt' ? L().finalOpen : turn === 'follow_up_question' ? L().follow(Number(q.mainQuestionIndex || 1), Math.max(1, Number(q.followUpIndex || 1))) : L().main(Number(q.mainQuestionIndex || 1));
+    $('questionLabel').textContent = turn === 'supplement_prompt' ? L().supplement(Number(q.mainQuestionIndex || 1)) : turn === 'final_open_prompt' ? L().finalOpen : turn === 'follow_up_question' ? L().follow(Number(q.mainQuestionIndex || 1), Math.max(1, Number(q.followUpIndex || 1))) : mainCopy(Number(q.mainQuestionIndex || 1));
     $('questionText').textContent = q.text;
 }
 else
@@ -569,7 +569,7 @@ function localRuntimeReady() {
     const consent = runtime.consentSnapshot || {};
     const profileReady = Boolean(profile.firstName && profile.lastName && profile.email) || ['profile_saved', 'consent_saved', 'started', 'processing', 'completed'].includes(status);
     const consentReady = Boolean(consent.accepted && consent.privacyAccepted && consent.aiInteractionAccepted) || ['consent_saved', 'started', 'processing', 'completed'].includes(status);
-    return context?.release?.mix === true && ['mix', 'video_chat', 'chat_video'].includes(runtimeMode) && questionCount === 10 && profileReady && consentReady;
+    return context?.release?.mix === true && ['mix', 'video_chat', 'chat_video'].includes(runtimeMode) && [10,20,30].includes(questionCount) && profileReady && consentReady;
 }
 function updateStartReadiness() {
     const l = L();
@@ -1533,7 +1533,7 @@ async function speakClosing() {
     const instructions = `Speak exactly the following text and nothing else:
 
 ${String(context?.locale || 'en').startsWith('de') ? 'Vielen Dank. Sie haben alle zehn Hauptfragen beantwortet. Ihre Aufnahme wird jetzt sicher gespeichert.' : 'Thank you. You have answered all ten main questions. Your recording is now being saved securely.'}`;
-    sendSpeechResponse(instructions, { purpose: 'clarity_interview_closing', mainQuestionIndex: '10', followUpIndex: '0', turnType: 'closing' });
+    sendSpeechResponse(instructions, { purpose: 'clarity_interview_closing', mainQuestionIndex: String(totalQuestionCount()), followUpIndex: '0', turnType: 'closing' });
 }
 async function readJsonSafe(response) { const contentType = response.headers.get('content-type') || ''; if (contentType.includes('json'))
     return response.json(); const raw = await response.text().catch(() => ''); throw makeStageError('INTERVIEW_MIX_MUX_NON_JSON', `Mux endpoint returned ${response.status}: ${raw.slice(0, 300)}`, { status: response.status }); }
@@ -1896,7 +1896,7 @@ window.addEventListener('message', event => { if (event.source !== parent)
     context = msg.payload || {};
     setApplicationApiBase(context.appOrigin || context.apiBase || '');
     if (context.release?.mix !== true || mode() !== 'mix')
-        return fail(Object.assign(new Error('Interview Mix Q10 is not released for this link.'), { code: 'INTERVIEW_MIX_NOT_RELEASED' }));
+        return fail(Object.assign(new Error(`Interview Mix Q${totalQuestionCount()} is not released for this link.`), { code: 'INTERVIEW_MIX_NOT_RELEASED' }));
     locale();
     void initializeAudioReadiness();
     return;
