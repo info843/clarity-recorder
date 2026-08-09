@@ -3,7 +3,7 @@ import { createCvModule } from './modules/cv-module.js';
 import { createVideoPresentationModule } from './modules/video-presentation-module.js';
 import { createAiLiteracyModule } from './modules/ai-literacy-module.js?v=2.16.1-ail-certificate-recovery';
 import { createAssessmentModule } from './modules/assessment-module.js?v=2.27.1-e2-5-assessment-media-language-recovery';
-import { createInterviewModule } from './modules/interview-module.js?v=1.10.0-q10-language-shell';
+import { createInterviewModule } from './modules/interview-module.js?v=1.10.1-q10-start-closeout-recovery';
 
 const API_BASE = 'https://www.clarity-nvl.com/_functions';
 const state = {
