@@ -2,8 +2,13 @@
 // CLARITY Universal App — Q10 language shell + bounded closeout recovery.
 // Session, credit, recording, media upload and Mix handover contracts remain unchanged.
 
-const MODULE_VERSION='1.10.0-q10-language-shell';
-const EXPECTED_RECORDER_VERSION_BY_MODE=Object.freeze({audio:'1.4.0-q10-language-shell',video:'1.4.0-q10-language-shell',mix:'1.4.0-q10-language-shell'});
+const MODULE_VERSION='1.10.1-q10-start-closeout-recovery';
+const EXPECTED_RECORDER_VERSION_BY_MODE=Object.freeze({
+  chat:'1.2.0-q10-language-shell',
+  audio:'1.4.0-q10-language-shell',
+  video:'1.4.0-q10-language-shell',
+  mix:'1.4.0-q10-language-shell'
+});
 const SUPPORT_DIAGNOSTICS=new URLSearchParams(location.search).get('supportDebug')==='1';
 const diagnosticInfo=(...args)=>{if(SUPPORT_DIAGNOSTICS)globalThis.console.info(...args)};
 const diagnosticWarn=(...args)=>{if(SUPPORT_DIAGNOSTICS)globalThis.console.warn(...args)};
