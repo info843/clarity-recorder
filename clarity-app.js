@@ -2,8 +2,8 @@ import { resolveModuleView } from './modules/router-module.js';
 import { createCvModule } from './modules/cv-module.js';
 import { createVideoPresentationModule } from './modules/video-presentation-module.js';
 import { createAiLiteracyModule } from './modules/ai-literacy-module.js?v=2.16.1-ail-certificate-recovery';
-import { createAssessmentModule } from './modules/assessment-module.js?v=2.27.1-e2-5-assessment-media-language-recovery';
-import { createInterviewModule } from './modules/interview-module.js?v=1.10.1-q10-start-closeout-recovery';
+import { createAssessmentModule } from './modules/assessment-module.js?v=3.1.0-q20-q30-linear-final-open';
+import { createInterviewModule } from './modules/interview-module.js?v=2.0.0-q20-q30-linear-scale';
 
 const API_BASE = 'https://www.clarity-nvl.com/_functions';
 const state = {
