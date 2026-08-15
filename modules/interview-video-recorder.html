@@ -48,7 +48,7 @@ html,body{width:100%;max-width:100%;overflow-x:hidden;overflow-y:hidden}
 <section class="card hidden state" id="errorView"><div class="error" style="font-size:40px">!</div><h2 id="errorTitle">Video Interview interrupted</h2><p id="errorText"></p><button class="btn secondary" id="retryBtn">Try again</button></section></main><audio autoplay="" id="remoteAudio"></audio>
 <script>
 const CHANNEL = 'CLARITY_INTERVIEW_V2';
-const CLIENT_VERSION = '2.0.0-q10-q20-q30-linear-shell';
+const CLIENT_VERSION = '2.1.0-q10-q20-q30-market-readiness';
 let API_BASE = '';
 function resolveApplicationApiBase(value = '') {
     const explicit = String(value || '').trim().replace(/\/+$/, '');
@@ -88,6 +88,7 @@ const VOICE_DISCONNECT_GRACE_MS = 5000;
 const INPUT_START_SIGNAL_MS = 1800;
 const INPUT_START_EVENT_GRACE_MS = 4500;
 const VOICE_RECOVERY_COOLDOWN_MS = 12000;
+const VOICE_SEMANTIC_STALL_MS = 10000;
 const RECORDING_FLUSH_WAIT_MS = 240;
 const MIN_RECORDING_BYTES = 1024;
 const UPLOAD_CHUNK_BYTES = 240 * 1024;
@@ -259,10 +260,10 @@ function spokenInterviewBrand() {
     return String(first(b.companyName, b.clientName, b.brandName, b.reportBrandName, b.legalCompanyName, context?.runtime?.companyName, context?.runtime?.customerCompanyName, '')).trim().slice(0, 120) || 'CLARITY';
 }
 function welcomeSpeechText() {
-    const name = spokenInterviewBrand(), isClarity = name.toUpperCase() === 'CLARITY', de = String(context?.locale || 'en').toLowerCase().startsWith('de');
+    const name = spokenInterviewBrand(), isClarity = name.toUpperCase() === 'CLARITY', de = String(context?.locale || 'en').toLowerCase().startsWith('de'), q=totalQuestionCount(), count=q===10?(de?'zehn':'ten'):String(q);
     if (de)
-        return `${isClarity ? 'Willkommen zu Ihrem CLARITY Video-Interview.' : `Willkommen zu Ihrem Video-Interview im Auftrag von ${name}.`} Ihnen werden zehn Hauptfragen gestellt. Sie können jede Antwort ohne Zeitdruck und mit Denkpausen geben. Das Interview wechselt erst weiter, wenn Sie ausdrücklich „Weiter“ sagen oder „Antwort abschließen“ klicken. Sie können außerdem jederzeit um eine Wiederholung oder eine verständlichere Formulierung bitten. Wir beginnen gleich mit der ersten Frage.`;
-    return `${isClarity ? 'Welcome to your CLARITY Video Interview.' : `Welcome to your Video Interview on behalf of ${name}.`} You will be asked ten main questions. You can answer without time pressure and take thinking pauses. The Interview moves on only after you explicitly say “Continue” or click “Finish answer”. You can also ask at any time for the question to be repeated or phrased more clearly. We will begin with the first question in a moment.`;
+        return `${isClarity ? 'Willkommen zu Ihrem CLARITY Video-Interview.' : `Willkommen zu Ihrem Video-Interview im Auftrag von ${name}.`} Ihnen werden ${count} Hauptfragen gestellt. Sie können jede Antwort ohne Zeitdruck und mit Denkpausen geben. Das Interview wechselt erst weiter, wenn Sie ausdrücklich „Weiter“ sagen oder „Antwort abschließen“ klicken. Sie können außerdem jederzeit um eine Wiederholung oder eine verständlichere Formulierung bitten. Wir beginnen gleich mit der ersten Frage.`;
+    return `${isClarity ? 'Welcome to your CLARITY Video Interview.' : `Welcome to your Video Interview on behalf of ${name}.`} You will be asked ${count} main questions. You can answer without time pressure and take thinking pauses. The Interview moves on only after you explicitly say “Continue” or click “Finish answer”. You can also ask at any time for the question to be repeated or phrased more clearly. We will begin with the first question in a moment.`;
 }
 function welcomeVisibleText() { const name = spokenInterviewBrand(), de = String(context?.locale || 'en').toLowerCase().startsWith('de'); return de ? `Willkommen zum Video-Interview${name.toUpperCase() === 'CLARITY' ? '' : ` für ${name}`}.` : `Welcome to the Video Interview${name.toUpperCase() === 'CLARITY' ? '' : ` for ${name}`}.`; }
 function currentTurnType() { return String(lastQuestion?.turnType || current?.currentQuestion?.turnType || 'main_question').toLowerCase(); }
@@ -816,7 +817,7 @@ async function recoverVoiceTransport(reason = 'unknown') {
     if (!manualStart || completionStarted || completionFinalized)
         return null;
     const nowMs = Date.now();
-    if (realtimeHealthy() && nowMs - lastVoiceRecoveryAt < VOICE_RECOVERY_COOLDOWN_MS)
+    if (realtimeHealthy() && nowMs - lastVoiceRecoveryAt < VOICE_RECOVERY_COOLDOWN_MS && !String(reason).includes('semantic_stall'))
         return { ok: true, reused: true };
     const resumeAnswer = awaitingCandidateAnswer;
     const resumeQuestion = speakingQuestion;
@@ -903,8 +904,11 @@ function startVoiceHealthWatchdog() {
             return;
         }
         realtimeDisconnectAt = 0;
+        const semanticStall=awaitingCandidateAnswer&&!speakingQuestion&&!busy&&realtimeUplinkEnabled&&answerGateOpenedAt>0&&lastLocalSignalAt>=answerGateOpenedAt&&answerHadSpeech!==true&&!hasSemanticWords(combinedAnswerTranscript())&&Date.now()-Math.max(answerGateOpenedAt,lastRealtimeInputAt)>=VOICE_SEMANTIC_STALL_MS;
+        if(semanticStall&&voiceRecoveryTurnId!==answerTurnId){voiceRecoveryTurnId=answerTurnId;setReconnectAction(true);setPill('realtimePill',`${L().voice}: retry`,'warn');$('transcriptText').textContent=String(context?.locale||'en').startsWith('de')?'Ihre Stimme ist lokal erkennbar, erreicht die Sprachverbindung aber noch nicht. Bitte „Sprachverbindung wiederherstellen“ wählen und den noch nicht sichtbaren Teil wiederholen.':'Your voice is visible locally but is not reaching the speech connection yet. Choose “Reconnect voice” and repeat only the part not shown.';diagnosticWarn('[CLARITY INTERVIEW VIDEO VOICE] semantic input stall exposed for manual recovery',{sessionId:current?.sessionId||'',answerTurnId,lastLocalSignalAt,answerGateOpenedAt,automaticTeardown:false,clientVersion:CLIENT_VERSION})}
     }, VOICE_HEALTH_INTERVAL_MS);
 }
+async function recoverBeforeQuestionControl(reason){if(voiceRecoveryTurnId===answerTurnId)await recoverVoiceTransport(`semantic_stall_${reason}`)}
 function clearRealtimeInputBuffer() { try { if (dc?.readyState === 'open') dc.send(JSON.stringify({ type: 'input_audio_buffer.clear' })); } catch (_) { } }
 function setCandidateInputEnabled(enabled, source = 'logical_turn_gate') {
     // I4.3.7: keep one microphone track attached to the WebRTC sender for the
@@ -1448,7 +1452,7 @@ async function speakClosing() {
     await ensureRemoteAudioPlayback('closing_before_create');
     const instructions = `Speak exactly the following text and nothing else:
 
-${String(context?.locale || 'en').startsWith('de') ? 'Vielen Dank. Sie haben alle zehn Hauptfragen beantwortet. Ihre Aufnahme wird jetzt sicher gespeichert.' : 'Thank you. You have answered all ten main questions. Your recording is now being saved securely.'}`;
+${String(context?.locale || 'en').startsWith('de') ? `Vielen Dank. Sie haben alle ${totalQuestionCount()===10?'zehn':totalQuestionCount()} Hauptfragen beantwortet. Ihre Aufnahme wird jetzt sicher gespeichert.` : `Thank you. You have answered all ${totalQuestionCount()===10?'ten':totalQuestionCount()} main questions. Your recording is now being saved securely.`}`;
     sendSpeechResponse(instructions, { purpose: 'clarity_interview_closing', mainQuestionIndex: String(totalQuestionCount()), followUpIndex: '0', turnType: 'closing' });
 }
 async function readJsonSafe(response) { const contentType = response.headers.get('content-type') || ''; if (contentType.includes('json'))
@@ -1841,10 +1845,10 @@ $('checkMicBtn').onclick = async () => { void resumeMeterContext(); await prefli
     void prepareVoiceTransport({ source: 'permission_button' }).catch(() => { }); };
 $('prepareVoiceBtn').onclick = () => { voiceLastError = null; void prepareVoiceTransport({ source: 'retry_button', force: true, sessionId: current?.sessionId || '' }).catch(() => { }); };
 $('reconnectVoiceBtn').onclick = () => { void recoverVoiceTransport('manual_reconnect_button'); };
-$('repeatBtn').onclick = () => { if (!lastQuestion || busy || speakingQuestion)
-    return; resetAnswerCapture({ disableInput: true }); void speakQuestion(lastQuestion); };
-$('rephraseBtn').onclick = () => { if (!lastQuestion || busy || speakingQuestion)
-    return; void speakRephrasedQuestion(); };
+$('repeatBtn').onclick = async () => { if (!lastQuestion || busy || speakingQuestion)
+    return; await recoverBeforeQuestionControl('repeat'); resetAnswerCapture({ disableInput: true }); void speakQuestion(lastQuestion); };
+$('rephraseBtn').onclick = async () => { if (!lastQuestion || busy || speakingQuestion)
+    return; await recoverBeforeQuestionControl('rephrase'); void speakRephrasedQuestion(); };
 $('continueBtn').onclick=()=>{
  if(busy||speakingQuestion||!awaitingCandidateAnswer)return;const turnType=currentTurnType(),transcript=combinedAnswerTranscript();
  if(turnType==='main_question'){const quality=candidateTranscriptQuality(transcript);if(!quality.ok){showIncompleteCaptureNotice();updateTurnActions();return}const committedTranscript=stripPreviousAnswerTail(quality.transcript);lastCommittedTranscript=committedTranscript;resetAnswerCapture({disableInput:true});diagnosticInfo('[CLARITY INTERVIEW EXPLICIT COMPLETION] button confirmed answer',{sessionId:current?.sessionId||'',wordCount:quality.wordCount,clientVersion:CLIENT_VERSION});void submitTranscript(committedTranscript,{explicitCompletion:true,completionMethod:'button',turnGate:'explicit_candidate_confirmation_v1'},'answer_complete');return}
