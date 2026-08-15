@@ -45,7 +45,7 @@ html,body{width:100%;max-width:100%;overflow-x:hidden;overflow-y:hidden}
 <section class="card hidden state" id="errorView"><div class="error" style="font-size:40px">!</div><h2 id="errorTitle">Audio Interview interrupted</h2><p id="errorText"></p><button class="btn secondary" id="retryBtn">Try again</button></section></main><audio autoplay="" id="remoteAudio"></audio>
 <script>
 const CHANNEL = 'CLARITY_INTERVIEW_V2';
-const CLIENT_VERSION = '2.0.0-q10-q20-q30-linear-shell';
+const CLIENT_VERSION = '2.1.0-q10-q20-q30-market-readiness';
 let API_BASE = '';
 function resolveApplicationApiBase(value = '') {
     const explicit = String(value || '').trim().replace(/\/+$/, '');
@@ -249,10 +249,10 @@ function spokenInterviewBrand() {
     return String(first(b.companyName, b.clientName, b.brandName, b.reportBrandName, b.legalCompanyName, context?.runtime?.companyName, context?.runtime?.customerCompanyName, '')).trim().slice(0, 120) || 'CLARITY';
 }
 function welcomeSpeechText() {
-    const name = spokenInterviewBrand(), isClarity = name.toUpperCase() === 'CLARITY', de = String(context?.locale || 'en').toLowerCase().startsWith('de');
+    const name = spokenInterviewBrand(), isClarity = name.toUpperCase() === 'CLARITY', de = String(context?.locale || 'en').toLowerCase().startsWith('de'), q=totalQuestionCount(), count= q===10?(de?'zehn':'ten'):String(q);
     if (de)
-        return `${isClarity ? 'Willkommen zu Ihrem CLARITY Audio-Interview.' : `Willkommen zu Ihrem Audio-Interview im Auftrag von ${name}.`} Ihnen werden zehn Hauptfragen gestellt. Sie können jede Antwort ohne Zeitdruck und mit Denkpausen geben. Das Interview wechselt erst weiter, wenn Sie ausdrücklich „Weiter“ sagen oder „Antwort abschließen“ klicken. Sie können außerdem jederzeit um eine Wiederholung oder eine verständlichere Formulierung bitten. Wir beginnen gleich mit der ersten Frage.`;
-    return `${isClarity ? 'Welcome to your CLARITY Audio Interview.' : `Welcome to your Audio Interview on behalf of ${name}.`} You will be asked ten main questions. You can answer without time pressure and take thinking pauses. The Interview moves on only after you explicitly say “Continue” or click “Finish answer”. You can also ask at any time for the question to be repeated or phrased more clearly. We will begin with the first question in a moment.`;
+        return `${isClarity ? 'Willkommen zu Ihrem CLARITY Audio-Interview.' : `Willkommen zu Ihrem Audio-Interview im Auftrag von ${name}.`} Ihnen werden ${count} Hauptfragen gestellt. Sie können jede Antwort ohne Zeitdruck und mit Denkpausen geben. Das Interview wechselt erst weiter, wenn Sie ausdrücklich „Weiter“ sagen oder „Antwort abschließen“ klicken. Sie können außerdem jederzeit um eine Wiederholung oder eine verständlichere Formulierung bitten. Wir beginnen gleich mit der ersten Frage.`;
+    return `${isClarity ? 'Welcome to your CLARITY Audio Interview.' : `Welcome to your Audio Interview on behalf of ${name}.`} You will be asked ${count} main questions. You can answer without time pressure and take thinking pauses. The Interview moves on only after you explicitly say “Continue” or click “Finish answer”. You can also ask at any time for the question to be repeated or phrased more clearly. We will begin with the first question in a moment.`;
 }
 function welcomeVisibleText() { const name = spokenInterviewBrand(), de = String(context?.locale || 'en').toLowerCase().startsWith('de'); return de ? `Willkommen zum Audio-Interview${name.toUpperCase() === 'CLARITY' ? '' : ` für ${name}`}.` : `Welcome to the Audio Interview${name.toUpperCase() === 'CLARITY' ? '' : ` for ${name}`}.`; }
 function currentTurnType() { return String(lastQuestion?.turnType || current?.currentQuestion?.turnType || 'main_question').toLowerCase(); }
@@ -1233,7 +1233,7 @@ async function speakClosing() {
     await ensureRemoteAudioPlayback('closing_before_create');
     const instructions = `Speak exactly the following text and nothing else:
 
-${String(context?.locale || 'en').startsWith('de') ? 'Vielen Dank. Sie haben alle zehn Hauptfragen beantwortet. Ihre Aufnahme wird jetzt sicher gespeichert.' : 'Thank you. You have answered all ten main questions. Your recording is now being saved securely.'}`;
+${String(context?.locale || 'en').startsWith('de') ? `Vielen Dank. Sie haben alle ${totalQuestionCount()===10?'zehn':totalQuestionCount()} Hauptfragen beantwortet. Ihre Aufnahme wird jetzt sicher gespeichert.` : `Thank you. You have answered all ${totalQuestionCount()===10?'ten':totalQuestionCount()} main questions. Your recording is now being saved securely.`}`;
     sendSpeechResponse(instructions, { purpose: 'clarity_interview_closing', mainQuestionIndex: String(totalQuestionCount()), followUpIndex: '0', turnType: 'closing' });
 }
 async function readJsonSafe(response) { const contentType = response.headers.get('content-type') || ''; if (contentType.includes('json'))
