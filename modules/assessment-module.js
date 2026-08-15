@@ -292,7 +292,8 @@ export function createAssessmentModule(ctx) {
   const assessmentMediaMode = () => isVideoChatMode() ? 'video_chat' : isAudioChatMode() ? 'audio_chat' : isVideoMode() ? 'video' : 'audio';
   const totalQuestionCount = () => { const value=Number(current?.questionCount||current?.media?.questionCount||state.payload?.runtime?.questionCount||state.payload?.runtime?.workflowSnapshot?.questionCount||10);return[10,20,30].includes(value)?value:10 };
   const scaledFinalOpenRequired = () => product() === 'assessment' && totalQuestionCount() > 10;
-  const finalOpenPending = (data=current) => scaledFinalOpenRequired() && Number(data?.answeredCount||0) >= Number(data?.expectedAnswers||data?.questionCount||totalQuestionCount()) && data?.finalOpenCompleted !== true;
+  const completedSlots = (data=current) => Number(data?.completedSlotCount ?? data?.answeredCount ?? 0);
+  const finalOpenPending = (data=current) => scaledFinalOpenRequired() && completedSlots(data) >= Number(data?.expectedAnswers||data?.questionCount||totalQuestionCount()) && data?.finalOpenCompleted !== true;
   const hybridSlotContract = () => { const total=totalQuestionCount();const media=Number(current?.media?.mediaQuestionCount||current?.mediaQuestionCount||(total===10?7:Math.ceil(total*.7)));return{total,media,chat:total-media,chatStart:media+1} };
   const hybridStatus = (kind='recording') => { const slots=hybridSlotContract();const values={de:{recording:`Mündlicher Teil Q1–Q${slots.media} läuft. Danach folgen Q${slots.chatStart}–Q${slots.total} im Chat.`,handover:`Der mündliche Teil ist abgeschlossen. Der Chatteil Q${slots.chatStart}–Q${slots.total} wird geöffnet …`,ready:`Der Chatteil Q${slots.chatStart}–Q${slots.total} ist bereit.`},en:{recording:`Spoken part Q1–Q${slots.media} is running. Q${slots.chatStart}–Q${slots.total} will follow in chat.`,handover:`The spoken part is complete. Opening chat questions Q${slots.chatStart}–Q${slots.total} …`,ready:`Chat questions Q${slots.chatStart}–Q${slots.total} are ready.`},es:{recording:`La parte oral Q1–Q${slots.media} está en curso. Después siguen Q${slots.chatStart}–Q${slots.total} en el chat.`,handover:`La parte oral ha terminado. Se abren las preguntas Q${slots.chatStart}–Q${slots.total} en el chat …`,ready:`Las preguntas Q${slots.chatStart}–Q${slots.total} del chat están listas.`},fr:{recording:`La partie orale Q1–Q${slots.media} est en cours. Q${slots.chatStart}–Q${slots.total} suivront dans le chat.`,handover:`La partie orale est terminée. Ouverture des questions Q${slots.chatStart}–Q${slots.total} dans le chat …`,ready:`Les questions Q${slots.chatStart}–Q${slots.total} du chat sont prêtes.`},it:{recording:`La parte orale Q1–Q${slots.media} è in corso. Seguiranno Q${slots.chatStart}–Q${slots.total} nella chat.`,handover:`La parte orale è terminata. Apertura delle domande Q${slots.chatStart}–Q${slots.total} nella chat …`,ready:`Le domande Q${slots.chatStart}–Q${slots.total} della chat sono pronte.`},pt:{recording:`A parte oral Q1–Q${slots.media} está em curso. Depois seguem Q${slots.chatStart}–Q${slots.total} no chat.`,handover:`A parte oral terminou. A abrir as perguntas Q${slots.chatStart}–Q${slots.total} no chat …`,ready:`As perguntas Q${slots.chatStart}–Q${slots.total} do chat estão prontas.`},nl:{recording:`Het mondelinge deel Q1–Q${slots.media} loopt. Daarna volgen Q${slots.chatStart}–Q${slots.total} in de chat.`,handover:`Het mondelinge deel is afgerond. Chatvragen Q${slots.chatStart}–Q${slots.total} worden geopend …`,ready:`Chatvragen Q${slots.chatStart}–Q${slots.total} zijn klaar.`},pl:{recording:`Trwa część ustna Q1–Q${slots.media}. Następnie pojawią się Q${slots.chatStart}–Q${slots.total} na czacie.`,handover:`Część ustna została zakończona. Otwieranie pytań Q${slots.chatStart}–Q${slots.total} na czacie …`,ready:`Pytania Q${slots.chatStart}–Q${slots.total} na czacie są gotowe.`},tr:{recording:`Sözlü bölüm Q1–Q${slots.media} devam ediyor. Ardından sohbette Q${slots.chatStart}–Q${slots.total} gelecek.`,handover:`Sözlü bölüm tamamlandı. Sohbet soruları Q${slots.chatStart}–Q${slots.total} açılıyor …`,ready:`Sohbet soruları Q${slots.chatStart}–Q${slots.total} hazır.`}};return(values[participantLanguage()]||values.en)[kind] };
   const mediaCopy = (audioKey, videoKey) => isHybridMode() ? (audioKey==='audioRecording'?hybridStatus('recording'):L()[audioKey.replace(/^audio/,'mix')] || L()[audioKey]) : isVideoMode() ? L()[videoKey] : L()[audioKey];
@@ -307,7 +308,7 @@ export function createAssessmentModule(ctx) {
   };
   const finalOpenCopy = () => FINAL_OPEN_COPY[participantLanguage()] || FINAL_OPEN_COPY.en;
   const endpoint = (name) => `v2Assessment${name}`;
-  const ASSESSMENT_RECORDER_RELEASE = '3.1.0-q20-q30-linear-final-open';
+  const ASSESSMENT_RECORDER_RELEASE = '3.2.0-q20-q30-market-readiness';
   const MEDIA_RECORDER_ROUTES = Object.freeze({
     audio: [`/modules/assessment-audio-recorder.html?v=${ASSESSMENT_RECORDER_RELEASE}`, `/liveAssessment.html?v=${ASSESSMENT_RECORDER_RELEASE}`],
     video: [`/modules/assessment-video-recorder.html?v=${ASSESSMENT_RECORDER_RELEASE}`, `/liveAssessment.html?v=${ASSESSMENT_RECORDER_RELEASE}`],
@@ -374,7 +375,7 @@ export function createAssessmentModule(ctx) {
       userCommLang: participantLanguage(),
       reportLang: reportLanguage(),
       lang: participantLanguage(),
-      startQuestionIndex: Math.max(1, Number(current?.answeredCount || 0) + 1)
+      startQuestionIndex: Math.max(1, completedSlots(current) + 1)
     };
   }
 
@@ -587,6 +588,7 @@ export function createAssessmentModule(ctx) {
       language: participantLanguage(),
       companyId: resolvedCompanyId(),
       noSpeechDetected: payload.noSpeechDetected === true,
+      responseStatus: payload.noSpeechDetected === true ? 'no_speech_detected' : payload.noResponse === true ? 'participant_skipped' : 'answered',
       voiceDetected: payload.voiceDetected !== false,
       voiceActivityMs: Number(payload.voiceActivityMs || 0),
       finalOpen: payload.finalOpen === true,
@@ -595,7 +597,7 @@ export function createAssessmentModule(ctx) {
     };
     const saved = await withMediaRetry(() => api(endpoint('MediaTurn'), { body }), 3);
     failedMediaTurns.delete(questionIndex);
-    mediaTurnCount = Math.max(mediaTurnCount, Number(saved?.state?.answeredCount || questionIndex));
+    mediaTurnCount = Math.max(mediaTurnCount, Number(saved?.state?.completedSlotCount ?? saved?.state?.answeredCount ?? questionIndex));
     if (saved?.state) render(saved.state);
     return saved;
   }
@@ -704,7 +706,7 @@ export function createAssessmentModule(ctx) {
       await waitForMediaResult();
       const expected = isHybridMode() ? hybridSlotContract().media : Number(current?.expectedAnswers || current?.questionCount || 10);
       const refreshed = await readStatus({ includeHistory: false, includeReportLookup: false });
-      if (Number(refreshed?.answeredCount || 0) < expected) {
+      if (completedSlots(refreshed) < expected) {
         const error = new Error(mediaCopy('audioRetry','videoRetry'));
         error.code = 'ASSESSMENT_MEDIA_TRANSCRIPTS_INCOMPLETE';
         error.retryable = true;
@@ -969,9 +971,10 @@ export function createAssessmentModule(ctx) {
     $('assessmentArea').textContent = product() === 'snapshot' ? L().shortCheck : areaLabel(data.moduleArea || 'personality');
     $('assessmentScope').textContent = `${data.questionCount || 0} ${L().questions}`;
     $('assessmentCredit').textContent = L().processRule;
-    const answered = Number(data.answeredCount || 0);
+    const answered = Number(data.usableAnswerCount ?? data.answeredCount ?? 0);
+    const completed = Number(data.completedSlotCount ?? answered);
     const expected = Math.max(1, Number(data.expectedAnswers || data.questionCount || 1));
-    const pct = Math.min(100, Math.round((answered / expected) * 100));
+    const pct = Math.min(100, Math.round((completed / expected) * 100));
     $('assessmentProgressBar').style.width = `${pct}%`;
     $('assessmentProgressText').textContent = `${answered} / ${expected} ${L().answered}`;
   }
@@ -1013,7 +1016,7 @@ export function createAssessmentModule(ctx) {
     $('assessmentProcessingPanel').classList.toggle('hidden', !(processing || failed));
     $('assessmentCompletePanel').classList.toggle('hidden', !completed);
     $('assessmentComposer').classList.toggle('hidden', mediaStage || !running);
-    const allAnswered = Number(current.answeredCount || 0) >= Number(current.expectedAnswers || current.questionCount || 1);
+    const allAnswered = completedSlots(current) >= Number(current.expectedAnswers || current.questionCount || 1);
     const closingPending = finalOpenPending(current);
     const displayHistory = [...(current.history || [])];
     if (closingPending) displayHistory.push({ role:'assistant', text:finalOpenCopy().prompt, questionIndex:0, turnType:'final_open_prompt' });
@@ -1257,14 +1260,14 @@ export function createAssessmentModule(ctx) {
       const next = data.state || data;
       render(next);
       autoFinish = next.done === true || (closingAnswer && next.finalOpenCompleted === true) || (
-        next.finalOpenRequired !== true && Number(next.answeredCount || 0) >= Number(next.expectedAnswers || next.questionCount || Number.MAX_SAFE_INTEGER)
+        next.finalOpenRequired !== true && completedSlots(next) >= Number(next.expectedAnswers || next.questionCount || Number.MAX_SAFE_INTEGER)
       );
     } catch (error) {
       if (isAmbiguous(error)) {
         status(L().transport, 'warn');
         const recovered = await readStatus({ includeHistory: false, includeReportLookup: false }).catch(() => null);
         autoFinish = recovered && (recovered.done === true || (closingAnswer && recovered.finalOpenCompleted === true) || (
-          recovered.finalOpenRequired !== true && Number(recovered.answeredCount || 0) >= Number(recovered.expectedAnswers || recovered.questionCount || Number.MAX_SAFE_INTEGER)
+          recovered.finalOpenRequired !== true && completedSlots(recovered) >= Number(recovered.expectedAnswers || recovered.questionCount || Number.MAX_SAFE_INTEGER)
         ));
       } else status(error.message || String(error), 'err');
     } finally {
