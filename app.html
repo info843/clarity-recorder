@@ -30,6 +30,46 @@
       body.interview-production-mode #interviewModuleShell{border-radius:0!important;box-shadow:none!important}
     }
   </style>
+  <style id="candidateLegalAndBrandLoaderUx">
+    .consent-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;margin-top:12px;padding:0;border-radius:18px;background:rgba(2,14,28,.28);border:1px solid rgba(119,164,211,.2);overflow:hidden}
+    .consent-item .check{margin:0!important;border:0!important;background:transparent!important;cursor:pointer;min-width:0}
+    .legal-link{appearance:none;border:0;border-left:1px solid rgba(119,164,211,.2);align-self:stretch;padding:12px 16px;background:rgba(34,211,238,.06);color:#83e9f7;font:inherit;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap}
+    .legal-link:hover,.legal-link:focus-visible{background:rgba(34,211,238,.14);outline:2px solid rgba(34,211,238,.55);outline-offset:-3px}
+    .legal-dialog{width:min(920px,calc(100vw - 28px));max-height:min(88vh,900px);padding:0;border:1px solid rgba(91,92,240,.34);border-radius:24px;background:#091a31;color:#f4f8ff;box-shadow:0 32px 120px rgba(0,0,0,.62);overflow:hidden}
+    .legal-dialog::backdrop{background:rgba(1,7,18,.78);backdrop-filter:blur(6px)}
+    .legal-dialog-shell{display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;max-height:min(88vh,900px)}
+    .legal-dialog-head{display:flex;gap:18px;align-items:flex-start;justify-content:space-between;padding:22px 24px 15px;border-bottom:1px solid rgba(119,164,211,.18)}
+    .legal-dialog-head h2{margin:4px 0 0;font-size:clamp(20px,3vw,29px);line-height:1.22;color:#fff}
+    .legal-dialog-meta{display:block;color:#8fb0d3;font-size:12px;font-weight:700;letter-spacing:.04em}
+    .legal-dialog-close{appearance:none;border:1px solid rgba(119,164,211,.28);border-radius:12px;background:rgba(255,255,255,.06);color:#fff;width:42px;height:42px;font-size:24px;line-height:1;cursor:pointer;flex:0 0 auto}
+    .legal-dialog-close:hover,.legal-dialog-close:focus-visible{border-color:#22d3ee;outline:2px solid rgba(34,211,238,.45)}
+    .legal-dialog-tabs{display:flex;gap:8px;padding:12px 24px;border-bottom:1px solid rgba(119,164,211,.16);overflow-x:auto}
+    .legal-tab{appearance:none;border:1px solid rgba(119,164,211,.24);border-radius:999px;padding:9px 13px;background:rgba(255,255,255,.04);color:#b9cce1;font:inherit;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap}
+    .legal-tab.active{color:#041421;border-color:transparent;background:linear-gradient(90deg,#22d3ee,#7c6cff)}
+    .legal-dialog-body{overflow:auto;padding:22px 26px 30px;scrollbar-color:#3b82a3 #071426}
+    .legal-dialog-body .legal-intro{font-size:15px;line-height:1.7;color:#d8e6f5;margin:0 0 22px;padding:15px 17px;border-radius:15px;background:rgba(34,211,238,.065);border:1px solid rgba(34,211,238,.18)}
+    .legal-section{margin:0 0 20px}
+    .legal-section h3{margin:0 0 7px;color:#fff;font-size:16px}
+    .legal-section p{margin:0;color:#b9cce1;line-height:1.7;font-size:14px}
+    .legal-dialog-actions{display:flex;justify-content:flex-end;padding:14px 24px 18px;border-top:1px solid rgba(119,164,211,.18);background:rgba(2,12,25,.7)}
+    html[dir="rtl"] .legal-link{border-left:0;border-right:1px solid rgba(119,164,211,.2)}
+    html[dir="rtl"] .legal-dialog-body,html[dir="rtl"] .legal-dialog-head{text-align:right}
+    .processing-orbit.branded-processing-orbit{position:relative!important;display:block!important;width:118px!important;height:118px!important;margin:4px auto 22px!important;border:0!important;border-radius:50%!important;background:transparent!important;overflow:visible!important}
+    .processing-orbit.branded-processing-orbit::before,.processing-orbit.branded-processing-orbit::after{content:none!important;display:none!important}
+    .processing-orbit.branded-processing-orbit>span{position:absolute!important;display:block!important;border-radius:50%!important;background:transparent!important;inset:5px!important;border:2px solid transparent!important;animation:clarityBrandOrbit 2.4s linear infinite!important;transform-origin:center!important}
+    .processing-orbit.branded-processing-orbit>span:nth-child(1){border-top-color:#22d3ee!important;border-right-color:#22d3ee!important}
+    .processing-orbit.branded-processing-orbit>span:nth-child(2){inset:13px!important;border-top-color:#7c6cff!important;border-left-color:#7c6cff!important;animation-direction:reverse!important;animation-duration:1.9s!important}
+    .processing-orbit.branded-processing-orbit>span:nth-child(3){inset:21px!important;border-right-color:#d81792!important;border-bottom-color:#d81792!important;animation-duration:1.55s!important}
+    .processing-brand-core{position:absolute;inset:26px;z-index:3;display:grid;place-items:center;border-radius:50%;padding:10px;background:#f8fbff;border:1px solid rgba(255,255,255,.85);box-shadow:0 8px 28px rgba(0,0,0,.28)}
+    .processing-brand-core img{display:block;max-width:100%;max-height:100%;width:100%;height:100%;object-fit:contain}
+    .processing-brand-core img:not([src]),.processing-brand-core img[src=""]{display:none}
+    .processing-brand-core:has(img:not([src]))::after,.processing-brand-core:has(img[src=""])::after{content:'';width:16px;height:16px;border-radius:50%;background:linear-gradient(135deg,#22d3ee,#7c6cff 58%,#d81792);box-shadow:0 0 18px rgba(34,211,238,.55)}
+    #assessmentProcessingText,#cvProcessingView h2,#vpProcessingView h2{color:#f4f8ff!important}
+    #cvProcessingView>p,#vpProcessingView>p{color:#b9cce1!important}
+    @keyframes clarityBrandOrbit{to{transform:rotate(360deg)}}
+    @media(max-width:650px){.consent-item{grid-template-columns:1fr}.legal-link{border-left:0;border-top:1px solid rgba(119,164,211,.2);text-align:left}.legal-dialog-head{padding:17px 17px 13px}.legal-dialog-tabs{padding:10px 17px}.legal-dialog-body{padding:18px}.legal-dialog-actions{padding:12px 17px 15px}.processing-orbit.branded-processing-orbit{transform:scale(.9);margin-bottom:10px!important}}
+    @media(prefers-reduced-motion:reduce){.processing-orbit.branded-processing-orbit>span{animation:none!important}.legal-dialog{scroll-behavior:auto}}
+  </style>
 </head>
 <body class="branding-pending">
 <div class="bootstrap-gate" id="bootstrapGate" role="status" aria-live="polite" aria-busy="true">
@@ -115,9 +155,9 @@
       <article class="flow-card hidden" id="consentView">
         <h2 id="consentTitle">Privacy and transparency</h2>
         <p id="consentText">Please review and confirm the required declarations before the product module starts.</p>
-        <div class="check"><input id="privacyConsent" type="checkbox" /><span id="privacyConsentText">I have read the privacy information and agree that my data may be processed for this CLARITY workflow.</span></div>
-        <div class="check" style="margin-top:10px"><input id="aiConsent" type="checkbox" /><span id="aiConsentText">I understand that AI supports the structured process and that final decisions remain human-led.</span></div>
-        <div class="check hidden" style="margin-top:10px" id="mediaConsentRow"><input id="mediaConsent" type="checkbox" /><span id="mediaConsentText">I agree to the required microphone or camera processing for this workflow.</span></div>
+        <div class="consent-item"><label class="check" for="privacyConsent"><input id="privacyConsent" type="checkbox" /><span id="privacyConsentText">I have read the privacy information and confirm that my data may be processed for this CLARITY workflow as described.</span></label><button class="legal-link" id="privacyDetailsBtn" data-legal-document="privacy" type="button">Read details</button></div>
+        <div class="consent-item"><label class="check" for="aiConsent"><input id="aiConsent" type="checkbox" /><span id="aiConsentText">I have read the participation and AI analysis information and understand that final decisions remain human-led.</span></label><button class="legal-link" id="aiDetailsBtn" data-legal-document="participation" type="button">Read details</button></div>
+        <div class="consent-item hidden" id="mediaConsentRow"><label class="check" for="mediaConsent"><input id="mediaConsent" type="checkbox" /><span id="mediaConsentText">I agree to the required microphone or camera processing for this workflow.</span></label><button class="legal-link" id="mediaDetailsBtn" data-legal-document="participation" type="button">Read details</button></div>
         <div class="actions"><button class="btn" id="backProfileBtn" type="button">Back</button><button class="btn primary" id="saveConsentBtn" type="button">Confirm and continue</button></div>
       </article>
 
@@ -334,9 +374,18 @@
       </article>
     </section>
 
+    <dialog class="legal-dialog" id="legalDialog" aria-labelledby="legalDialogTitle">
+      <div class="legal-dialog-shell">
+        <header class="legal-dialog-head"><div><span class="legal-dialog-meta" id="legalDialogMeta">Participant information · Version 1.3</span><h2 id="legalDialogTitle">Participant information</h2></div><button class="legal-dialog-close" id="legalDialogCloseX" type="button" aria-label="Close">×</button></header>
+        <nav class="legal-dialog-tabs" aria-label="Legal information"><button class="legal-tab" id="legalTabPrivacy" data-legal-document="privacy" type="button">Privacy and AI</button><button class="legal-tab" id="legalTabParticipation" data-legal-document="participation" type="button">Participation and AI analysis</button></nav>
+        <div class="legal-dialog-body" id="legalDialogBody" tabindex="0"></div>
+        <footer class="legal-dialog-actions"><button class="btn primary" id="legalDialogCloseBtn" type="button">Close and return</button></footer>
+      </div>
+    </dialog>
+
     <footer class="footer"><span id="footerLeft">CLARITY Decision Intelligence Platform</span><span id="footerRight">Human decision · AI intelligence</span></footer>
   </main>
 </div>
-  <script type="module" src="./clarity-app.js?v=3.2.0-q20-q30-market-readiness"></script>
+  <script type="module" src="./clarity-app.js?v=3.3.0-legal-brand-loader"></script>
 </body>
 </html>
