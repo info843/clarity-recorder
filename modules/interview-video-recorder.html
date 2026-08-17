@@ -250,7 +250,8 @@ function show(id) { ['readyView', 'processingView', 'completedView', 'errorView'
 function setPill(id, label, state = '') { const el = $(id); el.textContent = label; el.className = `pill ${state}`.trim(); }
 function debug() {}
 function branding() { return context?.branding || context?.runtime?.brandingSnapshot || current?.branding || {}; }
-function normalizedBrandingMode() { const b = branding(), raw = String(first(b.brandingMode, b.requestedBrandingMode, b.mode, 'clarity')).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''); if (['co_branding', 'cobranding', 'co_branded', 'cobranded', 'customer', 'recruitment'].includes(raw))
+function normalizedBrandingMode() { const b = branding(), values = [b.requestedBrandingMode,b.brandingMode,b.mode].map(value=>String(value||'').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')); if (b.whiteLabelEnabled===true||b.hideClarityBrand===true||b.clarityBrandVisible===false||values.some(raw=>['white_label','whitelabel','white_branded'].includes(raw)))
+    return 'whitelabel'; const raw=values.find(Boolean)||'clarity'; if (['co_branding', 'cobranding', 'co_branded', 'cobranded', 'customer', 'recruitment'].includes(raw))
     return 'cobranded'; if (['white_label', 'whitelabel', 'white_branded'].includes(raw))
     return 'whitelabel'; return 'clarity'; }
 function spokenInterviewBrand() {
@@ -461,7 +462,7 @@ function brandLogoValue(b = {}) { const values = [b.logoUrl, b.logoPublicUrl, b.
     }
 } return ''; }
 function processingClarityLogo() { const origin = first(context?.appOrigin, location.origin); try { return new URL('/assets/clarity-logo.png', origin).href; } catch (_) { return '../assets/clarity-logo.png'; } }
-function applyProcessingBrand(white, customerLogo = '') { const image = $('processingBrandLogo'); if (!image) return; const logo = white ? customerLogo : processingClarityLogo(); if (logo) image.src = logo; else image.removeAttribute('src'); }
+function applyProcessingBrand(white, customerLogo = '') { const image = $('processingBrandLogo'); if (!image) return; image.onerror=()=>image.removeAttribute('src'); const logo = white ? customerLogo : processingClarityLogo(); if (logo) image.src = logo; else image.removeAttribute('src'); }
 function applyBranding() { const b = branding(); const bm = normalizedBrandingMode(); const white = bm === 'whitelabel' || b.whiteLabelEnabled === true; const co = bm === 'cobranded' || b.coBrandingEnabled === true; const root = document.documentElement.style; ['--accent', '--secondary', '--background', '--surface', '--text'].forEach(k => root.removeProperty(k)); const c = b.colors || {}; if (white || co) {
     [['--accent', first(c.accent, b.accentColor)], ['--secondary', first(c.secondary, b.secondaryColor)], ['--background', white ? first(c.background, b.backgroundColor) : ''], ['--surface', white ? first(c.surface, b.surfaceColor, c.primary) : ''], ['--text', white ? first(c.text, c.textInverse) : '']].forEach(([k, v]) => v && root.setProperty(k, v));
 } const name = white || co ? first(b.reportBrandName, b.brandName, b.companyName, 'Company') : 'CLARITY'; const logo = (b.customerLogoVisible === false && white) ? '' : brandLogoValue(b); $('eyebrow').textContent = co ? `${name} · Video Q${totalQuestionCount()} · Powered by CLARITY` : `${name} Interview · Video Q${totalQuestionCount()}`; if (logo) {
