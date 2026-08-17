@@ -1,4 +1,4 @@
-// CLARITY Assessment Universal App module v3.1.0 — Q10 freeze + Q20/Q30 linear final-open scale
+// CLARITY Assessment Universal App module v3.2.1 — Q10 freeze + Q20/Q30 terminal reconciliation
 // Compact state deltas, one closeout dispatch, status-only polling and immediate
 // fallback-report availability while the Unified PDF finishes asynchronously.
 const COPY = Object.freeze({
@@ -620,6 +620,45 @@ export function createAssessmentModule(ctx) {
     return next;
   }
 
+  async function reconcileMissingMediaSlots() {
+    if (!isMediaMode() || !scaledFinalOpenRequired()) return null;
+    const saved = await withMediaRetry(() => api(endpoint('MediaTurn'), {
+      body: {
+        token:state.token,
+        uid:state.uid,
+        sessionId:current?.sessionId || '',
+        reconcileMissingSlots:true,
+        recorderCompleted:true,
+        expectedAnswers:Number(current?.expectedAnswers || current?.questionCount || totalQuestionCount()),
+        captureSource:isVideoMode() ? 'video' : 'audio',
+        idempotencyKey:`${state.uid}:assessment-slot-reconciliation-v1`
+      }
+    }), 3);
+    if (saved?.state) render(saved.state);
+    return saved;
+  }
+
+  async function settleFailedTurnsAfterReconciliation() {
+    const pending = [...failedMediaTurns.values()];
+    for (const payload of pending) {
+      try {
+        await persistMediaTurn(payload);
+      } catch (error) {
+        // Main slots are already represented by the server-side
+        // transcription_failed marker. A voluntary final statement still has
+        // to be retried because it is a separate participant decision.
+        if (payload?.finalOpen === true) throw error;
+        failedMediaTurns.delete(Number(payload.questionIndex || 0));
+      }
+    }
+    if (failedFinalOpenDecision) {
+      const decision = failedFinalOpenDecision;
+      await persistFinalOpenDecision(decision.message, decision.skipped, decision.source);
+      failedFinalOpenDecision = null;
+    }
+    if (!failedMediaTurns.size && !failedFinalOpenDecision) mediaFatalError = null;
+  }
+
   async function persistMediaResult(payload = {}) {
     if (payload?.mux?.error && !payload?.mux?.playbackId && !payload?.mux?.downloadUrl && !payload?.mux?.audioOnlyUrl) {
       const error = new Error(payload.mux.error);
@@ -696,14 +735,15 @@ export function createAssessmentModule(ctx) {
     status(mediaCopy('audioSaving','videoSaving'), 'warn');
     try {
       await mediaTurnChain;
+      await waitForMediaResult();
+      await reconcileMissingMediaSlots();
+      await settleFailedTurnsAfterReconciliation();
       if (failedMediaTurns.size || failedFinalOpenDecision) {
-        if (failedFinalOpenDecision && mediaFatalError) throw mediaFatalError;
-        const error = new Error(mediaCopy('audioRetry','videoRetry'));
-        error.code = 'ASSESSMENT_MEDIA_TURNS_INCOMPLETE';
+        const error = mediaFatalError || new Error(mediaCopy('audioRetry','videoRetry'));
+        error.code = error.code || 'ASSESSMENT_MEDIA_TURNS_INCOMPLETE';
         error.retryable = true;
         throw error;
       }
-      await waitForMediaResult();
       const expected = isHybridMode() ? hybridSlotContract().media : Number(current?.expectedAnswers || current?.questionCount || 10);
       const refreshed = await readStatus({ includeHistory: false, includeReportLookup: false });
       if (completedSlots(refreshed) < expected) {
