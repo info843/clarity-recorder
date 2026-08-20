@@ -621,7 +621,7 @@ export function createAssessmentModule(ctx) {
   }
 
   async function reconcileMissingMediaSlots() {
-    if (!isMediaMode() || !scaledFinalOpenRequired()) return null;
+    if (!isMediaMode() || product() !== 'assessment' || ![10,20,30].includes(totalQuestionCount())) return null;
     const saved = await withMediaRetry(() => api(endpoint('MediaTurn'), {
       body: {
         token:state.token,
