@@ -308,7 +308,7 @@ export function createAssessmentModule(ctx) {
   };
   const finalOpenCopy = () => FINAL_OPEN_COPY[participantLanguage()] || FINAL_OPEN_COPY.en;
   const endpoint = (name) => `v2Assessment${name}`;
-  const ASSESSMENT_RECORDER_RELEASE = '3.2.0-q20-q30-market-readiness';
+  const ASSESSMENT_RECORDER_RELEASE = '4.0.0-manual-turn-flow';
   const MEDIA_RECORDER_ROUTES = Object.freeze({
     audio: [`/modules/assessment-audio-recorder.html?v=${ASSESSMENT_RECORDER_RELEASE}`, `/liveAssessment.html?v=${ASSESSMENT_RECORDER_RELEASE}`],
     video: [`/modules/assessment-video-recorder.html?v=${ASSESSMENT_RECORDER_RELEASE}`, `/liveAssessment.html?v=${ASSESSMENT_RECORDER_RELEASE}`],
@@ -351,6 +351,7 @@ export function createAssessmentModule(ctx) {
     return {
       uid: state.uid,
       linkId: state.uid,
+      token: state.token,
       companyId: resolvedCompanyId(),
       sessionId: String(current?.sessionId || '').trim(),
       mode: assessmentMediaMode(),
@@ -594,6 +595,8 @@ export function createAssessmentModule(ctx) {
       finalOpen: payload.finalOpen === true,
       finalOpenSkipped: payload.finalOpenSkipped === true,
       turnType: payload.finalOpen === true ? 'final_open' : String(payload.turnType || 'main_answer')
+      ,completionMethod: String(payload.completionMethod || 'manual_button'),
+      turnControlEvents: Array.isArray(payload.turnControlEvents) ? payload.turnControlEvents.slice(0,20) : []
     };
     const saved = await withMediaRetry(() => api(endpoint('MediaTurn'), { body }), 3);
     failedMediaTurns.delete(questionIndex);
