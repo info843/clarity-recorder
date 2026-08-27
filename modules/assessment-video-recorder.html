@@ -1,4 +1,4 @@
-<!-- CLARITY Assessment Audio — v3.1.0 Q10 freeze + Q20/Q30 deterministic final-open media shell. -->
+<!-- CLARITY Assessment — v4.1.0 manual turn + responsive voice-orb counterpart. -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -11,7 +11,7 @@
     .wrap{display:grid;grid-template-columns:1fr 320px;gap:16px;padding:14px;align-items:start;background:#fff}.card{background:#fff;border:1px solid rgba(229,231,235,.75);border-radius:16px;padding:14px;box-shadow:var(--shadow)}
     .row{display:flex;gap:10px;align-items:center}.rowBetween{display:flex;gap:10px;align-items:center;justify-content:space-between}.badge{display:inline-block;padding:3px 8px;border-radius:999px;background:#f8fafc;border:1px solid #e2e8f0;color:#334155;font-size:12px}.muted{color:var(--muted)}
     .btn{appearance:none;border:1px solid #cbd5e1;background:#fff;color:#111827;border-radius:10px;padding:10px 14px;min-height:44px;cursor:pointer;box-shadow:0 6px 18px rgba(15,23,42,.08)}.btn:hover{background:#f8fafc}.btn:focus-visible{outline:3px solid rgba(79,70,229,.28);outline-offset:2px}.btn:disabled{opacity:.5;cursor:not-allowed}.btnPrimary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:650}.btnPrimary:hover{background:#4338ca}.turnActions{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}.turnActions .btnPrimary{margin-inline-start:auto}
-    video{width:100%;max-height:320px;background:#fff;border-radius:12px;box-shadow:0 10px 28px rgba(15,23,42,.10);border:0}.bar{height:6px;background:#e5e7eb;border-radius:999px;overflow:hidden}.bar>i{display:block;height:100%;width:0;background:var(--accent);transition:width 120ms linear}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.question{font-size:20px;line-height:1.35;font-weight:650;margin:12px 0;color:#111827}.hint{font-size:13px;color:#6b7280}.log{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#6b7280;white-space:pre-wrap;max-height:280px;overflow:auto;background:#f8fafc;border-radius:12px;padding:8px;border:1px solid #e5e7eb}.debugOnly{display:none}body.debug-ui .debugOnly{display:block}body.audio-only #cameraLabel,body.audio-only #localVideo{display:none}body.audio-only .wrap{grid-template-columns:1fr}body.audio-only .grid2{grid-template-columns:1fr}@media(max-width:900px){.wrap{grid-template-columns:1fr}.grid2{grid-template-columns:1fr}}
+    video{width:100%;background:#fff;border-radius:12px;border:0}.conversationVisual{position:relative;display:flex;justify-content:center;align-items:center;min-height:230px;margin:6px 0 10px;background:radial-gradient(circle at 50% 45%,rgba(79,70,229,.07),transparent 58%);border-radius:16px}.avatarFrame{width:min(330px,78vw);height:230px;border:0;background:transparent}.cameraPip{position:absolute;inset-inline-end:10px;bottom:10px;width:150px;padding:7px;background:rgba(255,255,255,.94);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 28px rgba(15,23,42,.14)}.cameraPip .muted{font-size:11px;margin-bottom:4px}.cameraPip video{display:block;max-height:92px;object-fit:cover;transform:scaleX(-1)}.bar{height:6px;background:#e5e7eb;border-radius:999px;overflow:hidden}.bar>i{display:block;height:100%;width:0;background:var(--accent);transition:width 120ms linear}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.question{font-size:20px;line-height:1.35;font-weight:650;margin:12px 0;color:#111827}.hint{font-size:13px;color:#6b7280}.log{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#6b7280;white-space:pre-wrap;max-height:280px;overflow:auto;background:#f8fafc;border-radius:12px;padding:8px;border:1px solid #e5e7eb}.debugOnly{display:none}body.debug-ui .debugOnly{display:block}body.audio-only .cameraPip{display:none}body.audio-only .wrap{grid-template-columns:1fr}@media(max-width:900px){.wrap{grid-template-columns:1fr}.cameraPip{width:118px}.cameraPip video{max-height:74px}.avatarFrame{height:210px}.conversationVisual{min-height:210px}}@media(max-width:520px){.cameraPip{position:relative;inset:auto;width:92px;margin-inline-start:-38px;align-self:flex-end}.cameraPip .muted{display:none}.conversationVisual{min-height:190px}.avatarFrame{width:min(260px,72vw);height:190px}}
   </style>
 </head>
 <body>
@@ -20,6 +20,10 @@
       <div class="rowBetween">
         <div><span id="status" class="badge">Initializing…</span><span id="slotBadge" class="badge" style="margin-left:6px">Slot 0/10</span></div>
         <span id="turnMode" class="badge">Manual turn flow</span>
+      </div>
+      <div class="conversationVisual" aria-label="AI conversation companion">
+        <iframe id="avatarFrame" class="avatarFrame" src="/modules/clarity-voice-orb.html?v=3.1" title="AI conversation companion" aria-hidden="true"></iframe>
+        <div id="cameraPip" class="cameraPip"><div id="cameraLabel" class="muted">Your camera</div><video id="localVideo" autoplay playsinline muted></video></div>
       </div>
       <div id="questionText" class="question">Preparing assessment…</div>
       <div id="hintText" class="hint">Please stay on this page.</div>
@@ -30,9 +34,7 @@
       </div>
       <div class="grid2" style="margin-top:12px">
         <div>
-          <div id="cameraLabel" class="muted" style="margin-bottom:6px">Camera preview</div>
-          <video id="localVideo" autoplay playsinline muted></video>
-          <div class="muted" style="margin:8px 0 4px">Microphone</div>
+          <div class="muted" style="margin:0 0 4px">Microphone</div>
           <div class="bar"><i id="micLevel"></i></div>
         </div>
         <div>
@@ -65,7 +67,7 @@
   const DEBUG_LOGS = Q.get('debug') === '1' || Q.get('debugLive') === '1' || DEBUG_UI;
   if (AUDIO_ONLY) document.body.classList.add('audio-only'); if (DEBUG_UI) document.body.classList.add('debug-ui');
 
-  const TOKENLESS_VERSION = 'live_assessment_v4_0_0_manual_turn_q10_q20_q30';
+  const TOKENLESS_VERSION = 'live_assessment_v4_1_0_manual_turn_avatar_branding';
   const MUX_UPLOAD_URL = `${API_BASE}/api/mux-upload`;
   const MUX_ASSET_URL = `${API_BASE}/api/mux-asset`;
   // Premium TTS is optional and server-proxied. If it fails, the deterministic v2.6 flow continues with browser voice.
@@ -85,7 +87,7 @@
   const MAX_TTS_FAILURES = 2;
 
   const $ = (id) => document.getElementById(id);
-  const $status = $('status'), $slotBadge = $('slotBadge'), $question = $('questionText'), $hint = $('hintText'), $phase = $('phaseText'), $mic = $('micLevel'), $slotProgress = $('slotProgress'), $log = $('log'), $localVideo = $('localVideo'), $btnStop = $('btnStop'), $btnRepeat = $('btnRepeat'), $btnRephrase = $('btnRephrase'), $turnMode = $('turnMode'), $recState = $('recState'), $muxState = $('muxState'), $recProgress = $('recProgress');
+  const $status = $('status'), $slotBadge = $('slotBadge'), $question = $('questionText'), $hint = $('hintText'), $phase = $('phaseText'), $mic = $('micLevel'), $slotProgress = $('slotProgress'), $log = $('log'), $localVideo = $('localVideo'), $avatarFrame = $('avatarFrame'), $btnStop = $('btnStop'), $btnRepeat = $('btnRepeat'), $btnRephrase = $('btnRephrase'), $turnMode = $('turnMode'), $recState = $('recState'), $muxState = $('muxState'), $recProgress = $('recProgress');
 
   let CTX = { uid: UID, linkId: UID, companyId: COMPANY_ID, lang: Q.get('lang') || 'en', reportLang: Q.get('reportLang') || Q.get('reportlang') || Q.get('lang') || 'en', mode: AUDIO_ONLY ? 'audio' : 'video', productType: 'modul1', assessment: true };
   function effectiveCompanyId(){ return clean(CTX.companyId || COMPANY_ID || ''); }
@@ -100,7 +102,7 @@
   let phase = 'IDLE', slotStartedAt = 0, answerWindowOpenedAt = 0, lastVoiceAt = 0, voiceActive = false, candidateVoiceActivityMs = 0, candidateVoiceTickAt = 0, slotTimers = [];
   let micAnalyser = null, micBuf = null;
   let commandRecognition = null, commandRecognitionWanted = false, commandRecognitionAvailable = false;
-  let turnControlEvents = [], currentQuestionText = '', rephraseInFlight = false;
+  let turnControlEvents = [], currentQuestionText = '', rephraseInFlight = false, avatarUserSpeaking = false;
 
   const LANG_ALIASES = { deutsch:'de', german:'de', englisch:'en', english:'en', spanisch:'es', spanish:'es', español:'es', espanol:'es', french:'fr', französisch:'fr', franzoesisch:'fr', italian:'it', italienisch:'it' };
   function clean(v){ return String(v ?? '').replace(/\s+/g,' ').trim(); }
@@ -129,7 +131,10 @@ function normalizedAssessmentMode(){ return lower(firstNonEmpty(CTX.assessmentMo
     return 'The spoken part is complete. The written part now begins. Please stay on this page and answer the next questions in chat.';
   }
 
-  function postToParent(type, data={}){ try { parent?.postMessage?.({ type, data }, '*'); } catch(_) {} }
+  function postToAvatar(type,data={}){try{$avatarFrame?.contentWindow?.postMessage?.({type,...data,data},'*')}catch(_){}}
+  function avatarBrandingMode(){const b=CTX.branding||CTX.brandingSnapshot||{},values=[b.requestedBrandingMode,b.brandingMode,b.mode].map(value=>lower(value).replace(/[^a-z0-9]+/g,'_'));const customerMode=values.some(value=>['white_label','whitelabel','white_branded','co_branding','cobranding','co_branded','cobranded'].includes(value))||b.coBrandingEnabled===true;if(b.whiteLabelEnabled===true||b.hideClarityBrand===true||b.clarityBrandVisible===false||(customerMode&&b.poweredByClarityVisible===false)||values.some(value=>['white_label','whitelabel','white_branded'].includes(value)))return'whitelabel';if(b.coBrandingEnabled===true||values.some(value=>['co_branding','cobranding','co_branded','cobranded'].includes(value)))return'cobranded';return'clarity'}
+  function syncAvatarTheme(){const b=CTX.branding||CTX.brandingSnapshot||{},colors=b.colors||b.brandColors||{};postToAvatar('avatar:theme',{mode:avatarBrandingMode(),colors:{primary:colors.primary,secondary:colors.secondary,accent:colors.accent}})}
+  function postToParent(type, data={}){ if(type==='clarity.avatar')postToAvatar(type,{state:data.state||'idle'});else if(type==='clarity.avatar.level')postToAvatar(type,{value:data.value||0});try { parent?.postMessage?.({ type, data }, '*'); } catch(_) {} }
   function debug(stage, data={}){ const payload = { version:TOKENLESS_VERSION, stage, slot:currentSlot, target:targetSlots, phase, ts:new Date().toISOString(), ...data }; postToParent('clarity.assessment.v2.debug', payload); if (DEBUG_LOGS) { try { console.log('[ASSESSMENT_V2.6]', payload); } catch(_) {} } if (DEBUG_UI && $log){ $log.textContent += `[${new Date().toLocaleTimeString()}] ${stage} ${JSON.stringify(data)}\n`; $log.scrollTop = $log.scrollHeight; } }
   function log(...args){ if (DEBUG_LOGS) { try { console.log(...args); } catch(_) {} } if (DEBUG_UI && $log){ $log.textContent += args.map(x=>{try{return typeof x==='object'?JSON.stringify(x):String(x)}catch(_){return String(x)}}).join(' ') + '\n'; $log.scrollTop = $log.scrollHeight; } }
   function setStatus(kind, text){ $status.textContent = text || kind; $status.style.background = kind==='err'?'#fef2f2':kind==='warn'?'#fffbeb':kind==='ok'?'#ecfdf5':'#f8fafc'; $status.style.borderColor = kind==='err'?'#fecaca':kind==='warn'?'#fde68a':kind==='ok'?'#bbf7d0':'#e2e8f0'; $status.style.color = kind==='err'?'#991b1b':kind==='warn'?'#92400e':kind==='ok'?'#065f46':'#334155'; }
@@ -151,7 +156,19 @@ function normalizedAssessmentMode(){ return lower(firstNonEmpty(CTX.assessmentMo
     pl: { init:'Inicjalizacja…', ready:'Gotowe.', running:'Assessment jest w toku.', listen:'Proszę spokojnie odpowiedzieć na pytanie.', wait:'Proszę chwilę poczekać na następne pytanie.', processing:'Assessment jest finalizowany. Proszę pozostać na tej stronie…', saved:'Nagranie zostało zapisane. Trwa tworzenie raportu…', start:'Assessment rozpoczyna się teraz.', endBtn:'Zakończ Assessment', noSpeech:'Przeglądarka nie mogła automatycznie odczytać pytania. Proszę sprawdzić dźwięk.' },
     tr: { init:'Başlatılıyor…', ready:'Hazır.', running:'Assessment devam ediyor.', listen:'Soruyu sakin bir şekilde yanıtlayın.', wait:'Lütfen sonraki soru için kısa bir süre bekleyin.', processing:'Assessment tamamlanıyor. Lütfen bu sayfada kalın…', saved:'Kayıt kaydedildi. Rapor hazırlanıyor…', start:'Assessment şimdi başlıyor.', endBtn:'Assessment’ı bitir', noSpeech:'Tarayıcı soruyu otomatik olarak seslendiremedi. Lütfen ses çıkışını kontrol edin.' }
   };
-  function t(k){ const lk = activeLang(); return (TEXTS[lk] || TEXTS.en)[k] || TEXTS.en[k] || k; }
+  const START_INTROS={
+    de:'Willkommen zu Ihrem Assessment. Nehmen Sie sich für jede Frage die Zeit, die Sie brauchen, und antworten Sie möglichst natürlich anhand konkreter Beispiele. Wenn Ihre Antwort vollständig ist, sagen Sie „Weiter“ oder wählen Sie „Antwort abschließen und weiter“. Sie können jede Frage wiederholen oder verständlicher formulieren lassen. Wir beginnen jetzt mit der ersten Frage.',
+    en:'Welcome to your Assessment. Take the time you need for each question and answer as naturally as possible, using concrete examples. When your answer is complete, say “Continue” or select “Finish answer and continue”. You may repeat or rephrase any question. We will now begin with the first question.',
+    es:'Bienvenido a su Assessment. Tómese el tiempo que necesite para cada pregunta y responda con naturalidad, utilizando ejemplos concretos. Cuando termine, diga «Continuar» o seleccione «Terminar respuesta y continuar». Puede repetir o reformular cualquier pregunta. Comenzamos ahora con la primera pregunta.',
+    fr:'Bienvenue dans votre Assessment. Prenez le temps nécessaire pour chaque question et répondez naturellement à l’aide d’exemples concrets. Lorsque votre réponse est complète, dites «Continuer» ou sélectionnez «Terminer la réponse et continuer». Vous pouvez répéter ou reformuler chaque question. Nous commençons maintenant par la première question.',
+    it:'Benvenuto nel suo Assessment. Si prenda il tempo necessario per ogni domanda e risponda in modo naturale con esempi concreti. Quando la risposta è completa, dica «Continua» o selezioni «Termina risposta e continua». Può ripetere o riformulare ogni domanda. Iniziamo ora con la prima domanda.',
+    pt:'Bem-vindo ao seu Assessment. Reserve o tempo necessário para cada pergunta e responda naturalmente com exemplos concretos. Quando a resposta estiver completa, diga «Continuar» ou selecione «Terminar resposta e continuar». Pode repetir ou reformular qualquer pergunta. Começamos agora com a primeira pergunta.',
+    nl:'Welkom bij uw Assessment. Neem voor elke vraag de tijd die u nodig hebt en antwoord zo natuurlijk mogelijk met concrete voorbeelden. Wanneer uw antwoord compleet is, zegt u ‘Verder’ of kiest u ‘Antwoord afronden en verder’. U kunt elke vraag herhalen of duidelijker laten formuleren. We beginnen nu met de eerste vraag.',
+    pl:'Witamy w Assessment. Proszę poświęcić każdemu pytaniu tyle czasu, ile potrzeba, i odpowiadać naturalnie, podając konkretne przykłady. Po zakończeniu odpowiedzi proszę powiedzieć „Dalej” lub wybrać „Zakończ odpowiedź i dalej”. Każde pytanie można powtórzyć lub sformułować jaśniej. Zaczynamy od pierwszego pytania.',
+    tr:'Assessment sürecinize hoş geldiniz. Her soru için ihtiyacınız olan zamanı ayırın ve somut örneklerle mümkün olduğunca doğal yanıt verin. Yanıtınız tamamlandığında “Devam” deyin veya “Cevabı bitir ve devam et” seçeneğini kullanın. Her soruyu tekrarlatabilir veya daha anlaşılır ifade ettirebilirsiniz. Şimdi ilk soruyla başlıyoruz.',
+    ar:'مرحبًا بك في التقييم. خذ الوقت الذي تحتاجه لكل سؤال وأجب بصورة طبيعية مع أمثلة واضحة. عندما تكتمل إجابتك، قل «متابعة» أو اختر «أنهي الإجابة وتابع». يمكنك تكرار أي سؤال أو طلب صياغته بوضوح أكبر. نبدأ الآن بالسؤال الأول.'
+  };
+  function t(k){ const lk = activeLang(); if(k==='start')return START_INTROS[lk]||START_INTROS.en;return (TEXTS[lk] || TEXTS.en)[k] || TEXTS.en[k] || k; }
   TEXTS.ar={init:'جارٍ التهيئة…',ready:'جاهز.',running:'التقييم جارٍ.',listen:'أجب عن السؤال بهدوء، ثم اختر المتابعة.',wait:'يرجى الانتظار لحظة.',processing:'يتم إنهاء التقييم. يرجى البقاء في هذه الصفحة…',saved:'تم حفظ التسجيل. يتم إعداد التقرير…',start:'يبدأ التقييم الآن.',endBtn:'أنهي الإجابة وتابع',noSpeech:'تعذر على المتصفح قراءة السؤال تلقائيًا. يرجى التحقق من الصوت.'};
   const TURN_UI={
     de:{continue:'Antwort abschließen & weiter',repeat:'Frage wiederholen',rephrase:'Verständlicher formulieren',manual:'Manueller Fragenwechsel',voice:'Oder sagen Sie: „Weiter“, „Frage wiederholen“ oder „Verständlicher formulieren“.',needAnswer:'Bitte beantworten Sie die Frage zuerst.',rephrasing:'Die Frage wird verständlicher formuliert…'},
@@ -177,6 +194,7 @@ function normalizedAssessmentMode(){ return lower(firstNonEmpty(CTX.assessmentMo
     tr:{continue:['devam','cevabı bitir ve devam et','sonraki soru'],repeat:['soruyu tekrarla','lütfen soruyu tekrarla','tekrarla'],rephrase:['daha anlaşılır ifade et','soruyu yeniden ifade et','başka türlü söyle']},
     ar:{continue:['متابعة','أنهي الإجابة وتابع','السؤال التالي'],repeat:['كرر السؤال','يرجى تكرار السؤال','إعادة'],rephrase:['صغ السؤال بوضوح أكبر','أعد صياغة السؤال','قلها بطريقة أخرى']}
   };
+  const CAMERA_LABELS={de:'Ihre Kamera',en:'Your camera',es:'Su cámara',fr:'Votre caméra',it:'La sua videocamera',pt:'A sua câmara',nl:'Uw camera',pl:'Twoja kamera',tr:'Kameranız',ar:'الكاميرا الخاصة بك'};
   function turnText(key){const table=TURN_UI[activeLang()]||TURN_UI.en;return table[key]||TURN_UI.en[key]||key}
   function normalizeCommand(value){return clean(value).toLowerCase().replace(/[.,!?;:،؟"'“”„()\[\]]/g,' ').replace(/\s+/g,' ').trim()}
   function setTurnControls(enabled){$btnStop.disabled=!enabled;$btnRepeat.disabled=!enabled;$btnRephrase.disabled=!enabled||rephraseInFlight}
@@ -729,7 +747,7 @@ function personalizeAssessmentQuestion(q, position=''){
   function postTurn(role, text, slot, turnType){ postToParent('clarity.live.turn', { productType:'modul1', role, speaker: role === 'assistant' ? 'assistant' : 'user', turnType, questionIndex: slot, questionNo:slot, qIndex:slot, slot, index:slot, sequenceNo:slot, subTurnIndex:0, text: clean(text), cleanText: clean(text), originalText: clean(text), sourceEvent:'v26_deterministic_oral_recorder', ts:new Date().toISOString(), uid: UID || CTX.uid || CTX.linkId || '', linkId: UID || CTX.uid || CTX.linkId || '', companyId: effectiveCompanyId(), sessionId: CTX.sessionId || UID || '' }); }
 
   async function setupLocalMedia(){ const constraints = { audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true }, video: AUDIO_ONLY ? false : { width:{ideal:1280}, height:{ideal:720} } }; try { localStream = await navigator.mediaDevices.getUserMedia(constraints); if (!AUDIO_ONLY && localStream) $localVideo.srcObject = localStream; setupMicAnalyser(); } catch(e){ setStatus('err', isGerman() ? 'Mikrofon oder Kamera konnten nicht gestartet werden.' : 'Microphone or camera could not be started.'); postToParent('clarity.live.error', { code:'media_permission_error', message:errMsg(e) }); throw e; } }
-  function setupMicAnalyser(){ try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const src = ctx.createMediaStreamSource(localStream); micAnalyser = ctx.createAnalyser(); micAnalyser.fftSize = 512; micBuf = new Uint8Array(micAnalyser.frequencyBinCount); src.connect(micAnalyser); const tick = () => { if (destroyed || !micAnalyser) return; micAnalyser.getByteTimeDomainData(micBuf); let dev=0; for(let i=0;i<micBuf.length;i++) dev=Math.max(dev, Math.abs(micBuf[i]-128)); const pct = Math.min(100, dev*2.2); $mic.style.width = pct + '%'; const active = dev > 8; const sampleAt = Date.now(); const sampleDelta = candidateVoiceTickAt ? Math.max(0, Math.min(100, sampleAt-candidateVoiceTickAt)) : 0; candidateVoiceTickAt = sampleAt; voiceActive = active; if ((phase === 'LISTENING' || phase === 'LISTENING_FINAL_OPEN') && active) candidateVoiceActivityMs += sampleDelta; if (active && phase !== 'SPEAKING_QUESTION' && phase !== 'SPEAKING_FINAL_OPEN') lastVoiceAt = sampleAt; if (active) postToParent('clarity.avatar.level', { source:'user', value:Math.max(0, Math.min(1, (dev-2)/34)), reason:'v26_mic' }); requestAnimationFrame(tick); }; tick(); } catch(e){ debug('v26_mic_analyser_failed', { message:errMsg(e) }); } }
+  function setupMicAnalyser(){ try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const src = ctx.createMediaStreamSource(localStream); micAnalyser = ctx.createAnalyser(); micAnalyser.fftSize = 512; micBuf = new Uint8Array(micAnalyser.frequencyBinCount); src.connect(micAnalyser); const tick = () => { if (destroyed || !micAnalyser) return; micAnalyser.getByteTimeDomainData(micBuf); let dev=0; for(let i=0;i<micBuf.length;i++) dev=Math.max(dev, Math.abs(micBuf[i]-128)); const pct = Math.min(100, dev*2.2); $mic.style.width = pct + '%'; const active = dev > 8; const listeningPhase=phase === 'LISTENING' || phase === 'LISTENING_FINAL_OPEN'; const sampleAt = Date.now(); const sampleDelta = candidateVoiceTickAt ? Math.max(0, Math.min(100, sampleAt-candidateVoiceTickAt)) : 0; candidateVoiceTickAt = sampleAt; voiceActive = active; if (listeningPhase && active) candidateVoiceActivityMs += sampleDelta; if (active && phase !== 'SPEAKING_QUESTION' && phase !== 'SPEAKING_FINAL_OPEN') lastVoiceAt = sampleAt; if(listeningPhase&&active!==avatarUserSpeaking){avatarUserSpeaking=active;postToParent('clarity.avatar',{state:active?'user_speaking':'listening',reason:'v410_mic_state'})} if (active) postToParent('clarity.avatar.level', { source:'user', value:Math.max(0, Math.min(1, (dev-2)/34)), reason:'v410_mic' }); requestAnimationFrame(tick); }; tick(); } catch(e){ debug('v410_mic_analyser_failed', { message:errMsg(e) }); } }
 
   function prepareCandidateAudioRecording(){
     candidateChunks = [];
@@ -936,6 +954,7 @@ function personalizeAssessmentQuestion(q, position=''){
     // reliably audible and included in the review recording. Candidate-only capture is
     // stopped / muted first, so the final system text is not used as assessment evidence.
     try {
+      postToParent('clarity.avatar',{state:'ai_speaking',reason:'v410_final_close'});
       debug('v266_final_spoken_close_start', { textPreview: text.slice(0, 80) });
       await speak(text, { reason:'final_before_mixed_stop', rate:0.94 });
       debug('v266_final_spoken_close_done', {});
@@ -952,6 +971,7 @@ function personalizeAssessmentQuestion(q, position=''){
     setPhase('FINISHING', t('processing'));
     setStatus('warn', t('processing'));
     $hint.textContent = t('processing');
+    postToParent('clarity.avatar',{state:'processing',reason:'v410_processing'});
     postToParent(isHybridAssessmentMode() ? 'clarity.assessment.v2.oral_completed' : 'clarity.assessment.v2.target_answered', { slot:Math.max(currentSlot,targetSlots), target:targetSlots, total:totalSlots, chatSlotStartIndex:isHybridAssessmentMode()?targetSlots+1:0, chatSlotEndIndex:isHybridAssessmentMode()?totalSlots:0, reason, version:TOKENLESS_VERSION, hybridAssessment:isHybridAssessmentMode() });
     debug('v267_finish_assessment_or_handoff', { reason, currentSlot, targetSlots, totalSlots, hybrid:isHybridAssessmentMode() });
     try { speechSynthesis?.cancel?.(); } catch(_){}
@@ -968,15 +988,17 @@ function personalizeAssessmentQuestion(q, position=''){
       await new Promise(r => setTimeout(r, 450));
       postToParent('clarity.live.processing_started', { reason, version:TOKENLESS_VERSION });
       postToParent('clarity.live.ended', { reason, version:TOKENLESS_VERSION });
+      postToParent('clarity.avatar',{state:'complete',reason:'v410_capture_complete'});
     }, timing().finalStopMs);
   }
   function manualStop(reason='manual_stop'){ if (!recordEnabled || !recordingStartedAt) return; debug('v400_manual_turn_request', { reason, currentSlot });if(finalOpenActive&&phase==='LISTENING_FINAL_OPEN'){if(reason!=='continue_voice')recordTurnControl('continue','button');commitFinalOpen(reason==='continue_voice'?'continue_voice':'final_open_button');return}if(phase==='LISTENING'){if(candidateVoiceActivityMs<350){$hint.textContent=turnText('needAnswer');return}if(reason!=='continue_voice')recordTurnControl('continue','button');commitSlot(currentSlot,reason==='continue_voice'?'continue_voice':'continue_button');return} }
 
-  function handleMessage(ev){ let msg = ev?.data; try { if (typeof msg === 'string') msg = JSON.parse(msg); } catch(_){} if (!msg || typeof msg !== 'object') return; const type = msg.type; const data = msg.data || msg.payload || {}; if (type === 'clarity.live.context' || type === 'clarity.live.prime'){ CTX = { ...CTX, ...(data||{}) }; startSlotIndex = Math.max(1, Number(data.startQuestionIndex || CTX.startQuestionIndex || 1)); CTX.lang = firstNonEmpty(CTX.userCommLang, CTX.interviewLang, CTX.interviewLanguage, CTX.lang, Q.get('lang'), 'en'); CTX.reportLang = firstNonEmpty(CTX.reportLang, CTX.reportLanguage, Q.get('reportLang'), CTX.lang); CTX.ttsVoice = firstNonEmpty(CTX.ttsVoice, data.ttsVoice, Q.get('ttsVoice'), Q.get('voice'), 'marin'); document.documentElement.lang=activeLang(); document.documentElement.dir=activeLang()=== 'ar' ? 'rtl' : 'ltr';$turnMode.textContent=turnText('manual');$btnStop.textContent=turnText('continue');$btnRepeat.textContent=turnText('repeat');$btnRephrase.textContent=turnText('rephrase'); setStatus('info', t('init')); debug('v400_context_received', { mode:CTX.mode, assessmentMode:CTX.assessmentMode, moduleArea:CTX.moduleArea, questionCount:CTX.questionCount, totalQuestionCount:CTX.totalQuestionCount, mediaQuestionCount:CTX.mediaQuestionCount, sessionId:CTX.sessionId, lang:CTX.lang, manualTurnFlow:true }); return; } if (type === 'clarity.live.prepare' || type === 'clarity.live.start'){ startAssessment(); return; } if (type === 'clarity.live.record'){ recordEnabled = data?.enabled !== false; debug('v400_record_enabled', { recordEnabled, prepared, sessionId:CTX.sessionId }); if (recordEnabled && prepared && !recordingStartedAt) beginAssessmentFlow(); return; } if (type === 'clarity.live.hangup' || type === 'clarity.live.stop' || type === 'recorder:stop'){ if(finishing)return;finishAssessment(type); return; } }
+  function handleMessage(ev){ let msg = ev?.data; try { if (typeof msg === 'string') msg = JSON.parse(msg); } catch(_){} if (!msg || typeof msg !== 'object') return; const type = msg.type; const data = msg.data || msg.payload || {}; if (type === 'clarity.live.context' || type === 'clarity.live.prime'){ CTX = { ...CTX, ...(data||{}) }; startSlotIndex = Math.max(1, Number(data.startQuestionIndex || CTX.startQuestionIndex || 1)); CTX.lang = firstNonEmpty(CTX.userCommLang, CTX.interviewLang, CTX.interviewLanguage, CTX.lang, Q.get('lang'), 'en'); CTX.reportLang = firstNonEmpty(CTX.reportLang, CTX.reportLanguage, Q.get('reportLang'), CTX.lang); CTX.ttsVoice = firstNonEmpty(CTX.ttsVoice, data.ttsVoice, Q.get('ttsVoice'), Q.get('voice'), 'marin'); document.documentElement.lang=activeLang(); document.documentElement.dir=activeLang()=== 'ar' ? 'rtl' : 'ltr';$('cameraLabel').textContent=CAMERA_LABELS[activeLang()]||CAMERA_LABELS.en;$turnMode.textContent=turnText('manual');$btnStop.textContent=turnText('continue');$btnRepeat.textContent=turnText('repeat');$btnRephrase.textContent=turnText('rephrase');syncAvatarTheme();postToAvatar('avatar:set',{state:'ready'}); setStatus('info', t('init')); debug('v410_context_received', { mode:CTX.mode, assessmentMode:CTX.assessmentMode, moduleArea:CTX.moduleArea, questionCount:CTX.questionCount, totalQuestionCount:CTX.totalQuestionCount, mediaQuestionCount:CTX.mediaQuestionCount, sessionId:CTX.sessionId, lang:CTX.lang, manualTurnFlow:true,avatar:true,brandingMode:avatarBrandingMode() }); return; } if (type === 'clarity.live.prepare' || type === 'clarity.live.start'){ startAssessment(); return; } if (type === 'clarity.live.record'){ recordEnabled = data?.enabled !== false; debug('v410_record_enabled', { recordEnabled, prepared, sessionId:CTX.sessionId }); if (recordEnabled && prepared && !recordingStartedAt) beginAssessmentFlow(); return; } if (type === 'clarity.live.hangup' || type === 'clarity.live.stop' || type === 'recorder:stop'){ if(finishing)return;finishAssessment(type); return; } }
   window.addEventListener('message', handleMessage);
   $btnStop.addEventListener('click', () => manualStop('local_button'));
   $btnRepeat.addEventListener('click',()=>repeatCurrentQuestion('button'));
   $btnRephrase.addEventListener('click',()=>rephraseCurrentQuestion('button'));
+  $avatarFrame?.addEventListener('load',()=>{syncAvatarTheme();postToAvatar('avatar:set',{state:'ready'})});
 
   function boot(){ setStatus('info', t('init'));$turnMode.textContent=turnText('manual');$btnStop.textContent=turnText('continue');$btnRepeat.textContent=turnText('repeat');$btnRephrase.textContent=turnText('rephrase');setTurnControls(false); setSlotUi(0); postToParent('clarity.live.ready', { version:TOKENLESS_VERSION, tokenless:true, mode:currentMediaMode(), assessmentMode:normalizedAssessmentMode(), hybridAssessment:isHybridAssessmentMode(), manualTurnFlow:true }); debug('v400_ready_posted', { uid:UID, companyId:effectiveCompanyId(), audioOnly:AUDIO_ONLY }); if (Q.get('autostart') === '1') setTimeout(()=>startAssessment(), 500); }
   try { if ('speechSynthesis' in window) { speechSynthesis.getVoices(); window.speechSynthesis.onvoiceschanged = () => { try { speechSynthesis.getVoices(); } catch(_){} }; } } catch(_){}
