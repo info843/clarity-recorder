@@ -72,6 +72,95 @@
     @media(max-width:650px){.consent-item{grid-template-columns:1fr}.legal-link{border-left:0;border-top:1px solid rgba(119,164,211,.2);text-align:left}.legal-dialog-head{padding:17px 17px 13px}.legal-dialog-tabs{padding:10px 17px}.legal-dialog-body{padding:18px}.legal-dialog-actions{padding:12px 17px 15px}.processing-orbit.branded-processing-orbit{transform:scale(.9);margin-bottom:10px!important}}
     @media(prefers-reduced-motion:reduce){.processing-orbit.branded-processing-orbit>span{animation:none!important}.legal-dialog{scroll-behavior:auto}}
   </style>
+  <style id="candidateExperienceAndFeedbackUx">
+    .candidate-hero{display:block!important;max-width:980px;margin:0 auto 18px}
+    .candidate-hero .hero-card{min-height:0;padding:clamp(24px,4vw,42px);text-align:center}
+    .candidate-hero h1{max-width:850px;margin:12px auto 10px;font-size:clamp(30px,5vw,52px);line-height:1.08;color:#fff}
+    .candidate-hero .lead{max-width:780px;margin:0 auto;color:#c8d9ec;font-size:clamp(16px,2.2vw,20px);line-height:1.65}
+    .candidate-hero .eyebrow{justify-content:center}
+    .progress-wrap{max-width:900px;margin-left:auto;margin-right:auto}
+    .progress{gap:8px}
+    .progress .step{min-height:0;padding:10px 12px;border-radius:14px}
+    .progress .step span{display:none}
+    .progress .step strong{font-size:12px}
+    .candidate-welcome{max-width:900px;margin-left:auto;margin-right:auto}
+    .candidate-welcome>h2{display:none}
+    .candidate-welcome-intro{font-size:17px;line-height:1.7;color:#d7e5f4;margin:0}
+    .candidate-context{margin:9px 0 0;color:#a9c1d9;font-size:14px;line-height:1.6}
+    .candidate-tags{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0 0}
+    .candidate-tag{display:inline-flex;align-items:center;min-height:34px;padding:7px 12px;border:1px solid rgba(119,164,211,.25);border-radius:999px;background:rgba(34,211,238,.06);color:#dceafb;font-size:12px;font-weight:800}
+    .candidate-guide{display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:16px;margin-top:20px}
+    .candidate-guide-card{padding:19px 20px;border:1px solid rgba(119,164,211,.18);border-radius:18px;background:rgba(4,19,38,.48)}
+    .candidate-guide-card h3{margin:0 0 10px;color:#fff;font-size:17px}
+    .candidate-guide-card p{margin:0;color:#b9cce1;line-height:1.65}
+    .candidate-steps{display:grid;gap:10px;margin:0;padding:0;list-style:none;counter-reset:candidate-step}
+    .candidate-steps li{display:grid;grid-template-columns:28px minmax(0,1fr);gap:10px;align-items:start;color:#c8d9ec;line-height:1.55;counter-increment:candidate-step}
+    .candidate-steps li::before{content:counter(candidate-step);display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#22d3ee,#7c6cff);color:#041421;font-size:12px;font-weight:900}
+    .prep-details{margin-top:16px;border:1px solid rgba(119,164,211,.18);border-radius:16px;background:rgba(255,255,255,.025);overflow:hidden}
+    .prep-details summary{cursor:pointer;list-style:none;padding:15px 18px;color:#e7f1fc;font-weight:800}
+    .prep-details summary::-webkit-details-marker{display:none}
+    .prep-details summary::after{content:'+';float:right;color:#7fe8f5;font-size:20px;line-height:1}
+    .prep-details[open] summary::after{content:'−'}
+    .prep-list{display:grid;gap:9px;margin:0;padding:0 20px 18px 42px;color:#b9cce1;line-height:1.55}
+    html[dir="rtl"] .prep-details summary::after{float:left}
+    .module-ready-card{display:flex;gap:16px;align-items:center;padding:18px;border:1px solid rgba(119,164,211,.2);border-radius:18px;background:rgba(4,19,38,.48)}
+    .module-ready-card .module-icon{flex:0 0 auto}
+    .module-ready-card strong{display:block;color:#fff;font-size:18px}
+    .module-ready-card span{display:block;margin-top:5px;color:#b9cce1;line-height:1.55}
+    #moduleView #statusBtn,.assessment-meta-grid,#assessmentView>.notice.info,#assessmentView .assessment-head>.pill,#aiLiteracySeatRule,.ai-literacy-notice{display:none!important}
+
+    .consent-item .consent-check{position:relative;display:grid!important;grid-template-columns:24px minmax(0,1fr);gap:14px;align-items:start;min-height:58px;padding:16px 17px!important;color:#eef6ff}
+    .consent-native{position:absolute!important;width:1px!important;height:1px!important;margin:0!important;padding:0!important;opacity:0!important;overflow:hidden!important;clip:rect(0 0 0 0)!important;clip-path:inset(50%)!important;white-space:nowrap!important}
+    .consent-visual{display:block!important;width:22px!important;height:22px!important;min-width:22px!important;min-height:22px!important;box-sizing:border-box!important;margin:1px 0 0!important;border:2px solid #9fc4e8!important;border-radius:5px!important;background:#f7fbff!important;box-shadow:0 0 0 1px rgba(4,19,38,.35),0 3px 9px rgba(0,0,0,.2)!important;visibility:visible!important;opacity:1!important;transform:none!important}
+    .consent-native:checked+.consent-visual{border-color:#22d3ee!important;background:linear-gradient(135deg,#22d3ee,#7c6cff)!important}
+    .consent-native:checked+.consent-visual::after{content:'';display:block;width:10px;height:6px;margin:5px 0 0 4px;border-left:3px solid #041421;border-bottom:3px solid #041421;transform:rotate(-45deg)}
+    .consent-native:focus-visible+.consent-visual{outline:3px solid rgba(34,211,238,.55)!important;outline-offset:3px!important}
+    .consent-copy{display:block;line-height:1.55;color:#eef6ff}
+    html[dir="rtl"] .consent-native:checked+.consent-visual::after{margin:5px 4px 0 0}
+
+    body.feedback-experience-active{overflow:hidden}
+    .feedback-layer{position:fixed;inset:0;z-index:1500;overflow:auto;padding:max(18px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(18px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));background:radial-gradient(circle at 50% 0%,rgba(37,74,126,.32),transparent 45%),rgba(3,10,23,.985);color:#f4f8ff}
+    .feedback-shell{width:min(960px,100%);min-height:calc(100vh - 36px);margin:0 auto;display:grid;align-content:center;gap:18px}
+    .feedback-processing-head{text-align:center;padding:6px 20px 0}
+    .feedback-processing-head .processing-orbit{margin-bottom:12px!important}
+    .feedback-processing-head .eyebrow{justify-content:center}
+    .feedback-processing-head h2{margin:9px 0 8px;color:#fff;font-size:clamp(26px,4vw,40px)}
+    .feedback-processing-head p{max-width:720px;margin:0 auto;color:#b9cce1;line-height:1.65}
+    .feedback-stages{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;max-width:720px;margin:18px auto 0;padding:0;list-style:none}
+    .feedback-stage{padding:11px 12px;border:1px solid rgba(119,164,211,.18);border-radius:13px;background:rgba(255,255,255,.025);color:#7897b8;font-size:12px;font-weight:800}
+    .feedback-stage.active{border-color:rgba(34,211,238,.5);color:#dffbff;background:rgba(34,211,238,.09);box-shadow:0 0 24px rgba(34,211,238,.08)}
+    .feedback-stage.done{border-color:rgba(54,211,153,.34);color:#a9f4d2;background:rgba(54,211,153,.07)}
+    .feedback-card{padding:clamp(19px,3vw,30px);border:1px solid rgba(119,164,211,.24);border-radius:24px;background:rgba(9,26,49,.94);box-shadow:0 24px 80px rgba(0,0,0,.34)}
+    .feedback-card h3{margin:0;color:#fff;font-size:clamp(20px,3vw,27px);line-height:1.3}
+    .feedback-card>p{margin:7px 0 0;color:#9db6d0;line-height:1.55}
+    .feedback-identity{display:flex;flex-wrap:wrap;gap:9px;margin-top:18px}
+    .feedback-choice{position:relative;display:flex;align-items:center;gap:8px;padding:10px 13px;border:1px solid rgba(119,164,211,.22);border-radius:999px;background:rgba(255,255,255,.025);cursor:pointer;color:#dceafb;font-weight:750}
+    .feedback-choice input{width:17px;height:17px;margin:0;accent-color:#22d3ee}
+    .feedback-anonymous-info{margin:10px 0 0!important;font-size:12px;color:#88a7c7!important}
+    .feedback-rating-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px}
+    .rating-dimension{padding:14px;border:1px solid rgba(119,164,211,.17);border-radius:16px;background:rgba(2,14,28,.34)}
+    .rating-dimension>span{display:block;margin-bottom:8px;color:#dceafb;font-size:13px;font-weight:800}
+    .rating-stars{display:flex;gap:4px}
+    .rating-star{appearance:none;border:0;padding:1px;background:transparent;color:#536f8d;font:inherit;font-size:27px;line-height:1;cursor:pointer;transition:color .15s ease,transform .15s ease}
+    .rating-star:hover,.rating-star:focus-visible{color:#7de8f5;outline:2px solid rgba(34,211,238,.5);outline-offset:2px;border-radius:5px;transform:translateY(-1px)}
+    .rating-star.selected{color:#f6c94f;text-shadow:0 0 15px rgba(246,201,79,.18)}
+    .feedback-comment-wrap{display:grid;gap:7px;margin-top:16px;color:#dceafb;font-size:13px;font-weight:800}
+    .feedback-comment-wrap textarea{width:100%;box-sizing:border-box;resize:vertical;min-height:86px;max-height:190px;padding:12px 13px;border:1px solid rgba(119,164,211,.26);border-radius:14px;background:#06162a;color:#fff;font:inherit;line-height:1.5}
+    .feedback-comment-wrap textarea:focus{border-color:#22d3ee;outline:2px solid rgba(34,211,238,.25)}
+    .feedback-consents{display:grid;gap:9px;margin-top:14px}
+    .feedback-check{display:grid;grid-template-columns:19px minmax(0,1fr);gap:9px;align-items:start;color:#abc2da;font-size:12px;line-height:1.5;cursor:pointer}
+    .feedback-check input{width:17px;height:17px;margin:1px 0 0;accent-color:#22d3ee}
+    .feedback-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:9px;margin-top:17px}
+    .feedback-message{min-height:20px;margin-top:10px;color:#9debd0;font-size:13px}
+    .feedback-message.error{color:#ffb4b4}
+    .feedback-result{margin-top:18px;padding:17px;border:1px solid rgba(54,211,153,.25);border-radius:16px;background:rgba(54,211,153,.07);color:#baf5da;line-height:1.6}
+    .feedback-result.error{border-color:rgba(248,113,113,.28);background:rgba(248,113,113,.07);color:#ffc0c0}
+    .feedback-footer-actions{display:flex;justify-content:center;flex-wrap:wrap;gap:9px;padding-bottom:8px}
+    .feedback-return{position:fixed;z-index:1400;right:max(16px,env(safe-area-inset-right));bottom:max(16px,env(safe-area-inset-bottom));box-shadow:0 12px 42px rgba(0,0,0,.38)}
+    html[dir="rtl"] .feedback-return{right:auto;left:max(16px,env(safe-area-inset-left))}
+    @media(max-width:720px){.candidate-guide{grid-template-columns:1fr}.feedback-rating-grid{grid-template-columns:1fr}.feedback-shell{align-content:start}.feedback-processing-head{padding-top:8px}.feedback-stages{grid-template-columns:1fr}.feedback-stage{padding:8px 10px}.feedback-layer{padding-top:12px}.consent-item .consent-check{padding:15px!important}}
+    @media(prefers-reduced-motion:reduce){.rating-star{transition:none}}
+  </style>
 </head>
 <body class="branding-pending">
 <div class="bootstrap-gate" id="bootstrapGate" role="status" aria-live="polite" aria-busy="true">
@@ -94,29 +183,12 @@
       </div>
     </header>
 
-    <section class="hero">
+    <section class="hero candidate-hero">
       <article class="hero-card">
         <div class="eyebrow"><span class="dot"></span><span id="eyebrow">Secure CLARITY access</span></div>
-        <h1><span id="heroPrefix">Welcome to</span> <span class="gradient" id="heroProduct">CLARITY</span></h1>
+        <h1 id="heroTitle">Welcome to CLARITY</h1>
         <p class="lead" id="heroDescription">Your secure workflow is being prepared.</p>
-        <div class="meta-grid">
-          <div class="meta"><span id="metaWorkflowLabel">Workflow</span><strong id="metaWorkflow">—</strong></div>
-          <div class="meta"><span id="metaModeLabel">Mode</span><strong id="metaMode">—</strong></div>
-          <div class="meta"><span id="metaLanguageLabel">Language</span><strong id="metaLanguage">—</strong></div>
-          <div class="meta"><span id="metaPurposeLabel">Position / purpose</span><strong id="metaPurpose">—</strong></div>
-          <div class="meta"><span id="metaQuestionsLabel">Scope</span><strong id="metaQuestions">—</strong></div>
-          <div class="meta"><span id="metaUidLabel">Access ID</span><strong id="metaUid">—</strong></div>
-        </div>
       </article>
-      <aside class="summary-card">
-        <h2 id="summaryTitle">Access summary</h2>
-        <div class="summary-list">
-          <div class="summary-row"><span id="summaryCompanyLabel">Company</span><strong id="summaryCompany">—</strong></div>
-          <div class="summary-row"><span id="summaryReportLabel">Report language</span><strong id="summaryReport">—</strong></div>
-          <div class="summary-row"><span id="summaryUnitsLabel">Reserved units</span><strong id="summaryUnits">—</strong></div>
-          <div class="summary-row"><span id="summaryStatusLabel">Status</span><strong id="summaryStatus">—</strong></div>
-        </div>
-      </aside>
     </section>
 
     <section class="progress-wrap">
@@ -135,10 +207,33 @@
         <div class="notice info"><span>i</span><span id="loadingNotice">Please keep this window open.</span></div>
       </article>
 
-      <article class="flow-card hidden" id="welcomeView">
+      <article class="flow-card hidden candidate-welcome" id="welcomeView">
         <h2 id="welcomeTitle">Your secure workflow is ready</h2>
-        <p id="welcomeText">Review the information above. Opening this page has not consumed any credits.</p>
-        <div class="module-panel"><div class="module-icon" id="moduleIcon">CL</div><div><strong id="moduleTitle">CLARITY module</strong><span id="moduleDescription">The correct module was resolved from your UID.</span><div class="status-line"><span class="pill ok" id="moduleReadiness">Router ready</span><span class="pill" id="moduleDevice">Responsive shell</span></div></div></div>
+        <p class="candidate-welcome-intro" id="welcomeText">Your secure workflow is ready.</p>
+        <p class="candidate-context hidden" id="welcomeContext"></p>
+        <div class="candidate-tags" aria-label="Module overview">
+          <span class="candidate-tag" id="welcomeProductTag">CLARITY module</span>
+          <span class="candidate-tag" id="welcomeModeTag">Standard</span>
+          <span class="candidate-tag hidden" id="welcomeQuestionTag"></span>
+        </div>
+        <div class="candidate-guide">
+          <section class="candidate-guide-card">
+            <h3 id="welcomeWhatTitle">What to expect</h3>
+            <p id="welcomeWhatText">The module is prepared for you.</p>
+          </section>
+          <section class="candidate-guide-card">
+            <h3 id="welcomeHowTitle">How it works</h3>
+            <ol class="candidate-steps">
+              <li id="welcomeStep1">Review the short instructions.</li>
+              <li id="welcomeStep2">Answer one question at a time.</li>
+              <li id="welcomeStep3">Keep the page open during processing.</li>
+            </ol>
+          </section>
+        </div>
+        <details class="prep-details" id="preparationDetails">
+          <summary id="preparationSummary">Preparation tips</summary>
+          <ul class="prep-list" id="preparationList"></ul>
+        </details>
         <div class="actions"><button class="btn primary" id="continueProfileBtn" type="button">Continue</button></div>
       </article>
 
@@ -157,17 +252,17 @@
       <article class="flow-card hidden" id="consentView">
         <h2 id="consentTitle">Privacy and transparency</h2>
         <p id="consentText">Please review and confirm the required declarations before the product module starts.</p>
-        <div class="consent-item"><label class="check" for="privacyConsent"><input id="privacyConsent" type="checkbox" /><span id="privacyConsentText">I have read the privacy information and confirm that my data may be processed for this CLARITY workflow as described.</span></label><button class="legal-link" id="privacyDetailsBtn" data-legal-document="privacy" type="button">Read details</button></div>
-        <div class="consent-item"><label class="check" for="aiConsent"><input id="aiConsent" type="checkbox" /><span id="aiConsentText">I have read the participation and AI analysis information and understand that final decisions remain human-led.</span></label><button class="legal-link" id="aiDetailsBtn" data-legal-document="participation" type="button">Read details</button></div>
-        <div class="consent-item hidden" id="mediaConsentRow"><label class="check" for="mediaConsent"><input id="mediaConsent" type="checkbox" /><span id="mediaConsentText">I agree to the required microphone or camera processing for this workflow.</span></label><button class="legal-link" id="mediaDetailsBtn" data-legal-document="participation" type="button">Read details</button></div>
+        <div class="consent-item"><label class="check consent-check" for="consentPrivacyRequired"><input class="consent-native" id="consentPrivacyRequired" type="checkbox" /><span class="consent-visual" aria-hidden="true"></span><span class="consent-copy" id="privacyConsentText">I have read the privacy information and confirm that my data may be processed for this CLARITY workflow as described.</span></label><button class="legal-link" id="privacyDetailsBtn" data-legal-document="privacy" type="button">Read details</button></div>
+        <div class="consent-item"><label class="check consent-check" for="consentAiRequired"><input class="consent-native" id="consentAiRequired" type="checkbox" /><span class="consent-visual" aria-hidden="true"></span><span class="consent-copy" id="aiConsentText">I have read the participation and AI analysis information and understand that final decisions remain human-led.</span></label><button class="legal-link" id="aiDetailsBtn" data-legal-document="participation" type="button">Read details</button></div>
+        <div class="consent-item hidden" id="mediaConsentRow"><label class="check consent-check" for="consentMediaRequired"><input class="consent-native" id="consentMediaRequired" type="checkbox" /><span class="consent-visual" aria-hidden="true"></span><span class="consent-copy" id="mediaConsentText">I agree to the required microphone or camera processing for this workflow.</span></label><button class="legal-link" id="mediaDetailsBtn" data-legal-document="participation" type="button">Read details</button></div>
         <div class="actions"><button class="btn" id="backProfileBtn" type="button">Back</button><button class="btn primary" id="saveConsentBtn" type="button">Confirm and continue</button></div>
       </article>
 
       <article class="flow-card hidden" id="moduleView">
         <h2 id="moduleViewTitle">Product module</h2>
-        <p id="moduleViewText">The Universal App router has loaded the correct product configuration.</p>
-        <div class="notice info"><span>i</span><span id="moduleNotice">This V2-10A package validates the standalone link, common profile, consent, branding and responsive router. The product execution module is activated in the next vertical phase.</span></div>
-        <div class="module-panel"><div class="module-icon" id="finalModuleIcon">CL</div><div><strong id="finalModuleTitle">CLARITY module</strong><span id="finalModuleDescription">Configuration resolved.</span><div class="status-line"><span class="pill" id="finalWorkflow">—</span><span class="pill" id="finalStatus">—</span></div></div></div>
+        <p id="moduleViewText">Your details and required confirmations have been saved.</p>
+        <div class="module-ready-card"><div class="module-icon" id="finalModuleIcon">CL</div><div><strong id="finalModuleTitle">CLARITY module</strong><span id="finalModuleDescription">You can start when you are ready.</span></div></div>
+        <div class="notice info"><span>i</span><span id="moduleNotice">The device check, where required, appears before the first question or recording.</span></div>
         <div class="actions"><button class="btn secondary" id="statusBtn" type="button">Refresh status</button><button class="btn primary" id="startModuleBtn" type="button" disabled>Start workflow</button></div>
       </article>
 
@@ -376,6 +471,62 @@
       </article>
     </section>
 
+    <section class="feedback-layer hidden" id="appFeedbackLayer" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="feedbackProcessingTitle">
+      <div class="feedback-shell">
+        <header class="feedback-processing-head">
+          <div class="processing-orbit" aria-hidden="true"><span></span><span></span><span></span></div>
+          <div class="eyebrow"><span class="dot"></span><span id="feedbackProcessingEyebrow">Secure processing</span></div>
+          <h2 id="feedbackProcessingTitle">Your submission is being processed</h2>
+          <p id="feedbackProcessingText">Please keep this page open while processing continues.</p>
+          <ol class="feedback-stages" aria-label="Processing status">
+            <li class="feedback-stage done" data-feedback-stage="save" id="feedbackStageSaveLabel">Answers secured</li>
+            <li class="feedback-stage active" data-feedback-stage="process" id="feedbackStageProcessLabel">Processing</li>
+            <li class="feedback-stage" data-feedback-stage="complete" id="feedbackStageCompleteLabel">Completed</li>
+          </ol>
+        </header>
+
+        <article class="feedback-card" aria-labelledby="feedbackQuestion">
+          <h3 id="feedbackQuestion" tabindex="-1">How was your experience?</h3>
+          <p id="feedbackOptionalText">Your feedback is optional and does not affect your result.</p>
+
+          <div id="feedbackForm">
+            <div class="feedback-identity" role="radiogroup" aria-label="Feedback identity">
+              <label class="feedback-choice"><input type="radio" name="feedbackIdentityMode" value="anonymous" checked /><span id="feedbackAnonymousLabel">Anonymous</span></label>
+              <label class="feedback-choice"><input type="radio" name="feedbackIdentityMode" value="named" /><span id="feedbackNamedLabel">With my name</span></label>
+            </div>
+            <p class="feedback-anonymous-info" id="feedbackAnonymousInfo">Your name and email are not stored with this feedback.</p>
+
+            <div class="feedback-rating-grid">
+              <div class="rating-dimension"><span id="feedbackOverallLabel">Overall experience</span><div class="rating-stars" role="radiogroup" aria-labelledby="feedbackOverallLabel">
+                <button class="rating-star" type="button" role="radio" aria-checked="false" data-rating-dimension="overallRating" data-rating-value="1">★</button><button class="rating-star" type="button" role="radio" aria-checked="false" data-rating-dimension="overallRating" data-rating-value="2">★</button><button class="rating-star" type="button" role="radio" aria-checked="false" data-rating-dimension="overallRating" data-rating-value="3">★</button><button class="rating-star" type="button" role="radio" aria-checked="false" data-rating-dimension="overallRating" data-rating-value="4">★</button><button class="rating-star" type="button" role="radio" aria-checked="false" data-rating-dimension="overallRating" data-rating-value="5">★</button>
+              </div></div>
+              <div class="rating-dimension"><span id="feedbackClarityLabel">Clarity of steps</span><div class="rating-stars" role="radiogroup" aria-labelledby="feedbackClarityLabel">
+                <button class="rating-star" type="button" role="radio" aria-checked="false" data-rating-dimension="clarityRating" data-rating-value="1">★</button><button class="rating-star" type="button" role="radio" aria-checked="false" data-rating-dimension="clarityRating" data-rating-value="2">★</button><button class="rating-star" type="button" role="radio" aria-checked="false" data-rating-dimension="clarityRating" data-rating-value="3">★</button><button class="rating-star" type="button" role="radio" aria-checked="false" data-rating-dimension="clarityRating" data-rating-value="4">★</button><button class="rating-star" type="button" role="radio" aria-checked="false" data-rating-dimension="clarityRating" data-rating-value="5">★</button>
+              </div></div>
+              <div class="rating-dimension"><span id="feedbackUsabilityLabel">Ease of use</span><div class="rating-stars" role="radiogroup" aria-labelledby="feedbackUsabilityLabel">
+                <button class="rating-star" type="button" role="radio" aria-checked="false" data-rating-dimension="usabilityRating" data-rating-value="1">★</button><button class="rating-star" type="button" role="radio" aria-checked="false" data-rating-dimension="usabilityRating" data-rating-value="2">★</button><button class="rating-star" type="button" role="radio" aria-checked="false" data-rating-dimension="usabilityRating" data-rating-value="3">★</button><button class="rating-star" type="button" role="radio" aria-checked="false" data-rating-dimension="usabilityRating" data-rating-value="4">★</button><button class="rating-star" type="button" role="radio" aria-checked="false" data-rating-dimension="usabilityRating" data-rating-value="5">★</button>
+              </div></div>
+              <div class="rating-dimension"><span id="feedbackTechnicalLabel">Technical experience</span><div class="rating-stars" role="radiogroup" aria-labelledby="feedbackTechnicalLabel">
+                <button class="rating-star" type="button" role="radio" aria-checked="false" data-rating-dimension="technicalRating" data-rating-value="1">★</button><button class="rating-star" type="button" role="radio" aria-checked="false" data-rating-dimension="technicalRating" data-rating-value="2">★</button><button class="rating-star" type="button" role="radio" aria-checked="false" data-rating-dimension="technicalRating" data-rating-value="3">★</button><button class="rating-star" type="button" role="radio" aria-checked="false" data-rating-dimension="technicalRating" data-rating-value="4">★</button><button class="rating-star" type="button" role="radio" aria-checked="false" data-rating-dimension="technicalRating" data-rating-value="5">★</button>
+              </div></div>
+            </div>
+
+            <label class="feedback-comment-wrap" for="feedbackComment"><span id="feedbackCommentLabel">Comment (optional)</span><textarea id="feedbackComment" maxlength="2000" rows="4"></textarea></label>
+            <div class="feedback-consents">
+              <label class="feedback-check"><input id="feedbackPublicUse" type="checkbox" /><span id="feedbackPublicUseText">CLARITY may use my feedback publicly after internal review.</span></label>
+              <label class="feedback-check hidden" id="feedbackPublicIdentityRow"><input id="feedbackPublicIdentity" type="checkbox" /><span id="feedbackPublicIdentityText">My name may also be shown.</span></label>
+            </div>
+            <div class="feedback-actions"><button class="btn" id="feedbackSkipBtn" type="button">Skip</button><button class="btn primary" id="feedbackSubmitBtn" type="button">Submit feedback</button></div>
+            <div class="feedback-message" id="feedbackMessage" role="status" aria-live="polite"></div>
+          </div>
+          <div class="feedback-result hidden" id="feedbackResult" role="status" aria-live="polite"><span id="feedbackResultMessage">Thank you.</span></div>
+        </article>
+
+        <div class="feedback-footer-actions"><button class="ghost" id="feedbackTechnicalBtn" type="button">Show technical status</button><button class="btn primary hidden" id="feedbackCloseBtn" type="button">Close page</button></div>
+      </div>
+    </section>
+    <button class="btn secondary feedback-return hidden" id="feedbackReturnBtn" type="button">Show processing and feedback</button>
+
     <dialog class="legal-dialog" id="legalDialog" aria-labelledby="legalDialogTitle">
       <div class="legal-dialog-shell">
         <header class="legal-dialog-head"><div><span class="legal-dialog-meta" id="legalDialogMeta">Participant information · Version 1.3</span><h2 id="legalDialogTitle">Participant information</h2></div><button class="legal-dialog-close" id="legalDialogCloseX" type="button" aria-label="Close">×</button></header>
@@ -388,6 +539,6 @@
     <footer class="footer"><span id="footerLeft">CLARITY Decision Intelligence Platform</span><span id="footerRight">Human decision · AI intelligence</span></footer>
   </main>
 </div>
-  <script type="module" src="./clarity-app.js?v=3.3.1-terminal-brand-final"></script>
+  <script type="module" src="./clarity-app.js?v=3.4.0-candidate-experience-feedback"></script>
 </body>
 </html>
