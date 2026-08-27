@@ -2,7 +2,7 @@ import { resolveModuleView } from './modules/router-module.js';
 import { createCvModule } from './modules/cv-module.js';
 import { createVideoPresentationModule } from './modules/video-presentation-module.js';
 import { createAiLiteracyModule } from './modules/ai-literacy-module.js?v=2.16.1-ail-certificate-recovery';
-import { createAssessmentModule } from './modules/assessment-module.js?v=3.2.2-q10-q20-q30-terminal-closeout';
+import { createAssessmentModule } from './modules/assessment-module.js?v=4.0.0-manual-turn-flow';
 import { createInterviewModule } from './modules/interview-module.js?v=2.2.2-brand-mode-exclusivity';
 import { CANDIDATE_LEGAL_VERSION, CANDIDATE_LEGAL_UPDATED_AT, getCandidateLegalBundle } from './modules/candidate-legal-content.js?v=1.3';
 import { buildCandidateExperience } from './modules/candidate-experience-content.js?v=1.0.0';
