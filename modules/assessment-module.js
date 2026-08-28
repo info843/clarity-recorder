@@ -308,7 +308,7 @@ export function createAssessmentModule(ctx) {
   };
   const finalOpenCopy = () => FINAL_OPEN_COPY[participantLanguage()] || FINAL_OPEN_COPY.en;
   const endpoint = (name) => `v2Assessment${name}`;
-  const ASSESSMENT_RECORDER_RELEASE = '4.1.0-avatar-branding-parity';
+  const ASSESSMENT_RECORDER_RELEASE = '4.1.1-video-card-parity';
   const MEDIA_RECORDER_ROUTES = Object.freeze({
     audio: [`/modules/assessment-audio-recorder.html?v=${ASSESSMENT_RECORDER_RELEASE}`, `/liveAssessment.html?v=${ASSESSMENT_RECORDER_RELEASE}`],
     video: [`/modules/assessment-video-recorder.html?v=${ASSESSMENT_RECORDER_RELEASE}`, `/liveAssessment.html?v=${ASSESSMENT_RECORDER_RELEASE}`],
