@@ -1,4 +1,4 @@
-// CLARITY Assessment Universal App module v3.1.0 — Q10 freeze + Q20/Q30 linear final-open scale
+// CLARITY Assessment Universal App module v3.2.1 — Q10 freeze + Q20/Q30 terminal reconciliation
 // Compact state deltas, one closeout dispatch, status-only polling and immediate
 // fallback-report availability while the Unified PDF finishes asynchronously.
 const COPY = Object.freeze({
@@ -308,7 +308,7 @@ export function createAssessmentModule(ctx) {
   };
   const finalOpenCopy = () => FINAL_OPEN_COPY[participantLanguage()] || FINAL_OPEN_COPY.en;
   const endpoint = (name) => `v2Assessment${name}`;
-  const ASSESSMENT_RECORDER_RELEASE = '3.2.0-q20-q30-market-readiness';
+  const ASSESSMENT_RECORDER_RELEASE = '4.1.1-video-card-parity';
   const MEDIA_RECORDER_ROUTES = Object.freeze({
     audio: [`/modules/assessment-audio-recorder.html?v=${ASSESSMENT_RECORDER_RELEASE}`, `/liveAssessment.html?v=${ASSESSMENT_RECORDER_RELEASE}`],
     video: [`/modules/assessment-video-recorder.html?v=${ASSESSMENT_RECORDER_RELEASE}`, `/liveAssessment.html?v=${ASSESSMENT_RECORDER_RELEASE}`],
@@ -352,6 +352,8 @@ export function createAssessmentModule(ctx) {
       token: state.token,
       uid: state.uid,
       linkId: state.uid,
+      token: state.token,
+      branding: state.payload?.branding || runtime.brandingSnapshot || {},
       companyId: resolvedCompanyId(),
       sessionId: String(current?.sessionId || '').trim(),
       mode: assessmentMediaMode(),
@@ -595,6 +597,8 @@ export function createAssessmentModule(ctx) {
       finalOpen: payload.finalOpen === true,
       finalOpenSkipped: payload.finalOpenSkipped === true,
       turnType: payload.finalOpen === true ? 'final_open' : String(payload.turnType || 'main_answer')
+      ,completionMethod: String(payload.completionMethod || 'manual_button'),
+      turnControlEvents: Array.isArray(payload.turnControlEvents) ? payload.turnControlEvents.slice(0,20) : []
     };
     const saved = await withMediaRetry(() => api(endpoint('MediaTurn'), { body }), 3);
     failedMediaTurns.delete(questionIndex);
@@ -619,6 +623,45 @@ export function createAssessmentModule(ctx) {
     const next = data.state || data;
     render(next);
     return next;
+  }
+
+  async function reconcileMissingMediaSlots() {
+    if (!isMediaMode() || product() !== 'assessment' || ![10,20,30].includes(totalQuestionCount())) return null;
+    const saved = await withMediaRetry(() => api(endpoint('MediaTurn'), {
+      body: {
+        token:state.token,
+        uid:state.uid,
+        sessionId:current?.sessionId || '',
+        reconcileMissingSlots:true,
+        recorderCompleted:true,
+        expectedAnswers:Number(current?.expectedAnswers || current?.questionCount || totalQuestionCount()),
+        captureSource:isVideoMode() ? 'video' : 'audio',
+        idempotencyKey:`${state.uid}:assessment-slot-reconciliation-v1`
+      }
+    }), 3);
+    if (saved?.state) render(saved.state);
+    return saved;
+  }
+
+  async function settleFailedTurnsAfterReconciliation() {
+    const pending = [...failedMediaTurns.values()];
+    for (const payload of pending) {
+      try {
+        await persistMediaTurn(payload);
+      } catch (error) {
+        // Main slots are already represented by the server-side
+        // transcription_failed marker. A voluntary final statement still has
+        // to be retried because it is a separate participant decision.
+        if (payload?.finalOpen === true) throw error;
+        failedMediaTurns.delete(Number(payload.questionIndex || 0));
+      }
+    }
+    if (failedFinalOpenDecision) {
+      const decision = failedFinalOpenDecision;
+      await persistFinalOpenDecision(decision.message, decision.skipped, decision.source);
+      failedFinalOpenDecision = null;
+    }
+    if (!failedMediaTurns.size && !failedFinalOpenDecision) mediaFatalError = null;
   }
 
   async function persistMediaResult(payload = {}) {
@@ -697,14 +740,15 @@ export function createAssessmentModule(ctx) {
     status(mediaCopy('audioSaving','videoSaving'), 'warn');
     try {
       await mediaTurnChain;
+      await waitForMediaResult();
+      await reconcileMissingMediaSlots();
+      await settleFailedTurnsAfterReconciliation();
       if (failedMediaTurns.size || failedFinalOpenDecision) {
-        if (failedFinalOpenDecision && mediaFatalError) throw mediaFatalError;
-        const error = new Error(mediaCopy('audioRetry','videoRetry'));
-        error.code = 'ASSESSMENT_MEDIA_TURNS_INCOMPLETE';
+        const error = mediaFatalError || new Error(mediaCopy('audioRetry','videoRetry'));
+        error.code = error.code || 'ASSESSMENT_MEDIA_TURNS_INCOMPLETE';
         error.retryable = true;
         throw error;
       }
-      await waitForMediaResult();
       const expected = isHybridMode() ? hybridSlotContract().media : Number(current?.expectedAnswers || current?.questionCount || 10);
       const refreshed = await readStatus({ includeHistory: false, includeReportLookup: false });
       if (completedSlots(refreshed) < expected) {
