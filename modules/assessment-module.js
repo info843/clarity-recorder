@@ -222,6 +222,14 @@ function mergeHistory(base = [], delta = []) {
 export function createAssessmentModule(ctx) {
   const { $, state, api, show, setStep, getLocale, onFatal } = ctx;
   let busy = false;
+  function ensureActionFeedbackStyles(){
+    if(document.getElementById('clarityActionFeedbackStyles')) return;
+    const style=document.createElement('style');
+    style.id='clarityActionFeedbackStyles';
+    style.textContent=`@keyframes clarityActionSpin{to{transform:rotate(360deg)}} .btn.busy{pointer-events:none;opacity:.78}.btn.busy::after{content:'';display:inline-block;width:.78em;height:.78em;margin-left:.55em;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;vertical-align:-.08em;animation:clarityActionSpin .72s linear infinite}`;
+    document.head.appendChild(style);
+  }
+
   let polling = false;
   let pollTimer = 0;
   let current = null;
@@ -352,7 +360,6 @@ export function createAssessmentModule(ctx) {
       token: state.token,
       uid: state.uid,
       linkId: state.uid,
-      token: state.token,
       branding: state.payload?.branding || runtime.brandingSnapshot || {},
       companyId: resolvedCompanyId(),
       sessionId: String(current?.sessionId || '').trim(),
@@ -961,6 +968,7 @@ export function createAssessmentModule(ctx) {
   }
 
   function setBusy(value, button = null) {
+    ensureActionFeedbackStyles();
     busy = value;
     syncButtonStates();
     if (button) button.classList.toggle('busy', value);
