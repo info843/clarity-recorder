@@ -1,4 +1,4 @@
-const VERSION = 'video-presentation-module-v2.11.1-submit-timeout-recovery';
+const VERSION = 'video-presentation-module-v2.12.0-secure-media-recovery';
 const MUX_UPLOAD_URL = `${location.origin}/api/mux-upload`;
 const MUX_ASSET_URL = `${location.origin}/api/mux-asset`;
 const SUPPORTED = ['en','de','es','fr','it','nl','pt','pl','tr','ar'];
@@ -37,7 +37,7 @@ function fmt(sec){sec=Math.max(0,Math.round(sec));return`${String(Math.floor(sec
 
 export function createVideoPresentationModule(context){
   const { $, state, api, show, setStep, onFatal } = context;
-  let lastStatus=null,stream=null,recorder=null,chunks=[],blob=null,previewUrl='',startTs=0,recordedDurationSec=0,timerId=null,audioCtx=null,analyser=null,micBuf=null,submitting=false,lastPutStatus=null,wired=false,polling=false;
+  let lastStatus=null,stream=null,recorder=null,chunks=[],blob=null,previewUrl='',startTs=0,recordedDurationSec=0,timerId=null,audioCtx=null,analyser=null,micBuf=null,submitting=false,lastPutStatus=null,wired=false,polling=false,muxUploadTicket='';
   const sessionId=makeSessionId(state.uid);
   const language=()=>norm(lastStatus?.vp?.flowLang||state.payload?.runtime?.participantLang||'en');
   const tr=(key,vars={})=>{let value=(TXT[language()]||TXT.en)[key]||TXT.en[key]||key;Object.entries(vars).forEach(([name,replacement])=>{value=String(value).replaceAll(`{${name}}`,replacement).replaceAll(`{{${name}}}`,replacement)});return value};
@@ -104,11 +104,12 @@ export function createVideoPresentationModule(context){
     }catch(error){setStatus(error?.message||String(error),'err');$('vpRecordBtn').disabled=false}finally{setBusy('vpRecordBtn',false);if(recorder?.state==='recording')$('vpRecordBtn').disabled=true}
   }
   function stopRecording(){try{clearInterval(timerId)}catch(_){}if(recorder&&recorder.state!=='inactive')recorder.stop()}
-  function retake(){if(!stream){startCamera();return}blob=null;chunks=[];recordedDurationSec=0;if(previewUrl)URL.revokeObjectURL(previewUrl);previewUrl='';const video=$('vpVideo');video.removeAttribute('src');video.srcObject=stream;video.controls=false;video.muted=true;video.play().catch(()=>null);$('vpRecordBtn').disabled=false;$('vpStopBtn').disabled=true;$('vpRetakeBtn').disabled=true;$('vpSubmitBtn').disabled=true;updateTimer(0);setStatus(tr('cameraReady'),'ok')}
+  function retake(){if(!stream){startCamera();return}muxUploadTicket='';blob=null;chunks=[];recordedDurationSec=0;if(previewUrl)URL.revokeObjectURL(previewUrl);previewUrl='';const video=$('vpVideo');video.removeAttribute('src');video.srcObject=stream;video.controls=false;video.muted=true;video.play().catch(()=>null);$('vpRecordBtn').disabled=false;$('vpStopBtn').disabled=true;$('vpRetakeBtn').disabled=true;$('vpSubmitBtn').disabled=true;updateTimer(0);setStatus(tr('cameraReady'),'ok')}
 
-  async function createMuxUpload(){const companyId=state.payload?.branding?.companyId||'';const response=await fetch(MUX_UPLOAD_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uid:state.uid,linkId:state.uid,companyId,sessionId,mode:'video',productType:'videoPresentation',platformVersion:'v2',experienceVersion:'unified_app_vp_v1'})});const data=await response.json().catch(()=>({ok:false,error:'invalid_json'}));if(!response.ok||!data?.ok)throw new Error(data?.message||data?.error||`mux_create_failed_${response.status}`);if(!data.uploadId||!data.uploadUrl)throw new Error('mux_create_missing_fields');return data}
+  function secureMediaError(data,status,fallback){const error=new Error(data?.message||data?.error||fallback||`secure_media_failed_${status}`);error.code=String(data?.error||fallback||'SECURE_MEDIA_ERROR');error.status=Number(status)||0;error.traceId=String(data?.traceId||'');error.retryable=data?.retryable===true;return error}
+  async function createMuxUpload(){if(!state.token)throw secureMediaError({error:'MEDIA_AUTH_REQUIRED',message:'Secure media authorization is missing.'},401,'MEDIA_AUTH_REQUIRED');const response=await fetch(MUX_UPLOAD_URL,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${state.token}`},body:JSON.stringify({mode:'video'})});const data=await response.json().catch(()=>({ok:false,error:'invalid_json'}));if(!response.ok||!data?.ok)throw secureMediaError(data,response.status,`mux_create_failed_${response.status}`);if(!data.uploadId||!data.uploadUrl||!data.uploadTicket)throw secureMediaError({error:'MUX_CREATE_MISSING_FIELDS',message:'Secure media upload could not be prepared.'},502,'MUX_CREATE_MISSING_FIELDS');muxUploadTicket=String(data.uploadTicket||'');return data}
   async function putToMux(uploadUrl,fileBlob){const response=await fetch(uploadUrl,{method:'PUT',body:fileBlob,headers:{'Content-Type':fileBlob.type||'video/webm'}});lastPutStatus=response.status;if(!response.ok)throw new Error(`mux_put_failed_${response.status}: ${(await response.text().catch(()=>'' )).slice(0,180)}`)}
-  async function fetchMuxAsset(uploadId){const response=await fetch(`${MUX_ASSET_URL}?uploadId=${encodeURIComponent(uploadId)}`,{cache:'no-store'});const data=await response.json().catch(()=>({ok:false,error:'invalid_json'}));if(!response.ok||!data?.ok)throw new Error(data?.message||data?.error||`mux_asset_failed_${response.status}`);return data}
+  async function fetchMuxAsset(uploadId){if(!state.token||!muxUploadTicket)throw secureMediaError({error:'MEDIA_AUTH_REQUIRED',message:'Secure media authorization is missing.'},401,'MEDIA_AUTH_REQUIRED');const response=await fetch(`${MUX_ASSET_URL}?uploadId=${encodeURIComponent(uploadId)}`,{cache:'no-store',headers:{'Authorization':`Bearer ${state.token}`,'X-Clarity-Upload-Ticket':muxUploadTicket}});const data=await response.json().catch(()=>({ok:false,error:'invalid_json'}));if(!response.ok||!data?.ok)throw secureMediaError(data,response.status,`mux_asset_failed_${response.status}`);return data}
   async function pollMuxAsset(uploadId,maxMs=180000){const started=Date.now();let last=null;while(Date.now()-started<maxMs){await sleep(3000);last=await fetchMuxAsset(uploadId);if(last.assetStatus==='ready'&&last.playbackId)return last;if(last.assetStatus==='errored')return last;setProcessing(Math.min(78,52+(Date.now()-started)/maxMs*24),tr('processing'))}return last}
 
   function isTransientTransportError(error){
@@ -122,7 +123,7 @@ export function createVideoPresentationModule(context){
 
   async function submit(){
     if(submitting||!blob)return;
-    submitting=true;updateSubmitState();stopTracks();show('vpProcessingView');stage('upload','active',language()==='de'?'Wird hochgeladen':'Uploading');
+    submitting=true;muxUploadTicket='';updateSubmitState();stopTracks();show('vpProcessingView');stage('upload','active',language()==='de'?'Wird hochgeladen':'Uploading');
     let submitDispatched=false;
     try{
       setProcessing(12,tr('uploading'));
