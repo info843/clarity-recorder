@@ -4,6 +4,7 @@ const {
   enforceRateLimit, publicError, requireUniversalClaims, requireUploadTicket,
   safeString, setSecurityHeaders, traceId
 } = require('./_clarity-security');
+const VERSION = '1.2.0-signed-playback-status';
 
 function getMuxAuthHeader() {
   const tokenId = process.env.MUX_TOKEN_ID;
@@ -48,7 +49,7 @@ function assertMuxOwnership(value, claims) {
 
 function authorizedPlaybackId(asset) {
   const ids = Array.isArray(asset?.playback_ids) ? asset.playback_ids : [];
-  const expectedPolicy = process.env.CLARITY_MUX_ENFORCE_SIGNED_PLAYBACK === '1' ? 'signed' : 'public';
+  const expectedPolicy = process.env.CLARITY_MUX_ENFORCE_SIGNED_PLAYBACK === '0' ? 'public' : 'signed';
   const selected = ids.find((item) => item?.policy === expectedPolicy);
   return { id:selected?.id || null, policy:expectedPolicy };
 }
@@ -71,7 +72,7 @@ module.exports = async function handler(req, res) {
     if (!assetId) {
       return res.status(200).json({
         ok:true, provider:'mux', uploadId, uploadStatus:upload.status || 'waiting',
-        assetStatus:'waiting', assetId:null, playbackId:null, durationSec:null, traceId:trace
+        assetStatus:'waiting', assetId:null, playbackId:null, durationSec:null, version:VERSION, traceId:trace
       });
     }
     const assetJson = await muxGet(`/video/v1/assets/${encodeURIComponent(assetId)}`);
@@ -87,7 +88,7 @@ module.exports = async function handler(req, res) {
       ok:true, provider:'mux', uploadId, uploadStatus:upload.status || '', assetId,
       assetStatus, playbackId, playbackPolicy:playback.policy,
       durationSec:Number.isFinite(Number(asset.duration)) ? Number(asset.duration) : null,
-      staticRenditionsStatus:safeString(asset?.static_renditions?.status, 80), traceId:trace
+      staticRenditionsStatus:safeString(asset?.static_renditions?.status, 80), version:VERSION, traceId:trace
     });
   } catch (error) {
     console.error('[CLARITY MEDIA SECURITY] mux status rejected', {
