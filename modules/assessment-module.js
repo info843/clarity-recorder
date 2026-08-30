@@ -1,4 +1,4 @@
-// CLARITY Assessment Universal App module v3.2.1 — Q10 freeze + Q20/Q30 terminal reconciliation
+// CLARITY Assessment Universal App module v3.3.0 — retained media upload retry recovery
 // Compact state deltas, one closeout dispatch, status-only polling and immediate
 // fallback-report availability while the Unified PDF finishes asynchronously.
 const COPY = Object.freeze({
@@ -316,7 +316,7 @@ export function createAssessmentModule(ctx) {
   };
   const finalOpenCopy = () => FINAL_OPEN_COPY[participantLanguage()] || FINAL_OPEN_COPY.en;
   const endpoint = (name) => `v2Assessment${name}`;
-  const ASSESSMENT_RECORDER_RELEASE = '4.1.1-video-card-parity';
+  const ASSESSMENT_RECORDER_RELEASE = '4.1.3-media-retry-recovery';
   const MEDIA_RECORDER_ROUTES = Object.freeze({
     audio: [`/modules/assessment-audio-recorder.html?v=${ASSESSMENT_RECORDER_RELEASE}`, `/liveAssessment.html?v=${ASSESSMENT_RECORDER_RELEASE}`],
     video: [`/modules/assessment-video-recorder.html?v=${ASSESSMENT_RECORDER_RELEASE}`, `/liveAssessment.html?v=${ASSESSMENT_RECORDER_RELEASE}`],
@@ -781,6 +781,7 @@ export function createAssessmentModule(ctx) {
     if (!isMediaMode()) return false;
     const pending = [...failedMediaTurns.values()];
     if (!pending.length && !failedFinalOpenDecision && !mediaFatalError && !lastMediaResultPayload) return false;
+    const uploadRetryRequired = mediaFatalError?.uploadRetry === true || String(mediaFatalError?.code || '') === 'ASSESSMENT_MEDIA_UPLOAD_FAILED';
     mediaFatalError = null;
     status(mediaCopy('audioSaving','videoSaving'), 'warn');
     if (failedFinalOpenDecision) {
@@ -797,6 +798,18 @@ export function createAssessmentModule(ctx) {
       mediaResultResolve?.(saved);
       mediaResultPromise = Promise.resolve(saved);
       lastMediaResultPayload = null;
+    }
+    if (uploadRetryRequired) {
+      const deferred = createDeferred();
+      mediaResultDeferred = deferred;
+      mediaResultPromise = deferred.promise;
+      mediaResultResolve = deferred.resolve;
+      mediaResultReject = deferred.reject;
+      mediaResultPromise.catch(() => null);
+      mediaFinalizeStarted = false;
+      status(mediaCopy('audioSaving','videoSaving'), 'warn');
+      postToMedia('clarity.live.retry_upload', { sessionId:current?.sessionId || '' });
+      return true;
     }
     mediaFinalizeStarted = false;
     await finalizeMediaAssessment();
@@ -862,6 +875,23 @@ export function createAssessmentModule(ctx) {
       return;
     }
 
+    if (type === 'recorder:upload_error') {
+      const error = new Error(String(data.message || mediaCopy('audioRetry','videoRetry')));
+      error.code = String(data.code || 'ASSESSMENT_MEDIA_UPLOAD_FAILED');
+      error.uploadRetry = data.retryable !== false && error.code !== 'ASSESSMENT_MEDIA_RETRY_BLOB_MISSING';
+      error.retryable = error.uploadRetry;
+      error.traceId = String(data.traceId || '');
+      mediaFatalError = error;
+      mediaResultReject?.(error);
+      mediaResultPromise?.catch?.(() => null);
+      mediaFinalizeStarted = false;
+      closeoutStarted = false;
+      $('assessmentProcessingPanel')?.classList.remove('hidden');
+      $('assessmentRetryBtn')?.classList.toggle('hidden', !error.retryable);
+      status(error.message, 'err');
+      return;
+    }
+
     if (type === 'recorder:finished') {
       lastMediaResultPayload = data;
       const operation = persistMediaResult(data)
@@ -869,6 +899,8 @@ export function createAssessmentModule(ctx) {
           if (saved?.state) render(saved.state);
           mediaResultResolve?.(saved);
           lastMediaResultPayload = null;
+          mediaFatalError = null;
+          if (mediaEnded) window.setTimeout(() => finalizeMediaAssessment(), 80);
           return saved;
         })
         .catch((error) => {
