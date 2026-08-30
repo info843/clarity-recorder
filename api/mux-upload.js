@@ -6,6 +6,7 @@ const {
 } = require('./_clarity-security');
 
 const ALLOWED_MODES = new Set(['audio', 'video', 'mix']);
+const VERSION = '1.2.0-dynamic-origin-signed-playback';
 
 async function readJson(req) {
   if (req.body && typeof req.body === 'object') return req.body;
@@ -29,29 +30,32 @@ function buildPassthrough({ claims, mode }) {
     companyId: claims.companyId,
     runtimeAccessId: claims.runtimeAccessId,
     unifiedLinkId: claims.unifiedLinkId,
+    productKey: claims.productKey,
     sessionId: claims.runtimeAccessId,
     mode,
     source: 'clarity-universal-app-v2'
   });
 }
 
-async function createMuxDirectUpload({ claims, mode }) {
+async function createMuxDirectUpload({ claims, mode, corsOrigin }) {
   const tokenId = process.env.MUX_TOKEN_ID;
   const tokenSecret = process.env.MUX_TOKEN_SECRET;
   if (!tokenId || !tokenSecret) {
     throw Object.assign(new Error('MUX_ENV_MISSING'), { code:'MUX_ENV_MISSING', status:503 });
   }
   const auth = Buffer.from(`${tokenId}:${tokenSecret}`).toString('base64');
-  const corsOrigin = safeString(process.env.MUX_UPLOAD_CORS_ORIGIN || 'https://interview.clarity-nvl.com', 500);
-  const playbackPolicy = process.env.CLARITY_MUX_ENFORCE_SIGNED_PLAYBACK === '1' ? 'signed' : 'public';
+  const uploadOrigin = safeString(corsOrigin || process.env.MUX_UPLOAD_CORS_ORIGIN || 'https://interview.clarity-nvl.com', 500).replace(/\/+$/, '');
+  // Production is secure by default. Public playback remains available only as
+  // an explicit, temporary rollback setting.
+  const playbackPolicy = process.env.CLARITY_MUX_ENFORCE_SIGNED_PLAYBACK === '0' ? 'public' : 'signed';
   const response = await fetch('https://api.mux.com/video/v1/uploads', {
     method: 'POST',
     headers: { Authorization:`Basic ${auth}`, 'Content-Type':'application/json' },
     body: JSON.stringify({
-      cors_origin: corsOrigin,
+      cors_origin: uploadOrigin,
       timeout: 3600,
       new_asset_settings: {
-        playback_policy: [playbackPolicy],
+        playback_policies: [playbackPolicy],
         passthrough: buildPassthrough({ claims, mode }),
         video_quality: 'basic',
         static_renditions: [{ resolution:'highest' }, { resolution:'audio-only' }]
@@ -86,12 +90,13 @@ module.exports = async function handler(req, res) {
       throw Object.assign(new Error('MODE_INVALID'), { code:'MODE_INVALID', status:400 });
     }
     enforceRateLimit(`mux-upload:${claims.runtimeAccessId}`, 6, 15 * 60 * 1000);
-    const mux = await createMuxDirectUpload({ claims, mode });
+    const requestOrigin = safeString(req?.headers?.origin || req?.headers?.Origin, 500).replace(/\/+$/, '');
+    const mux = await createMuxDirectUpload({ claims, mode, corsOrigin:requestOrigin });
     const uploadTicket = signUploadTicket({ ...claims, uploadId:mux.uploadId, mode });
     return res.status(200).json({
       ok:true, provider:'mux', uploadId:mux.uploadId, uploadUrl:mux.uploadUrl,
       uploadTicket, uploadStatus:mux.status, timeout:mux.timeout,
-      playbackPolicy:mux.playbackPolicy, traceId:trace
+      playbackPolicy:mux.playbackPolicy, version:VERSION, traceId:trace
     });
   } catch (error) {
     console.error('[CLARITY MEDIA SECURITY] mux upload rejected', {
