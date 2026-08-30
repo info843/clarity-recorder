@@ -140,7 +140,7 @@ function requireUploadTicket(req, claims, uploadId) {
 
 function allowedOrigins() {
   return (process.env.MUX_CORS_ORIGIN ||
-    'https://interview.clarity-nvl.com,https://www.clarity-nvl.com')
+    'https://interview.clarity-nvl.com,https://www.clarity-nvl.com,https://presentation.clarity-nvl.com,https://clarity-recorder.vercel.app')
     .split(',')
     .map((value) => value.trim().replace(/\/+$/, ''))
     .filter(Boolean);
