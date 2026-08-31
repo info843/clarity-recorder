@@ -220,8 +220,9 @@ function mergeHistory(base = [], delta = []) {
 }
 
 export function createAssessmentModule(ctx) {
-  const { $, state, api, show, setStep, getLocale, onFatal } = ctx;
+  const { $, state, api, show, setStep, getLocale, onFatal, refreshToken } = ctx;
   let busy = false;
+  let mediaTokenRefreshPromise = null;
   function ensureActionFeedbackStyles(){
     if(document.getElementById('clarityActionFeedbackStyles')) return;
     const style=document.createElement('style');
@@ -316,7 +317,7 @@ export function createAssessmentModule(ctx) {
   };
   const finalOpenCopy = () => FINAL_OPEN_COPY[participantLanguage()] || FINAL_OPEN_COPY.en;
   const endpoint = (name) => `v2Assessment${name}`;
-  const ASSESSMENT_RECORDER_RELEASE = '4.1.3-media-retry-recovery';
+  const ASSESSMENT_RECORDER_RELEASE = '4.2.0-media-auth-refresh';
   const MEDIA_RECORDER_ROUTES = Object.freeze({
     audio: [`/modules/assessment-audio-recorder.html?v=${ASSESSMENT_RECORDER_RELEASE}`, `/liveAssessment.html?v=${ASSESSMENT_RECORDER_RELEASE}`],
     video: [`/modules/assessment-video-recorder.html?v=${ASSESSMENT_RECORDER_RELEASE}`, `/liveAssessment.html?v=${ASSESSMENT_RECORDER_RELEASE}`],
@@ -872,6 +873,18 @@ export function createAssessmentModule(ctx) {
         syncButtonStates();
       }
       status(error.message, 'err');
+      return;
+    }
+
+    if (type === 'recorder:token_refresh_requested') {
+      const requestId=String(data.requestId||'');
+      if(!requestId)return;
+      if(typeof refreshToken!=='function'){
+        postToMedia('clarity.live.token_refreshed',{requestId,ok:false,error:'ASSESSMENT_MEDIA_TOKEN_REFRESH_UNAVAILABLE'});
+        return;
+      }
+      if(!mediaTokenRefreshPromise)mediaTokenRefreshPromise=Promise.resolve(refreshToken()).finally(()=>{mediaTokenRefreshPromise=null});
+      mediaTokenRefreshPromise.then(token=>postToMedia('clarity.live.token_refreshed',{requestId,ok:Boolean(token),token:String(token||''),error:token?'':'ASSESSMENT_MEDIA_TOKEN_REFRESH_FAILED'})).catch(error=>postToMedia('clarity.live.token_refreshed',{requestId,ok:false,error:String(error?.code||'ASSESSMENT_MEDIA_TOKEN_REFRESH_FAILED')}));
       return;
     }
 
