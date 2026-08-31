@@ -50,7 +50,7 @@ html,body{width:100%;max-width:100%;overflow-x:hidden;overflow-y:hidden}
 <section class="card hidden state" id="errorView"><div class="error" style="font-size:40px">!</div><h2 id="errorTitle">Video Interview interrupted</h2><p id="errorText"></p><button class="btn secondary" id="retryBtn">Try again</button></section></main><audio autoplay="" id="remoteAudio"></audio>
 <script>
 const CHANNEL = 'CLARITY_INTERVIEW_V2';
-const CLIENT_VERSION = '2.1.0-q10-q20-q30-market-readiness';
+const CLIENT_VERSION = '2.2.0-media-auth-refresh';
 let API_BASE = '';
 function resolveApplicationApiBase(value = '') {
     const explicit = String(value || '').trim().replace(/\/+$/, '');
@@ -94,7 +94,7 @@ const VOICE_SEMANTIC_STALL_MS = 10000;
 const RECORDING_FLUSH_WAIT_MS = 240;
 const MIN_RECORDING_BYTES = 1024;
 const UPLOAD_CHUNK_BYTES = 240 * 1024;
-const ACTION_TIMEOUT_MS = Object.freeze({ preflight: 18000, status: 25000, audioToken: 24000, start: 135000, message: 65000, finish: 90000, retry: 90000, audioChunk: 90000, audioFinalize: 140000, videoUploadStatus: 30000 });
+const ACTION_TIMEOUT_MS = Object.freeze({ refreshToken: 30000, preflight: 18000, status: 25000, audioToken: 24000, start: 135000, message: 65000, finish: 90000, retry: 90000, audioChunk: 90000, audioFinalize: 140000, videoUploadStatus: 30000 });
 const pending = new Map();
 let seq = 0;
 let context = null;
@@ -1463,15 +1463,32 @@ ${String(context?.locale || 'en').startsWith('de') ? `Vielen Dank. Sie haben all
 async function readJsonSafe(response) { const contentType = response.headers.get('content-type') || ''; if (contentType.includes('json'))
     return response.json(); const raw = await response.text().catch(() => ''); throw makeStageError('INTERVIEW_VIDEO_MUX_NON_JSON', `Mux endpoint returned ${response.status}: ${raw.slice(0, 300)}`, { status: response.status }); }
 function runtimeCompanyId() { return String(context?.runtime?.companyId || context?.branding?.companyId || '').trim(); }
+let mediaTokenRefreshPromise = null;
+async function refreshMediaToken() {
+    if (mediaTokenRefreshPromise) return mediaTokenRefreshPromise;
+    mediaTokenRefreshPromise = request('refreshToken').then(result => {
+        const token = String(result?.token || '');
+        if (!token) throw makeStageError('INTERVIEW_MEDIA_TOKEN_REFRESH_FAILED', 'The secure media session could not be renewed.');
+        context = { ...(context || {}), token };
+        return token;
+    }).finally(() => { mediaTokenRefreshPromise = null; });
+    return mediaTokenRefreshPromise;
+}
+async function fetchWithMediaAuth(url, options = {}) {
+    const run = () => fetch(url, { ...options, headers: { ...(options.headers || {}), 'Authorization': `Bearer ${context?.token || ''}` } });
+    let response = await run();
+    if (response.status === 401) { await refreshMediaToken(); response = await run(); }
+    return response;
+}
 async function createMuxUpload() { const companyId = runtimeCompanyId(); if (!companyId)
-    throw makeStageError('INTERVIEW_VIDEO_COMPANY_CONTEXT_MISSING', 'Company context is required for the Mux upload.'); if (!context?.token) throw makeStageError('INTERVIEW_VIDEO_RUNTIME_TOKEN_MISSING', 'The secure runtime token is missing.'); const response = await fetch(muxUploadEndpoint(), { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${context.token}` }, body: JSON.stringify({ mode: 'video' }) }); const data = await readJsonSafe(response); if (!response.ok || !data?.ok)
+    throw makeStageError('INTERVIEW_VIDEO_COMPANY_CONTEXT_MISSING', 'Company context is required for the Mux upload.'); if (!context?.token) throw makeStageError('INTERVIEW_VIDEO_RUNTIME_TOKEN_MISSING', 'The secure runtime token is missing.'); const response = await fetchWithMediaAuth(muxUploadEndpoint(), { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${context.token}` }, body: JSON.stringify({ mode: 'video' }) }); const data = await readJsonSafe(response); if (!response.ok || !data?.ok)
     throw makeStageError('INTERVIEW_VIDEO_MUX_CREATE_FAILED', data?.message || data?.error || `Mux upload creation failed (${response.status}).`, { response: data }); const resolvedUploadId = String(data.uploadId || data.id || ''); const resolvedUploadUrl = String(data.uploadUrl || data.url || ''); if (!resolvedUploadId || !resolvedUploadUrl || !data.uploadTicket)
     throw makeStageError('INTERVIEW_VIDEO_MUX_CREATE_INVALID', 'Mux upload response is incomplete.', { response: data }); return { ...data, uploadId: resolvedUploadId, uploadUrl: resolvedUploadUrl }; }
 async function putBlobToMux(uploadUrl, blob) { setPill('processingUploadPill', `${L().uploading} Mux`, 'warn'); const response = await fetch(uploadUrl, { method: 'PUT', headers: { 'Content-Type': blob.type || 'video/webm' }, body: blob }); if (!response.ok) {
     const raw = await response.text().catch(() => '');
     throw makeStageError('INTERVIEW_VIDEO_MUX_PUT_FAILED', `Mux upload failed (${response.status}).`, { status: response.status, response: raw.slice(0, 500) });
 } return response.status; }
-async function fetchMuxAsset(uploadId) { if (!context?.token || !muxUploadTicket) throw makeStageError('INTERVIEW_VIDEO_MEDIA_AUTH_MISSING', 'Secure media authorization is missing.'); const response = await fetch(muxAssetEndpoint(uploadId), { headers: { 'Authorization': `Bearer ${context.token}`, 'X-Clarity-Upload-Ticket': muxUploadTicket } }); const data = await readJsonSafe(response); if (!response.ok || !data?.ok)
+async function fetchMuxAsset(uploadId) { if (!context?.token || !muxUploadTicket) throw makeStageError('INTERVIEW_VIDEO_MEDIA_AUTH_MISSING', 'Secure media authorization is missing.'); const response = await fetchWithMediaAuth(muxAssetEndpoint(uploadId), { headers: { 'Authorization': `Bearer ${context.token}`, 'X-Clarity-Upload-Ticket': muxUploadTicket } }); const data = await readJsonSafe(response); if (!response.ok || !data?.ok)
     throw makeStageError('INTERVIEW_VIDEO_MUX_STATUS_FAILED', data?.message || data?.error || `Mux status failed (${response.status}).`, { response: data }); return data; }
 async function pollMuxAsset(uploadId, maxMs = 140000) { const started = Date.now(); let last = null; while (Date.now() - started < maxMs) {
     last = await fetchMuxAsset(uploadId);
@@ -1483,7 +1500,7 @@ async function pollMuxAsset(uploadId, maxMs = 140000) { const started = Date.now
     await sleep(2500);
 } throw makeStageError('INTERVIEW_VIDEO_MUX_PROCESSING_TIMEOUT', 'Mux is still processing the candidate video. Retry processing in a moment.', { uploadId, maxMs, last }); }
 async function uploadRecordingDirectToMux(blob) { const created = await createMuxUpload(); muxUploadTicket = String(created.uploadTicket || ''); const putStatus = await putBlobToMux(created.uploadUrl, blob); uploadId = String(created.uploadId || ''); let mux = await fetchMuxAsset(uploadId); if (!(mux?.assetStatus === 'ready' && mux?.playbackId))
-    mux = await pollMuxAsset(uploadId); const durationSec = Math.max(0, Math.round((Date.now() - recordingStartedAt) / 1000)); const result = await request('videoFinalize', { sessionId: current.sessionId, uploadId, mimeType: blob.type || 'video/webm', sizeBytes: blob.size, durationSec, fileName: `CLARITY_${current.sessionId}_full_interview_video.webm`, recordingContract: 'full_interview_mixed_ai_candidate_v1', questionAudioIncluded: true, aiVoiceIncluded: true, candidateOnly: false, mux: { provider: 'mux', uploadId, putStatus, assetStatus: mux?.assetStatus || '', assetId: mux?.assetId || '', playbackId: mux?.playbackId || '', playbackUrl: mux?.playbackUrl || '', downloadUrl: mux?.downloadUrl || '', audioOnlyUrl: mux?.audioOnlyUrl || '', staticRenditionsStatus: mux?.staticRenditionsStatus || '', error: mux?.error || '' } }); return result?.ready ? result : waitForVideoReady(result); }
+    mux = await pollMuxAsset(uploadId); const durationSec = Math.max(0, Math.round((Date.now() - recordingStartedAt) / 1000)); const result = await request('videoFinalize', { sessionId: current.sessionId, uploadId, mimeType: blob.type || 'video/webm', sizeBytes: blob.size, durationSec, fileName: `CLARITY_${current.sessionId}_full_interview_video.webm`, recordingContract: 'full_interview_mixed_ai_candidate_v1', questionAudioIncluded: true, aiVoiceIncluded: true, candidateOnly: false, mux: { provider: 'mux', uploadId, putStatus, assetStatus: mux?.assetStatus || '', assetId: mux?.assetId || '', playbackId: mux?.playbackId || '', playbackUrl: mux?.playbackUrl || '', downloadUrl: mux?.downloadUrl || '', audioOnlyUrl: mux?.audioOnlyUrl || '', staticRenditionsStatus: mux?.staticRenditionsStatus || '', playbackPolicy: mux?.playbackPolicy || '', securityMode: mux?.securityMode || '', error: mux?.error || '' } }); return result?.ready ? result : waitForVideoReady(result); }
 async function blobSliceBase64(blob) { const buffer = await blob.arrayBuffer(); let binary = ''; const bytes = new Uint8Array(buffer); const step = 0x8000; for (let i = 0; i < bytes.length; i += step)
     binary += String.fromCharCode(...bytes.subarray(i, Math.min(bytes.length, i + step))); return btoa(binary); }
 function serverVideoUploadId() { return String(uploadId || current?.video?.uploadId || current?.videoUploadId || '').trim(); }
