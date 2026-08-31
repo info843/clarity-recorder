@@ -670,7 +670,10 @@ function personalizeAssessmentQuestion(q, position=''){
       const connected = connectTtsAudioElementToMixedRecorder(audio, reason);
       if (!connected) postTtsStatus('capture_unavailable_playback_only', { reason });
       audio.play().catch((e) => finish(`play_blocked:${errMsg(e)}`));
-      timer(() => finish('fallback_timer'), Math.max(7000, (blob.size || 0) / 28 + 6500));
+      // A byte-size estimate can expire before compressed speech has ended and
+      // cut off the introduction. onended remains authoritative; this watchdog
+      // only releases a genuinely stuck player.
+      timer(() => finish('watchdog_timeout'), 120000);
     });
   }
   async function fetchPremiumTts(text, reason='question'){
