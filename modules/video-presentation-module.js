@@ -36,7 +36,7 @@ function makeSessionId(uid){const key=`clarity-vp-session:${uid}`;try{const exis
 function fmt(sec){sec=Math.max(0,Math.round(sec));return`${String(Math.floor(sec/60)).padStart(2,'0')}:${String(sec%60).padStart(2,'0')}`}
 
 export function createVideoPresentationModule(context){
-  const { $, state, api, show, setStep, onFatal } = context;
+  const { $, state, api, show, setStep, onFatal, refreshToken } = context;
   let lastStatus=null,stream=null,recorder=null,chunks=[],blob=null,previewUrl='',startTs=0,recordedDurationSec=0,timerId=null,audioCtx=null,analyser=null,micBuf=null,submitting=false,lastPutStatus=null,wired=false,polling=false,muxUploadTicket='';
   const sessionId=makeSessionId(state.uid);
   const language=()=>norm(lastStatus?.vp?.flowLang||state.payload?.runtime?.participantLang||'en');
@@ -107,9 +107,11 @@ export function createVideoPresentationModule(context){
   function retake(){if(!stream){startCamera();return}muxUploadTicket='';blob=null;chunks=[];recordedDurationSec=0;if(previewUrl)URL.revokeObjectURL(previewUrl);previewUrl='';const video=$('vpVideo');video.removeAttribute('src');video.srcObject=stream;video.controls=false;video.muted=true;video.play().catch(()=>null);$('vpRecordBtn').disabled=false;$('vpStopBtn').disabled=true;$('vpRetakeBtn').disabled=true;$('vpSubmitBtn').disabled=true;updateTimer(0);setStatus(tr('cameraReady'),'ok')}
 
   function secureMediaError(data,status,fallback){const error=new Error(data?.message||data?.error||fallback||`secure_media_failed_${status}`);error.code=String(data?.error||fallback||'SECURE_MEDIA_ERROR');error.status=Number(status)||0;error.traceId=String(data?.traceId||'');error.retryable=data?.retryable===true;return error}
-  async function createMuxUpload(){if(!state.token)throw secureMediaError({error:'MEDIA_AUTH_REQUIRED',message:'Secure media authorization is missing.'},401,'MEDIA_AUTH_REQUIRED');const response=await fetch(MUX_UPLOAD_URL,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${state.token}`},body:JSON.stringify({mode:'video'})});const data=await response.json().catch(()=>({ok:false,error:'invalid_json'}));if(!response.ok||!data?.ok)throw secureMediaError(data,response.status,`mux_create_failed_${response.status}`);if(!data.uploadId||!data.uploadUrl||!data.uploadTicket)throw secureMediaError({error:'MUX_CREATE_MISSING_FIELDS',message:'Secure media upload could not be prepared.'},502,'MUX_CREATE_MISSING_FIELDS');muxUploadTicket=String(data.uploadTicket||'');return data}
+  let mediaTokenRefreshPromise=null;
+  async function fetchWithMediaAuth(url,options={}){const run=()=>fetch(url,{...options,headers:{...(options.headers||{}),'Authorization':`Bearer ${state.token||''}`}});let response=await run();if(response.status===401){if(typeof refreshToken!=='function')return response;if(!mediaTokenRefreshPromise)mediaTokenRefreshPromise=Promise.resolve(refreshToken()).finally(()=>{mediaTokenRefreshPromise=null});await mediaTokenRefreshPromise;response=await run()}return response}
+  async function createMuxUpload(){if(!state.token)throw secureMediaError({error:'MEDIA_AUTH_REQUIRED',message:'Secure media authorization is missing.'},401,'MEDIA_AUTH_REQUIRED');const response=await fetchWithMediaAuth(MUX_UPLOAD_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'video'})});const data=await response.json().catch(()=>({ok:false,error:'invalid_json'}));if(!response.ok||!data?.ok)throw secureMediaError(data,response.status,`mux_create_failed_${response.status}`);if(!data.uploadId||!data.uploadUrl||!data.uploadTicket)throw secureMediaError({error:'MUX_CREATE_MISSING_FIELDS',message:'Secure media upload could not be prepared.'},502,'MUX_CREATE_MISSING_FIELDS');muxUploadTicket=String(data.uploadTicket||'');return data}
   async function putToMux(uploadUrl,fileBlob){const response=await fetch(uploadUrl,{method:'PUT',body:fileBlob,headers:{'Content-Type':fileBlob.type||'video/webm'}});lastPutStatus=response.status;if(!response.ok)throw new Error(`mux_put_failed_${response.status}: ${(await response.text().catch(()=>'' )).slice(0,180)}`)}
-  async function fetchMuxAsset(uploadId){if(!state.token||!muxUploadTicket)throw secureMediaError({error:'MEDIA_AUTH_REQUIRED',message:'Secure media authorization is missing.'},401,'MEDIA_AUTH_REQUIRED');const response=await fetch(`${MUX_ASSET_URL}?uploadId=${encodeURIComponent(uploadId)}`,{cache:'no-store',headers:{'Authorization':`Bearer ${state.token}`,'X-Clarity-Upload-Ticket':muxUploadTicket}});const data=await response.json().catch(()=>({ok:false,error:'invalid_json'}));if(!response.ok||!data?.ok)throw secureMediaError(data,response.status,`mux_asset_failed_${response.status}`);return data}
+  async function fetchMuxAsset(uploadId){if(!state.token||!muxUploadTicket)throw secureMediaError({error:'MEDIA_AUTH_REQUIRED',message:'Secure media authorization is missing.'},401,'MEDIA_AUTH_REQUIRED');const response=await fetchWithMediaAuth(`${MUX_ASSET_URL}?uploadId=${encodeURIComponent(uploadId)}`,{cache:'no-store',headers:{'X-Clarity-Upload-Ticket':muxUploadTicket}});const data=await response.json().catch(()=>({ok:false,error:'invalid_json'}));if(!response.ok||!data?.ok)throw secureMediaError(data,response.status,`mux_asset_failed_${response.status}`);return data}
   async function pollMuxAsset(uploadId,maxMs=180000){const started=Date.now();let last=null;while(Date.now()-started<maxMs){await sleep(3000);last=await fetchMuxAsset(uploadId);if(last.assetStatus==='ready'&&last.playbackId)return last;if(last.assetStatus==='errored')return last;setProcessing(Math.min(78,52+(Date.now()-started)/maxMs*24),tr('processing'))}return last}
 
   function isTransientTransportError(error){
@@ -154,7 +156,8 @@ export function createVideoPresentationModule(context){
           assetStatus:asset.assetStatus||'',assetId:asset.assetId||'',
           playbackId:asset.playbackId||'',playbackUrl:asset.playbackUrl||'',
           downloadUrl:asset.downloadUrl||'',audioOnlyUrl:asset.audioOnlyUrl||'',
-          staticRenditionsStatus:asset.staticRenditionsStatus||'',error:asset.error||''
+          staticRenditionsStatus:asset.staticRenditionsStatus||'',
+          playbackPolicy:asset.playbackPolicy||'',securityMode:asset.securityMode||'',error:asset.error||''
         }
       };
 
