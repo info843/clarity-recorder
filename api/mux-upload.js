@@ -1,12 +1,12 @@
 'use strict';
 
 const {
-  enforceRateLimit, publicError, requireUniversalClaims, safeString,
+  enforceRateLimit, mediaSecurityMode, publicError, requireUniversalClaims, safeString,
   setSecurityHeaders, signUploadTicket, traceId
 } = require('./_clarity-security');
 
 const ALLOWED_MODES = new Set(['audio', 'video', 'mix']);
-const VERSION = '1.2.0-dynamic-origin-signed-playback';
+const VERSION = '1.4.0-explicit-media-security-mode';
 
 async function readJson(req) {
   if (req.body && typeof req.body === 'object') return req.body;
@@ -47,7 +47,8 @@ async function createMuxDirectUpload({ claims, mode, corsOrigin }) {
   const uploadOrigin = safeString(corsOrigin || process.env.MUX_UPLOAD_CORS_ORIGIN || 'https://interview.clarity-nvl.com', 500).replace(/\/+$/, '');
   // Production is secure by default. Public playback remains available only as
   // an explicit, temporary rollback setting.
-  const playbackPolicy = process.env.CLARITY_MUX_ENFORCE_SIGNED_PLAYBACK === '0' ? 'public' : 'signed';
+  const securityMode = mediaSecurityMode();
+  const playbackPolicy = securityMode === 'standard' ? 'public' : 'signed';
   const response = await fetch('https://api.mux.com/video/v1/uploads', {
     method: 'POST',
     headers: { Authorization:`Basic ${auth}`, 'Content-Type':'application/json' },
@@ -72,7 +73,8 @@ async function createMuxDirectUpload({ claims, mode, corsOrigin }) {
   }
   return {
     uploadId:json.data.id, uploadUrl:json.data.url,
-    status:json.data.status || 'waiting', timeout:json.data.timeout || null, playbackPolicy
+    status:json.data.status || 'waiting', timeout:json.data.timeout || null,
+    playbackPolicy, securityMode
   };
 }
 
@@ -96,7 +98,8 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({
       ok:true, provider:'mux', uploadId:mux.uploadId, uploadUrl:mux.uploadUrl,
       uploadTicket, uploadStatus:mux.status, timeout:mux.timeout,
-      playbackPolicy:mux.playbackPolicy, version:VERSION, traceId:trace
+      playbackPolicy:mux.playbackPolicy, securityMode:mux.securityMode,
+      version:VERSION, traceId:trace
     });
   } catch (error) {
     console.error('[CLARITY MEDIA SECURITY] mux upload rejected', {
