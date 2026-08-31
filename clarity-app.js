@@ -1,9 +1,9 @@
 import { resolveModuleView } from './modules/router-module.js';
 import { createCvModule } from './modules/cv-module.js';
-import { createVideoPresentationModule } from './modules/video-presentation-module.js';
+import { createVideoPresentationModule } from './modules/video-presentation-module.js?v=1.4.0-media-e2e';
 import { createAiLiteracyModule } from './modules/ai-literacy-module.js?v=2.16.1-ail-certificate-recovery';
-import { createAssessmentModule } from './modules/assessment-module.js?v=4.1.1-video-card-parity';
-import { createInterviewModule } from './modules/interview-module.js?v=2.2.2-brand-mode-exclusivity';
+import { createAssessmentModule } from './modules/assessment-module.js?v=4.2.0-media-auth-refresh';
+import { createInterviewModule } from './modules/interview-module.js?v=2.3.0-media-auth-refresh';
 import { CANDIDATE_LEGAL_VERSION, CANDIDATE_LEGAL_UPDATED_AT, getCandidateLegalBundle } from './modules/candidate-legal-content.js?v=1.3';
 import { buildCandidateExperience } from './modules/candidate-experience-content.js?v=1.0.0';
 import { createAppFeedbackController } from './modules/app-feedback-controller.js?v=1.1.0';
@@ -219,4 +219,4 @@ function wire(){
   $('legalDialog').addEventListener('click',event=>{if(event.target===$('legalDialog'))closeLegalDialog()});
   $('legalDialog').addEventListener('close',()=>{const target=legalReturnFocus;legalReturnFocus=null;if(target&&typeof target.focus==='function')target.focus()});
 }
-cvModule=createCvModule({$,state,api,show,setStep,getLocale:()=>state.locale,onFatal:fail});vpModule=createVideoPresentationModule({$,state,api,show,setStep,getLocale:()=>state.locale,onFatal:fail});aiLiteracyModule=createAiLiteracyModule({$,state,api,show,setStep,getLocale:()=>state.locale,onFatal:fail});assessmentModule=createAssessmentModule({$,state,api,show,setStep,getLocale:()=>state.locale,onFatal:fail});interviewModule=createInterviewModule({$,state,api,show,setStep,getLocale:()=>state.locale,onFatal:fail});feedbackController=createAppFeedbackController({$,state,api,getLocale:()=>state.locale,getBrandingMode:()=>resolveBrandingMode(state.payload?.branding||state.payload?.runtime?.brandingSnapshot||{})});wire();applyLocale();bootstrap();
+cvModule=createCvModule({$,state,api,show,setStep,getLocale:()=>state.locale,onFatal:fail});vpModule=createVideoPresentationModule({$,state,api,show,setStep,getLocale:()=>state.locale,onFatal:fail,refreshToken:refreshUniversalToken});aiLiteracyModule=createAiLiteracyModule({$,state,api,show,setStep,getLocale:()=>state.locale,onFatal:fail});assessmentModule=createAssessmentModule({$,state,api,show,setStep,getLocale:()=>state.locale,onFatal:fail,refreshToken:refreshUniversalToken});interviewModule=createInterviewModule({$,state,api,show,setStep,getLocale:()=>state.locale,onFatal:fail,refreshToken:refreshUniversalToken});feedbackController=createAppFeedbackController({$,state,api,getLocale:()=>state.locale,getBrandingMode:()=>resolveBrandingMode(state.payload?.branding||state.payload?.runtime?.brandingSnapshot||{})});wire();applyLocale();bootstrap();
