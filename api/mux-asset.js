@@ -1,111 +1,131 @@
 'use strict';
 
 const {
-  enforceRateLimit, mediaSecurityMode, publicError, requireUniversalClaims, safeString,
-  setSecurityHeaders, signUploadTicket, traceId
+  enforceRateLimit, mediaSecurityMode, publicError, requireUniversalClaims, requireUploadTicket,
+  safeString, setSecurityHeaders, traceId
 } = require('./_clarity-security');
+const VERSION = '1.4.2-mux-contract-and-diagnostics';
 
-const ALLOWED_MODES = new Set(['audio', 'video', 'mix']);
-const VERSION = '1.4.0-explicit-media-security-mode';
-
-async function readJson(req) {
-  if (req.body && typeof req.body === 'object') return req.body;
-  const chunks = [];
-  let bytes = 0;
-  for await (const chunk of req) {
-    bytes += chunk.length;
-    if (bytes > 32 * 1024) {
-      const error = Object.assign(new Error('REQUEST_TOO_LARGE'), { code:'REQUEST_TOO_LARGE', status:413 });
-      throw error;
-    }
-    chunks.push(chunk);
-  }
-  try { return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); }
-  catch (_) { throw Object.assign(new Error('INVALID_JSON'), { code:'INVALID_JSON', status:400 }); }
-}
-
-function buildPassthrough({ claims, mode }) {
-  return JSON.stringify({
-    uid: claims.uid,
-    companyId: claims.companyId,
-    runtimeAccessId: claims.runtimeAccessId,
-    unifiedLinkId: claims.unifiedLinkId,
-    productKey: claims.productKey,
-    sessionId: claims.runtimeAccessId,
-    mode,
-    source: 'clarity-universal-app-v2'
-  });
-}
-
-async function createMuxDirectUpload({ claims, mode, corsOrigin }) {
+function getMuxAuthHeader() {
   const tokenId = process.env.MUX_TOKEN_ID;
   const tokenSecret = process.env.MUX_TOKEN_SECRET;
   if (!tokenId || !tokenSecret) {
     throw Object.assign(new Error('MUX_ENV_MISSING'), { code:'MUX_ENV_MISSING', status:503 });
   }
-  const auth = Buffer.from(`${tokenId}:${tokenSecret}`).toString('base64');
-  const uploadOrigin = safeString(corsOrigin || process.env.MUX_UPLOAD_CORS_ORIGIN || 'https://interview.clarity-nvl.com', 500).replace(/\/+$/, '');
-  // Production is secure by default. Public playback remains available only as
-  // an explicit, temporary rollback setting.
-  const securityMode = mediaSecurityMode();
-  const playbackPolicy = securityMode === 'standard' ? 'public' : 'signed';
-  const response = await fetch('https://api.mux.com/video/v1/uploads', {
-    method: 'POST',
-    headers: { Authorization:`Basic ${auth}`, 'Content-Type':'application/json' },
-    body: JSON.stringify({
-      cors_origin: uploadOrigin,
-      timeout: 3600,
-      new_asset_settings: {
-        playback_policies: [playbackPolicy],
-        passthrough: buildPassthrough({ claims, mode }),
-        video_quality: 'basic',
-        static_renditions: [{ resolution:'highest' }, { resolution:'audio-only' }]
-      }
-    })
-  });
+  return `Basic ${Buffer.from(`${tokenId}:${tokenSecret}`).toString('base64')}`;
+}
+
+async function muxGet(path) {
+  let response;
+  try {
+    response = await fetch(`https://api.mux.com${path}`, {
+      method:'GET', headers:{ Authorization:getMuxAuthHeader(), 'Content-Type':'application/json' }
+    });
+  } catch (_) {
+    throw Object.assign(new Error('MUX_API_TRANSPORT_FAILED'), {
+      code:'MUX_API_TRANSPORT_FAILED', status:502, providerStatus:null
+    });
+  }
   const raw = await response.text();
   let json = null;
   try { json = raw ? JSON.parse(raw) : null; } catch (_) {}
-  if (!response.ok || !json?.data?.url || !json?.data?.id) {
-    throw Object.assign(new Error('MUX_CREATE_UPLOAD_FAILED'), {
-      code:'MUX_CREATE_UPLOAD_FAILED', status:502, providerStatus:response.status
+  if (!response.ok) {
+    const providerStatus = Number(response.status) || 0;
+    const code = providerStatus === 400 ? 'MUX_API_REQUEST_INVALID'
+      : providerStatus === 401 ? 'MUX_API_CREDENTIALS_INVALID'
+      : providerStatus === 403 ? 'MUX_API_CREDENTIALS_FORBIDDEN'
+      : providerStatus === 404 ? 'MUX_UPLOAD_NOT_FOUND'
+      : providerStatus === 429 ? 'MUX_API_RATE_LIMITED'
+      : providerStatus >= 500 ? 'MUX_API_UNAVAILABLE'
+      : 'MUX_LOOKUP_FAILED';
+    throw Object.assign(new Error('MUX_LOOKUP_FAILED'), {
+      code,
+      status:providerStatus === 404 ? 404
+        : providerStatus === 429 ? 429
+        : [401,403].includes(providerStatus) || providerStatus >= 500 ? 503
+        : 502,
+      providerStatus
     });
   }
-  return {
-    uploadId:json.data.id, uploadUrl:json.data.url,
-    status:json.data.status || 'waiting', timeout:json.data.timeout || null,
-    playbackPolicy, securityMode
-  };
+  return json;
+}
+
+function requestBody(req) {
+  if (req?.body && typeof req.body === 'object') return req.body;
+  if (typeof req?.body !== 'string') return {};
+  try { return JSON.parse(req.body); } catch (_) { return {}; }
+}
+
+function requestUploadId(req) {
+  return safeString(req?.query?.uploadId || requestBody(req).uploadId, 240);
+}
+
+function passthroughObject(value) {
+  try { return value ? JSON.parse(value) : {}; } catch (_) { return {}; }
+}
+
+function assertMuxOwnership(value, claims) {
+  const pt = passthroughObject(value);
+  if (!pt.uid || !pt.companyId || !pt.runtimeAccessId ||
+      safeString(pt.uid, 240) !== claims.uid ||
+      safeString(pt.companyId, 180) !== claims.companyId ||
+      safeString(pt.runtimeAccessId, 240) !== claims.runtimeAccessId ||
+      safeString(pt.sessionId, 240) !== claims.runtimeAccessId) {
+    throw Object.assign(new Error('MUX_OBJECT_FORBIDDEN'), { code:'MUX_OBJECT_FORBIDDEN', status:403 });
+  }
+}
+
+function authorizedPlaybackId(asset) {
+  const ids = Array.isArray(asset?.playback_ids) ? asset.playback_ids : [];
+  const expectedPolicy = mediaSecurityMode() === 'standard' ? 'public' : 'signed';
+  const selected = ids.find((item) => item?.policy === expectedPolicy);
+  return { id:selected?.id || null, policy:expectedPolicy };
 }
 
 module.exports = async function handler(req, res) {
   const trace = traceId();
-  const originAllowed = setSecurityHeaders(req, res, 'POST');
+  const originAllowed = setSecurityHeaders(req, res, 'GET,POST');
   if (req.method === 'OPTIONS') return originAllowed ? res.status(204).end() : res.status(403).end();
   if (!originAllowed) return res.status(403).json({ ok:false, error:'ORIGIN_NOT_ALLOWED', traceId:trace });
-  if (req.method !== 'POST') return res.status(405).json({ ok:false, error:'USE_POST', traceId:trace });
+  if (!['GET','POST'].includes(req.method)) {
+    return res.status(405).json({ ok:false, error:'USE_GET_OR_POST', traceId:trace });
+  }
   try {
     const claims = requireUniversalClaims(req);
-    const body = await readJson(req);
-    const mode = safeString(body.mode || 'video', 40).toLowerCase();
-    if (!ALLOWED_MODES.has(mode)) {
-      throw Object.assign(new Error('MODE_INVALID'), { code:'MODE_INVALID', status:400 });
+    const uploadId = requestUploadId(req);
+    if (!uploadId) throw Object.assign(new Error('UPLOAD_ID_REQUIRED'), { code:'UPLOAD_ID_REQUIRED', status:400 });
+    requireUploadTicket(req, claims, uploadId);
+    enforceRateLimit(`mux-status:${claims.runtimeAccessId}`, 180, 15 * 60 * 1000);
+    const uploadJson = await muxGet(`/video/v1/uploads/${encodeURIComponent(uploadId)}`);
+    const upload = uploadJson?.data || {};
+    const assetId = safeString(upload.asset_id, 240) || null;
+    if (!assetId) {
+      return res.status(200).json({
+        ok:true, provider:'mux', uploadId, uploadStatus:upload.status || 'waiting',
+        assetStatus:'waiting', assetId:null, playbackId:null, durationSec:null, version:VERSION, traceId:trace
+      });
     }
-    enforceRateLimit(`mux-upload:${claims.runtimeAccessId}`, 6, 15 * 60 * 1000);
-    const requestOrigin = safeString(req?.headers?.origin || req?.headers?.Origin, 500).replace(/\/+$/, '');
-    const mux = await createMuxDirectUpload({ claims, mode, corsOrigin:requestOrigin });
-    const uploadTicket = signUploadTicket({ ...claims, uploadId:mux.uploadId, mode });
+    const assetJson = await muxGet(`/video/v1/assets/${encodeURIComponent(assetId)}`);
+    const asset = assetJson?.data || {};
+    assertMuxOwnership(asset.passthrough, claims);
+    const playback = authorizedPlaybackId(asset);
+    const playbackId = playback.id;
+    const assetStatus = asset.status === 'ready' ? 'ready' : asset.status === 'errored' ? 'errored' : 'processing';
+    if (assetStatus === 'ready' && !playbackId) {
+      throw Object.assign(new Error('AUTHORIZED_PLAYBACK_ID_MISSING'), { code:'AUTHORIZED_PLAYBACK_ID_MISSING', status:502 });
+    }
     return res.status(200).json({
-      ok:true, provider:'mux', uploadId:mux.uploadId, uploadUrl:mux.uploadUrl,
-      uploadTicket, uploadStatus:mux.status, timeout:mux.timeout,
-      playbackPolicy:mux.playbackPolicy, securityMode:mux.securityMode,
-      version:VERSION, traceId:trace
+      ok:true, provider:'mux', uploadId, uploadStatus:upload.status || '', assetId,
+      assetStatus, playbackId, playbackPolicy:playback.policy,
+      securityMode:playback.policy === 'public' ? 'standard' : 'signed',
+      durationSec:Number.isFinite(Number(asset.duration)) ? Number(asset.duration) : null,
+      staticRenditionsStatus:safeString(asset?.static_renditions?.status, 80), version:VERSION, traceId:trace
     });
   } catch (error) {
-    console.error('[CLARITY MEDIA SECURITY] mux upload rejected', {
-      traceId:trace, code:safeString(error?.code || 'MUX_UPLOAD_CREATE_ERROR', 120),
+    console.error('[CLARITY MEDIA SECURITY] mux status rejected', {
+      traceId:trace, code:safeString(error?.code || 'MUX_ASSET_LOOKUP_ERROR', 120),
       providerStatus:Number(error?.providerStatus) || null
     });
-    return publicError(res, error, 'MUX_UPLOAD_CREATE_ERROR', trace);
+    return publicError(res, error, 'MUX_ASSET_LOOKUP_ERROR', trace);
   }
 };
