@@ -1,10 +1,10 @@
 'use strict';
 
 const {
-  enforceRateLimit, publicError, requireUniversalClaims, requireUploadTicket,
+  enforceRateLimit, mediaSecurityMode, publicError, requireUniversalClaims, requireUploadTicket,
   safeString, setSecurityHeaders, traceId
 } = require('./_clarity-security');
-const VERSION = '1.2.0-signed-playback-status';
+const VERSION = '1.4.0-explicit-media-security-mode';
 
 function getMuxAuthHeader() {
   const tokenId = process.env.MUX_TOKEN_ID;
@@ -49,7 +49,7 @@ function assertMuxOwnership(value, claims) {
 
 function authorizedPlaybackId(asset) {
   const ids = Array.isArray(asset?.playback_ids) ? asset.playback_ids : [];
-  const expectedPolicy = process.env.CLARITY_MUX_ENFORCE_SIGNED_PLAYBACK === '0' ? 'public' : 'signed';
+  const expectedPolicy = mediaSecurityMode() === 'standard' ? 'public' : 'signed';
   const selected = ids.find((item) => item?.policy === expectedPolicy);
   return { id:selected?.id || null, policy:expectedPolicy };
 }
@@ -87,6 +87,7 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({
       ok:true, provider:'mux', uploadId, uploadStatus:upload.status || '', assetId,
       assetStatus, playbackId, playbackPolicy:playback.policy,
+      securityMode:playback.policy === 'public' ? 'standard' : 'signed',
       durationSec:Number.isFinite(Number(asset.duration)) ? Number(asset.duration) : null,
       staticRenditionsStatus:safeString(asset?.static_renditions?.status, 80), version:VERSION, traceId:trace
     });
