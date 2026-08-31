@@ -45,6 +45,21 @@ function mediaTicketSecret() {
   return secret;
 }
 
+function mediaSecurityMode() {
+  const explicit = safeString(process.env.CLARITY_MEDIA_SECURITY_MODE || process.env.MEDIA_SECURITY_MODE, 40).toLowerCase();
+  if (explicit) {
+    if (!['signed', 'standard'].includes(explicit)) {
+      throw securityError('MEDIA_SECURITY_MODE_INVALID', 503);
+    }
+    return explicit;
+  }
+  // Backward-compatible migration only. This is configuration selection, not
+  // an automatic fail-open path: a failed signed request never changes mode.
+  return safeString(process.env.CLARITY_MUX_ENFORCE_SIGNED_PLAYBACK, 10) === '0'
+    ? 'standard'
+    : 'signed';
+}
+
 function securityError(code, status = 401) {
   const error = new Error(code);
   error.code = code;
@@ -198,6 +213,7 @@ function publicError(res, error, fallbackCode, trace) {
 
 module.exports = {
   enforceRateLimit,
+  mediaSecurityMode,
   publicError,
   requireUniversalClaims,
   requireUploadTicket,
