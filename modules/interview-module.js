@@ -3,13 +3,17 @@
 // Session, credit, recording, media upload and Mix handover contracts remain unchanged.
 // v2.2.0 adds only the shared branding-aware processing visualization.
 
-const MODULE_VERSION='2.3.1-recorder-contract-repair';
+const MODULE_VERSION='2.3.2-interview-runtime-contract-repair';
 const EXPECTED_RECORDER_VERSION_BY_MODE=Object.freeze({
   chat:'2.1.0-q10-q20-q30-market-readiness',
   audio:'2.2.0-media-auth-refresh',
   video:'2.2.0-media-auth-refresh',
   mix:'2.2.0-media-auth-refresh'
 });
+const SUPPORT_DIAGNOSTICS=new URLSearchParams(location.search).get('supportDebug')==='1';
+const diagnosticInfo=(...args)=>{if(SUPPORT_DIAGNOSTICS)globalThis.console.info(...args)};
+const diagnosticWarn=(...args)=>{if(SUPPORT_DIAGNOSTICS)globalThis.console.warn(...args)};
+const ACTION_TIMEOUT_MS=Object.freeze({preflight:14000,status:25000,audioToken:20000,start:70000,message:65000,finish:90000,retry:90000,audioChunk:90000,audioFinalize:140000,audioUploadStatus:30000,videoChunk:90000,videoFinalize:180000,videoUploadStatus:30000});
 const FRAME_BY_MODE=Object.freeze({
   chat:`./modules/interview-chat.html?v=${MODULE_VERSION}`
 });
