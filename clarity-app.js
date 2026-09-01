@@ -3,7 +3,7 @@ import { createCvModule } from './modules/cv-module.js';
 import { createVideoPresentationModule } from './modules/video-presentation-module.js?v=1.4.0-media-e2e';
 import { createAiLiteracyModule } from './modules/ai-literacy-module.js?v=2.16.1-ail-certificate-recovery';
 import { createAssessmentModule } from './modules/assessment-module.js?v=4.2.0-media-auth-refresh';
-import { createInterviewModule } from './modules/interview-module.js?v=2.3.0-media-auth-refresh';
+import { createInterviewModule } from './modules/interview-module.js?v=2.3.1-recorder-contract-repair';
 import { CANDIDATE_LEGAL_VERSION, CANDIDATE_LEGAL_UPDATED_AT, getCandidateLegalBundle } from './modules/candidate-legal-content.js?v=1.3';
 import { buildCandidateExperience } from './modules/candidate-experience-content.js?v=1.0.0';
 import { createAppFeedbackController } from './modules/app-feedback-controller.js?v=1.1.0';
