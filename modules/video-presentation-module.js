@@ -1,4 +1,4 @@
-const VERSION = 'video-presentation-module-v2.12.0-secure-media-recovery';
+const VERSION = 'video-presentation-module-v2.12.1-bounded-finalization';
 const MUX_UPLOAD_URL = `${location.origin}/api/mux-upload`;
 const MUX_ASSET_URL = `${location.origin}/api/mux-asset`;
 const SUPPORTED = ['en','de','es','fr','it','nl','pt','pl','tr','ar'];
@@ -203,13 +203,19 @@ export function createVideoPresentationModule(context){
     try{
       for(let attempt=0;attempt<maxAttempts;attempt+=1){
         try{
-          const data=await refresh(attempt%8===0);
+          // Candidate polling only needs the authoritative runtime/source
+          // state. Workspace reconciliation is already queued idempotently;
+          // running its full inspection every eighth request caused Wix status
+          // timeouts without making Mux encode or upload any faster.
+          const data=await refresh(false);
           const phase=data?.vp?.phase;
           if(phase==='completed'){renderComplete(data);return {terminal:true,phase,data}}
           if(phase==='failed_technical'){renderFailure(data);return {terminal:true,phase,data}}
         }catch(error){
           if(!tolerateTransient||!isTransientTransportError(error))throw error;
-          await log('vp_status_poll_transient',error?.message||String(error),{sessionId,attempt});
+          // One immediate diagnostic plus a bounded heartbeat is enough. Do not
+          // create one event per transient status request.
+          if(attempt===0||(attempt+1)%12===0)await log('vp_status_poll_transient',error?.message||String(error),{sessionId,attempt});
         }
         setProcessing(Math.min(99,94+attempt/maxAttempts*5),tr('processing'));
         await sleep(2500);
@@ -226,7 +232,7 @@ export function createVideoPresentationModule(context){
   async function retry(){setBusy('vpRetryBtn',true);try{await api('v2VpRetry',{body:{token:state.token,uid:state.uid,sessionId}});$('vpRetryBtn')?.classList.add('hidden');await pollUntilTerminal()}catch(error){alert(error?.message||String(error))}finally{setBusy('vpRetryBtn',false)}}
   async function log(eventType,message='',payload={}){try{await api('v2AppEvent',{body:{token:state.token,uid:state.uid,eventType,message,payload:{...payload,moduleVersion:VERSION}}})}catch(_){}}
 
-  async function activate(){applyLocale();try{const data=await refresh(true);const phase=data?.vp?.phase;if(phase==='completed'){renderComplete(data);return}if(phase==='processing'){show('vpProcessingView');await pollUntilTerminal();return}if(phase==='failed_technical'){renderFailure(data);return}show('vpView');setStatus(tr('ready'),'ok')}catch(error){onFatal(error)}}
+  async function activate(){applyLocale();try{const data=await refresh(false);const phase=data?.vp?.phase;if(phase==='completed'){renderComplete(data);return}if(phase==='processing'){show('vpProcessingView');await pollUntilTerminal();return}if(phase==='failed_technical'){renderFailure(data);return}show('vpView');setStatus(tr('ready'),'ok')}catch(error){onFatal(error)}}
 
   function wire(){if(wired)return;wired=true;$('vpCameraBtn').addEventListener('click',startCamera);$('vpRecordBtn').addEventListener('click',startRecording);$('vpStopBtn').addEventListener('click',stopRecording);$('vpRetakeBtn').addEventListener('click',retake);$('vpSubmitBtn').addEventListener('click',submit);$('vpBackBtn').addEventListener('click',()=>{stopTracks();show('moduleView')});$('vpRetryBtn').addEventListener('click',retry);$('vpCloseBtn').addEventListener('click',()=>window.close());window.addEventListener('beforeunload',stopTracks)}
   wire();applyLocale();
