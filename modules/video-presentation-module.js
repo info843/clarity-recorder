@@ -1,4 +1,4 @@
-const VERSION = 'video-presentation-module-v2.12.1-bounded-finalization';
+const VERSION = 'video-presentation-module-v2.12.2-terminal-projection-recovery';
 const MUX_UPLOAD_URL = `${location.origin}/api/mux-upload`;
 const MUX_ASSET_URL = `${location.origin}/api/mux-asset`;
 const SUPPORTED = ['en','de','es','fr','it','nl','pt','pl','tr','ar'];
@@ -123,6 +123,20 @@ export function createVideoPresentationModule(context){
     ].some(marker=>code.includes(marker)||message.includes(marker));
   }
 
+  async function refreshCompletedProjection(data){
+    if(data?.pipeline?.ready===true)return data;
+    try{
+      // One explicit terminal inspection restores the idempotent Workspace
+      // reconciliation removed too broadly in v1.4.8. Normal processing polls
+      // remain cheap and never run the heavy inspection repeatedly.
+      return await refresh(true);
+    }catch(error){
+      if(!isTransientTransportError(error))throw error;
+      await log('vp_terminal_projection_pending',error?.message||String(error),{sessionId});
+      return data;
+    }
+  }
+
   async function submit(){
     if(submitting||!blob)return;
     submitting=true;muxUploadTicket='';updateSubmitState();stopTracks();show('vpProcessingView');stage('upload','active',language()==='de'?'Wird hochgeladen':'Uploading');
@@ -209,7 +223,7 @@ export function createVideoPresentationModule(context){
           // timeouts without making Mux encode or upload any faster.
           const data=await refresh(false);
           const phase=data?.vp?.phase;
-          if(phase==='completed'){renderComplete(data);return {terminal:true,phase,data}}
+          if(phase==='completed'){const completed=await refreshCompletedProjection(data);renderComplete(completed);return {terminal:true,phase,data:completed}}
           if(phase==='failed_technical'){renderFailure(data);return {terminal:true,phase,data}}
         }catch(error){
           if(!tolerateTransient||!isTransientTransportError(error))throw error;
@@ -232,7 +246,7 @@ export function createVideoPresentationModule(context){
   async function retry(){setBusy('vpRetryBtn',true);try{await api('v2VpRetry',{body:{token:state.token,uid:state.uid,sessionId}});$('vpRetryBtn')?.classList.add('hidden');await pollUntilTerminal()}catch(error){alert(error?.message||String(error))}finally{setBusy('vpRetryBtn',false)}}
   async function log(eventType,message='',payload={}){try{await api('v2AppEvent',{body:{token:state.token,uid:state.uid,eventType,message,payload:{...payload,moduleVersion:VERSION}}})}catch(_){}}
 
-  async function activate(){applyLocale();try{const data=await refresh(false);const phase=data?.vp?.phase;if(phase==='completed'){renderComplete(data);return}if(phase==='processing'){show('vpProcessingView');await pollUntilTerminal();return}if(phase==='failed_technical'){renderFailure(data);return}show('vpView');setStatus(tr('ready'),'ok')}catch(error){onFatal(error)}}
+  async function activate(){applyLocale();try{const data=await refresh(false);const phase=data?.vp?.phase;if(phase==='completed'){renderComplete(await refreshCompletedProjection(data));return}if(phase==='processing'){show('vpProcessingView');await pollUntilTerminal();return}if(phase==='failed_technical'){renderFailure(data);return}show('vpView');setStatus(tr('ready'),'ok')}catch(error){onFatal(error)}}
 
   function wire(){if(wired)return;wired=true;$('vpCameraBtn').addEventListener('click',startCamera);$('vpRecordBtn').addEventListener('click',startRecording);$('vpStopBtn').addEventListener('click',stopRecording);$('vpRetakeBtn').addEventListener('click',retake);$('vpSubmitBtn').addEventListener('click',submit);$('vpBackBtn').addEventListener('click',()=>{stopTracks();show('moduleView')});$('vpRetryBtn').addEventListener('click',retry);$('vpCloseBtn').addEventListener('click',()=>window.close());window.addEventListener('beforeunload',stopTracks)}
   wire();applyLocale();
